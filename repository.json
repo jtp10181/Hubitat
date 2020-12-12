@@ -9,7 +9,7 @@
       "category": "Control",
       "location": "https://raw.githubusercontent.com/jtp10181/Hubitat/main/Drivers/zooz/packageManifest.json",
       "description": "Zooz Drivers with Advanced Settings and Features",
-	  "tags": [ "Lights & Switches", "ZWave" ]
+      "tags": [ "Lights & Switches", "ZWave" ]
     }
   ]
 }
