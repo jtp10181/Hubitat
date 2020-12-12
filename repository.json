@@ -1,0 +1,15 @@
+{
+  "author": "jtp10181",
+  "gitHubUrl": "https://github.com/jtp10181/Hubitat",
+  "payPalUrl": "http://paypal.me/JPage81",
+  "packages": [
+    {
+      "id": "1b4a1f7e-7bff-44aa-8a65-5d0cb5ca6959",
+      "name": "Zooz Switches Advanced Drivers",
+      "category": "Control",
+      "location": "https://raw.githubusercontent.com/jtp10181/Hubitat/main/Drivers/zooz/packageManifest.json",
+      "description": "Zooz Drivers with Advanced Settings and Features",
+	  "tags": [ "Lights & Switches", "ZWave" ]
+    }
+  ]
+}
