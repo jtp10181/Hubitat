@@ -7,17 +7,17 @@
  *    3.0 (09/16/2020) - @krlaframboise / Zooz - https://github.com/krlaframboise/SmartThings/blob/master/devicetypes/zooz/zooz-zen27-s2-dimmer-ver-3-0.src/zooz-zen27-s2-dimmer-ver-3-0.groovy
  *      - Initial Release
  *
- *    3.1 (12/6/2020) - @jtp10181
+ *    3.1.0 (12/10/2020) - @jtp10181
  *      - Ported from ST to HE
  *      - Added SupervisionGet Event
  *      - Fixed a few default designations to match zooz documentation
  *      - Fixed Up/Down Scene labels which were reporting in reverse
- *		- Changed scene events to user proper button numbers per Zooz docs
- *		- Upgraded command classes when possible
- *		- Added parameter 17 ZWave Ramp Rate
- *		- Changed debug and info logging to match Hubitat standards
- *		- Moved storage of config variables to Data (in a Map)
- *		- Added command to flash the light from Hubitat example driver
+ *      - Changed scene events to user proper button numbers per Zooz docs
+ *      - Upgraded command classes when possible
+ *      - Added parameter 17 ZWave Ramp Rate
+ *      - Changed debug and info logging to match Hubitat standards
+ *      - Moved storage of config variables to Data (in a Map)
+ *      - Added command to flash the light from Hubitat example driver
  *
  *
  *  Copyright 2020 Zooz

@@ -1,0 +1,19 @@
+{
+  "packageName": "Zooz Switches Advanced Drivers",
+  "author": "jtp10181",
+  "version": "1.0",
+  "minimumHEVersion": "2.2.3",
+  "documentationLink": "https://github.com/jtp10181/Hubitat/tree/main/Drivers/zooz",
+  "communityLink": "https://community.hubitat.com/t/release-zooz-switches-advanced-drivers-zen27/58649",
+  "dateReleased": "2020-12-10",
+  "drivers": [
+    {
+      "id": "8aa273a7-8424-4aed-9d40-92aade1c5d73",
+      "name": "Zooz ZEN27 S2 Dimmer 3.0",
+      "namespace": "jtp10181",
+      "location": "https://github.com/jtp10181/Hubitat/raw/main/Drivers/zooz/zooz-zen27-s2-dimmer.groovy",
+      "required": false,
+      "version": "3.1.0"
+    }
+  ]
+}
