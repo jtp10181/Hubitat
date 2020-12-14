@@ -4,7 +4,7 @@
  *
  *  Changelog:
  *
- *    3.0 (09/16/2020) - @krlaframboise / Zooz - https://github.com/krlaframboise/SmartThings/blob/master/devicetypes/zooz/zooz-zen27-s2-dimmer-ver-3-0.src/zooz-zen27-s2-dimmer-ver-3-0.groovy
+ *    3.0 (09/16/2020) - @krlaframboise / Zooz - https://github.com/krlaframboise/SmartThings/tree/master/devicetypes/zooz/
  *      - Initial Release
  *
  *    3.1.0 (12/10/2020) - @jtp10181
@@ -19,6 +19,11 @@
  *      - Moved storage of config variables to Data (in a Map)
  *      - Added command to flash the light from Hubitat example driver
  *
+ *    3.2.0 (12/14/2020) - @jtp10181
+ *      - Added Parameter 7 and 20
+ *      - Corrected Fingerprint 
+ *      - Cleaned up some parameter wording and ordering
+ *      - Reverted Up/Down fix per Zooz (except firmware 3.01 due to a bug)
  *
  *  Copyright 2020 Zooz
  *
@@ -83,11 +88,19 @@ CommandClassReport- class:0x9F, version:1
 @Field static Map powerFailureRecoveryOptions = [2:"Restores Last Status [DEFAULT]", 0:"Forced to Off", 1:"Forced to On"]
 @Field static Map rampRateOptions = [1:"1 Second", 2:"2 Seconds", 3:"3 Seconds", 4:"4 Seconds", 5:"5 Seconds", 6:"6 Seconds", 7:"7 Seconds", 8:"8 Seconds", 9:"9 Seconds", 10:"10 Seconds", 11:"11 Seconds", 12:"12 Seconds", 13:"13 Seconds", 14:"14 Seconds", 15:"15 Seconds", 20:"20 Seconds", 25:"25 Seconds", 30:"30 Seconds", 45:"45 Seconds", 60:"60 Seconds", 75:"75 Seconds", 90:"90 Seconds"]
 @Field static Map brightnessOptions = [1:"1%", 5:"5%", 10:"10%", 15:"15%", 20:"20%", 25:"25%", 30:"30%", 35:"35%", 40:"40%", 45:"45%", 50:"50%", 55:"55%",60:"60%", 65:"65%", 70:"70%", 75:"75%", 80:"80%", 85:"85%", 90:"90%", 95:"95%", 99:"99%"]
-@Field static Map doubleTapUp12Options = [0:"Full Brightness [DEFAULT]", 1:"Maximum Brightness"]
+@Field static Map doubleTapUp12Options = [0:"Full Brightness (100%) [DEFAULT]", 1:"Maximum Brightness Parameter"]
 @Field static Map doubleTapUp14Options = [0:"Full/Maximum Brightness [DEFAULT]", 1:"Disabled, Single Tap Last Brightness", 2:"Disabled, Single Tap Full/Maximum Brightness"]
-@Field static Map relayControlOptions = [1:"Enable Paddle and Z-Wave [DEFAULT]", 0:"Disable Paddle", 2:"Disable Paddle and Z-Wave"]
-@Field static Map relayBehaviorOptions = [0:"Reports Status & Changes LED [DEFAULT]", 1:"Doesn't Report Status or Change LED"]
+@Field static Map relayControlOptions = [1:"Enable Paddle and Z-Wave [DEFAULT]", 0:"Disable Physical Paddle Control", 2:"Disable Paddle and Z-Wave Control"]
+@Field static Map relayDimmingOptions = [0:"Report Each Brightness Level for Physical Dimming When Relay Control is Disabled [DEFAULT]", 1:"Report Only Final Brightness Level for Physical Dimming Always"]
+@Field static Map relayBehaviorOptions = [0:"Reports Status & Changes LED Always [DEFAULT]", 1:"Doesn't Report Status or Change LED When Relay Control Is Disabled"]
 @Field static Map zwaveRampRateOptions = [0:"Match Physical Ramp Rate [DEFAULT]", 1:"Z-Wave Can Set Ramp Rate [RECOMMENDED]"]
+@Field static Map associationReportsOptions = [
+	0:"None", 1:"Physical Tap On ZEN Only", 2:"Physical Tap On Connected 3-Way Switch Only", 3:"Physical Tap On ZEN / 3-Way Switch", 
+	4:"Z-Wave Command From Hub", 5:"Physical Tap On ZEN / Z-Wave Command", 6:"Physical Tap On 3-Way Switch / Z-Wave Command", 
+	7:"Physical Tap On ZEN / 3-Way Switch / Z-Wave Command", 8:"Timer Only", 9:"Physical Tap On ZEN / Timer", 
+	10:"Physical Tap On 3-Way Switch / Timer", 11:"Physical Tap On ZEN / 3-Way Switch / Timer", 12:"Z-Wave Command From Hub / Timer", 
+	13:"Physical Tap On ZEN / Z-Wave Command / Timer", 14:"Physical Tap On ZEN / 3-Way Switch / Z-Wave Command / Timer", 
+	15:"All Of The Above [DEFAULT]" ]
 
 metadata {
 	definition (
@@ -100,7 +113,7 @@ metadata {
 		capability "Sensor"
 		capability "Switch"
 		capability "SwitchLevel"
-		//capability "Light"  //Redundant from Swtich
+		//capability "Light"  //Redundant with Switch
 		capability "Configuration"
 		capability "Refresh"
 		capability "HealthCheck"
@@ -108,14 +121,12 @@ metadata {
 		capability "HoldableButton"
 		capability "ReleasableButton"
 
-		//Clear State Variables and Data
-		//command    "clearVariables"
 		command "flash", [[name:"Flash Rate", type: "NUMBER"]]
 
 		attribute "syncStatus", "string"
 		attribute "assocDNIs", "string"
 
-		fingerprint mfr:"027A", prod:"A000", model:"A002", deviceJoinName:"Zooz ZEN27 S2 Dimmer"
+		fingerprint mfr:"027A", prod:"A000", deviceId:"A002", inClusters:"0x5E,0x6C,0x55,0x9F", deviceJoinName:"Zooz ZEN27 S2 Dimmer"
 	}
 
 	preferences {
@@ -138,8 +149,8 @@ metadata {
 			// required: false
 
 		input "assocDNIs", "string",
-			title: "Device Associations - Enter Network IDs HERE:",
-			description: "Associations are an advance feature. Only use this if you know what you are doing. Supports up to 4 devices separated by commas. (Enter 0 to clear field in iOS mobile app)",
+			title: "Device Associations - Group 2:",
+			description: "Associations are an advanced feature. Only use this if you know what you are doing. Supports up to 4 Hex Device IDs separated by commas. (Enter 0 to clear field in iOS mobile app)",
 			required: false
 
 		//Logging options similar to other Hubitat drivers
@@ -246,7 +257,7 @@ void executeConfigureCmds() {
 		Integer storedVal = getParamStoredValue(param.num)
 
 		if ((paramVal != null) && (state.resyncAll || (storedVal != paramVal))) {
-			logDebug "Changing ${param.name}(#${param.num}) from ${storedVal} to ${paramVal}"
+			logDebug "Changing ${param.name} (#${param.num}) from ${storedVal} to ${paramVal}"
 			cmds << configSetCmd(param, paramVal)
 			cmds << configGetCmd(param)
 		}
@@ -410,19 +421,20 @@ String flash(flashRate) {
 String flashOn(){
     if (!state.flashing) return
     runInMillis((state.flashing).toInteger(), flashOff)
-	return secureCmd(zwave.switchMultilevelV3.switchMultilevelSet(dimmingDuration: 0, value: 0xFF))
+	return switchMultilevelSetCmd(0xFF, 0)
 }
 
 String flashOff(){
     if (!state.flashing) return
     runInMillis((state.flashing).toInteger(), flashOn)
-	return secureCmd(zwave.switchMultilevelV3.switchMultilevelSet(dimmingDuration: 0, value: 0x00))
+	return switchMultilevelSetCmd(0x00, 0)
 }
 
 
 def refresh() {
 	logDebug "refresh..."
 
+	versionGetCmd()
 	refreshSyncStatus()
 
 	sendCommands([switchMultilevelGetCmd()])
@@ -547,7 +559,7 @@ void zwaveEvent(hubitat.zwave.commands.configurationv1.ConfigurationReport cmd) 
 	Map param = configParams.find { it.num == cmd.parameterNumber }
 	if (param) {
 		Integer val = cmd.scaledConfigurationValue
-		logDebug "${param.name}(#${param.num}) = ${val}"
+		logDebug "${param.name} (#${param.num}) = ${val}"
 		setParamStoredValue(param.num, val)
 	}
 	else {
@@ -616,17 +628,26 @@ void zwaveEvent(hubitat.zwave.commands.centralscenev3.CentralSceneNotification c
 		state.lastSequenceNumber = cmd.sequenceNumber
 
 		logTrace "${cmd}"
+		
+		//ZEN 27 Firmware 3.01 ONLY - need to flip the sceneNumber due to bug
+		if (device.getDataValue("firmwareVersion") == "3.01") {
+			if (cmd.sceneNumber == 1) cmd.sceneNumber = 2
+			else if (cmd.sceneNumber == 2) cmd.sceneNumber = 1
+			logTrace "ZEN27[3.01] Fixed: ${cmd}"
+		}
 
-		Map scene = [name: "pushed", value: cmd.sceneNumber, descriptionText: "", type:"physical", isStateChange:true]
+		Map scene = [name: "pushed", value: 1, descriptionText: "", type:"physical", isStateChange:true]
 		String actionType
 		String btnVal
 
 		switch (cmd.sceneNumber) {
 			case 1:
-				actionType = "up"
+				actionType = "down"	
+				scene.value = 2
 				break
 			case 2:
-				actionType = "down"
+				actionType = "up"
+				scene.value = 1
 				break
 			default:
 				logDebug "Unknown sceneNumber: ${cmd}"
@@ -645,7 +666,7 @@ void zwaveEvent(hubitat.zwave.commands.centralscenev3.CentralSceneNotification c
 				btnVal = "${actionType} held"
 				break
 			case {it >=3 && it <= 6}:
-				scene.value = ((cmd.keyAttributes-1) * 2) - (cmd.sceneNumber == 1 ? 1 : 0)
+				scene.value = (cmd.keyAttributes * 2) - (cmd.sceneNumber + 1)
 				btnVal = "${actionType} ${cmd.keyAttributes - 1}x"
 				break
 			default:
@@ -724,20 +745,21 @@ List<Map> getConfigParams() {
 		autoOffIntervalParam,
 		autoOnEnabledParam,
 		autoOnIntervalParam,
-		// associationReportsParam,
 		powerFailureRecoveryParam,
 		rampRateParam,
 		zwaveRampRateParam,
-		holdRampRateParam,
 		minimumBrightnessParam,
 		maximumBrightnessParam,
-		customBrightnessParam,
 		doubleTapUp12Param,
 		doubleTapUp14Param,
 		sceneControlParam,
 		relayControlParam,
+		relayDimmingParam,
 		relayBehaviorParam,
-		nightLightParam
+		holdRampRateParam,
+		customBrightnessParam,
+		nightLightParam,
+		associationReportsParam
 	]
 }
 
@@ -765,9 +787,9 @@ Map getAutoOnIntervalParam() {
 	return getParam(6, "Auto Turn-On Timer", 4, 0, autoOnOffIntervalOptions)
 }
 
-// Map getAssociationReportsParam() {
-	// return getParam(7, "Association Settings", 1, 1, associationReportsOptions)
-// }
+Map getAssociationReportsParam() {
+	return getParam(7, "Send Status Repot to Associations on", 1, 15, associationReportsOptions)
+}
 
 Map getPowerFailureRecoveryParam() {
 	return getParam(8, "Behavior After Power Outage", 1, 2, powerFailureRecoveryOptions)
@@ -776,7 +798,7 @@ Map getPowerFailureRecoveryParam() {
 Map getRampRateParam() {
 	Map options = [0:"Instant On/Off"]
 	options += rampRateOptions
-	return getParam(9, "Ramp Rate", 1, 1, setDefaultOption(options, 1))
+	return getParam(9, "Ramp Rate to Full On/Off", 1, 1, setDefaultOption(options, 1))
 }
 
 Map getMinimumBrightnessParam() {
@@ -792,7 +814,7 @@ Map getDoubleTapUp12Param() {
 }
 
 Map getSceneControlParam() {
-	return getParam(13, "Scene Control", 1, 0, disabledEnabledOptions)
+	return getParam(13, "Scene Control Events", 1, 0, disabledEnabledOptions)
 }
 
 Map getDoubleTapUp14Param() {
@@ -804,21 +826,25 @@ Map getRelayControlParam() {
 }
 
 Map getHoldRampRateParam() {
-	return getParam(16, "Physical Dimming Speed - Duration from 0% to 100%", 1, 4, setDefaultOption(rampRateOptions, 4))
+	return getParam(16, "Physical Dimming Speed - From 0% to 100%", 1, 4, setDefaultOption(rampRateOptions, 4))
 }
 
 Map getZwaveRampRateParam() {
-	return getParam(17, "Z-Wave Ramp Rate", 1, 0, zwaveRampRateOptions)
+	return getParam(17, "Z-Wave Ramp Rate Control", 1, 0, zwaveRampRateOptions)
 }
 
 Map getCustomBrightnessParam() {
 	Map options = [0:"Last Brightness Level"]
 	options += brightnessOptions
-	return getParam(18, "Custom Brightness On", 1, 0, setDefaultOption(options, 0))
+	return getParam(18, "Custom Brightness when Turned On", 1, 0, setDefaultOption(options, 0))
+}
+
+Map getRelayDimmingParam() {
+	return getParam(20, "Smart Bulb Mode - Dimming Reporting", 1, 0, relayDimmingOptions)
 }
 
 Map getRelayBehaviorParam() {
-	return getParam(21, "Relay Behavior", 1, 0, relayBehaviorOptions)
+	return getParam(21, "Smart Bulb Mode - On/Off Reporting", 1, 0, relayBehaviorOptions)
 }
 
 Map getNightLightParam() {
@@ -829,7 +855,6 @@ Map getNightLightParam() {
 
 Map getParam(Integer num, String name, Integer size, Integer defaultVal, Map options) {
 	Integer val = safeToInt((settings ? settings["configParam${num}"] : null), defaultVal)
-
 	return [num: num, name: name, size: size, value: val, options: options]
 }
 
@@ -846,7 +871,7 @@ Map setDefaultOption(Map options, Integer defaultVal) {
 void sendEventIfNew(String name, value, boolean displayed=true, String type=null, String unit="", String desc=null) {
 	if (desc == null) desc = "${name} set to ${value}${unit}"
 
-	if (device.currentValue(name) != value) {
+	if (device.currentValue(name).toString() != value) {
 
 		if (name != "syncStatus") logTxt(desc)
 
@@ -859,7 +884,7 @@ void sendEventIfNew(String name, value, boolean displayed=true, String type=null
 		sendEvent(evt)
 	}
 	else {
-		if (name != "syncStatus") logDebug("${desc} [NOT CHANGED]")
+		if (name != "syncStatus") logDebug "${desc} [NOT CHANGED]"
 	}
 }
 

@@ -13,7 +13,7 @@
       "namespace": "jtp10181",
       "location": "https://github.com/jtp10181/Hubitat/raw/main/Drivers/zooz/zooz-zen27-s2-dimmer.groovy",
       "required": false,
-      "version": "3.1.0"
+      "version": "3.2.0"
     }
   ]
 }
