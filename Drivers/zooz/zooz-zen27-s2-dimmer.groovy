@@ -7,8 +7,9 @@
  *    3.0 (09/16/2020) - @krlaframboise / Zooz - https://github.com/krlaframboise/SmartThings/tree/master/devicetypes/zooz/
  *      - Initial Release
  *
- *    3.1.0 (12/10/2020) - @jtp10181
+ *    1.0.0 (12/10/2020) - @jtp10181
  *      - Ported from ST to HE
+ *      - Reset / synced version numbers
  *      - Added SupervisionGet Event
  *      - Fixed a few default designations to match zooz documentation
  *      - Fixed Up/Down Scene labels which were reporting in reverse
@@ -19,7 +20,7 @@
  *      - Moved storage of config variables to Data (in a Map)
  *      - Added command to flash the light from Hubitat example driver
  *
- *    3.2.0 (12/14/2020) - @jtp10181
+ *    1.1.0 (12/14/2020) - @jtp10181
  *      - Added Parameter 7 and 20
  *      - Corrected Fingerprint 
  *      - Cleaned up some parameter wording and ordering
