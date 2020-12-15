@@ -17,6 +17,14 @@
 			"version": "1.1.0"
 		},
 		{
+			"id": "80ef35be-9c68-4070-8aa1-be5b9c14da21",
+			"name": "Zooz ZEN22 Dimmer 4.0",
+			"namespace": "jtp10181",
+			"location": "https://github.com/jtp10181/Hubitat/raw/main/Drivers/zooz/zooz-zen22-dimmer.groovy",
+			"required": false,
+			"version": "1.1.0"
+		},
+		{
 			"id": "959116dc-e281-4a6e-bcec-1797c665bd2c",
 			"name": "Zooz ZEN26 S2 Switch 3.0",
 			"namespace": "jtp10181",
