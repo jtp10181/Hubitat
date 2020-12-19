@@ -26,6 +26,9 @@
  *      - Cleaned up some parameter wording and ordering
  *      - Reverted Up/Down fix per Zooz (except firmware 3.01 due to a bug)
  *
+ *    1.2.0 (12/18/2020) - @jtp10181
+ *      - Added Group3 Associations
+ *
  *  Copyright 2020 Zooz
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -82,6 +85,9 @@ CommandClassReport- class:0x9F, version:1
 	0x9F: 1		// Security S2
 ]
 
+@Field static final int maxAssocGroups = 3
+@Field static final int maxAssocNodes = 5
+
 @Field static Map paddlePaddleOrientationOptions = [0:"Up for On, Down for Off [DEFAULT]", 1:"Up for Off, Down for On", 2:"Up or Down for On/Off"]
 @Field static Map ledIndicatorOptions = [0:"LED On When Switch Off [DEFAULT]", 1:"LED On When Switch On", 2:"LED Always Off", 3:"LED Always On"]
 @Field static Map disabledEnabledOptions = [0:"Disabled [DEFAULT]", 1:"Enabled"]
@@ -125,7 +131,8 @@ metadata {
 		command "flash", [[name:"Flash Rate", type: "NUMBER"]]
 
 		attribute "syncStatus", "string"
-		attribute "assocDNIs", "string"
+		attribute "assocDNI2", "string"
+		attribute "assocDNI3", "string"
 
 		fingerprint mfr:"027A", prod:"A000", deviceId:"A002", inClusters:"0x5E,0x6C,0x55,0x9F", deviceJoinName:"Zooz ZEN27 S2 Dimmer"
 	}
@@ -137,21 +144,14 @@ metadata {
 			}
 		}
 
-		// input "assocInstructions", "enum",
-			// title: "Device Associations - Info",
-			// description: "Associations are an advance feature that allow you to establish direct communication between Z-Wave devices.  To make this device control another Z-Wave device, get that device's Device Network Id from the My Devices section of the IDE and enter the id below.  It supports up to 4 associations and you can use commas to separate the device network ids.",
-			// defaultValue: 0, options: [0:"NOTHING GOES HERE"],
-			// required: false
-
-		// input "assocDisclaimer", "enum",
-			// title: "Device Associations - WARNING",
-			// description: "If you add a device's Device Network ID to the list below and then remove that device from this hub, you MUST come back and remove it from the list below.  Failing to do this will substantially increase the number of z-wave messages being sent by this device and could affect the stability of your z-wave mesh.",
-			// defaultValue: 0, options: [0:"NOTHING GOES HERE"],
-			// required: false
-
-		input "assocDNIs", "string",
+		input "assocDNI2", "string",
 			title: "Device Associations - Group 2:",
-			description: "Associations are an advanced feature. Only use this if you know what you are doing. Supports up to 4 Hex Device IDs separated by commas. (Enter 0 to clear field in iOS mobile app)",
+			description: "Associations are an advanced feature, only use if you know what you are doing. Supports up to ${maxAssocNodes} Hex Device IDs separated by commas. (Can enter blank or 0 to clear accosiations)",
+			required: false
+
+		input "assocDNI3", "string",
+			title: "Device Associations - Group 3:",
+			description: "Associations are an advanced feature, only use if you know what you are doing. Supports up to ${maxAssocNodes} Hex Device IDs separated by commas. (Can enter blank or 0 to clear accosiations)",
 			required: false
 
 		//Logging options similar to other Hubitat drivers
@@ -168,9 +168,9 @@ void createEnumInput(String name, String title, Integer defaultVal, Map options)
 		options: options
 }
 
-String getAssocDNIsSetting() {
-	def val = settings?.assocDNIs
-	return ((val && (val.trim() != "0")) ? val : "") // new iOS app has no way of clearing string input so workaround is to have users enter 0.
+String getAssocDNIsSetting(grp) {
+	def val = settings?."assocDNI$grp"
+	return ((val && (val.trim() != "0")) ? val : "") // iOS app has no way of clearing string input so workaround is to have users enter 0.
 }
 
 def installed() {
@@ -319,24 +319,29 @@ private getAdjustedParamValue(Map param) {
 private getConfigureAssocsCmds() {
 	def cmds = []
 
-	if (!device.currentValue("assocDNIs")) {
-		sendEventIfNew("assocDNIs", "none", false)
-	}
+	for (int i = 2; i <= maxAssocGroups; i++) {
+		if (!device.currentValue("assocDNI$i")) {
+			sendEventIfNew("assocDNI$i", "none", false)
+		}
 
-	def settingNodeIds = assocDNIsSettingNodeIds
+		def settingNodeIds = getAssocDNIsSettingNodeIds(i)
 
-	def newNodeIds = settingNodeIds?.findAll { !(it in state.assocNodeIds) }
-	if (newNodeIds) {
-		cmds << associationSetCmd(2, newNodeIds)
-	}
+		//Need to remove first then add in case we are at limit
+		def oldNodeIds = state."assocNodes$i"?.findAll { !(it in settingNodeIds) }
+		if (oldNodeIds) {
+			logDebug "Removing Nodes: Group $i - $oldNodeIds"
+			cmds << associationRemoveCmd(i, oldNodeIds)
+		}
 
-	def oldNodeIds = state.assocNodeIds?.findAll { !(it in settingNodeIds) }
-	if (oldNodeIds) {
-		cmds << associationRemoveCmd(2, oldNodeIds)
-	}
+		def newNodeIds = settingNodeIds?.findAll { !(it in state."assocNodes$i") }
+		if (newNodeIds) {
+			logDebug "Adding Nodes: Group $i - $newNodeIds"
+			cmds << associationSetCmd(i, newNodeIds)
+		}
 
-	if (cmds || state.syncAll) {
-		cmds << associationGetCmd(2)
+		if (cmds || state.syncAll) {
+			cmds << associationGetCmd(i)
+		}
 	}
 
 	if (!state.group1Assoc || state.syncAll) {
@@ -351,14 +356,15 @@ private getConfigureAssocsCmds() {
 }
 
 
-private getAssocDNIsSettingNodeIds() {
-	def nodeIds = convertHexListToIntList(assocDNIsSetting?.split(","))
+private getAssocDNIsSettingNodeIds(grp) {
+	def dni = getAssocDNIsSetting(grp)
+	def nodeIds = convertHexListToIntList(dni?.split(","))
 
-	if (assocDNIsSetting && !nodeIds) {
-		log.warn "'${assocDNIsSetting}' is not a valid value for the 'Device Associations Network IDs' setting.  All z-wave devices have a 2 character Device Network Id and if you're entering more than 1, use commas to separate them."
+	if (dni && !nodeIds) {
+		log.warn "'${dni}' is not a valid value for the 'Device Associations Network IDs' setting.  All z-wave devices have a 2 character Device Network ID and if you're entering more than 1, use commas to separate them."
 	}
-	else if (nodeIds?.size() >  4) {
-		log.warn "The 'Device Associations Network IDs' setting contains more than 4 Ids so only the first 4 will be associated."
+	else if (nodeIds?.size() > maxAssocNodes) {
+		log.warn "The 'Device Associations Network IDs' setting contains more than ${maxAssocNodes} IDs so only the first ${maxAssocNodes} will be associated."
 	}
 
 	return nodeIds
@@ -575,18 +581,27 @@ void zwaveEvent(hubitat.zwave.commands.associationv2.AssociationReport cmd) {
 	updateSyncingStatus()
 	runIn(4, refreshSyncStatus)
 
-	if (cmd.groupingIdentifier == 1) {
+	def grp = cmd.groupingIdentifier
+
+	if (grp == 1) {
 		logDebug "Lifeline Association: ${cmd.nodeId}"
 
 		state.group1Assoc = (cmd.nodeId == [zwaveHubNodeId]) ? true : false
 	}
-	else if (cmd.groupingIdentifier == 2) {
-		logDebug "Group 2 Association: ${cmd.nodeId}"
+	else if (grp > 1 && grp <= maxAssocGroups) {
+		logDebug "Group $grp Association: ${cmd.nodeId}"
 
-		state.assocNodeIds = cmd.nodeId
+		if (cmd.nodeId.size() > 0) {
+			state["assocNodes$grp"] = cmd.nodeId
+		} else {
+			state.remove("assocNodes$grp".toString())
+		}
 
 		def dnis = convertIntListToHexList(cmd.nodeId)?.join(", ") ?: "none"
-		sendEventIfNew("assocDNIs", dnis, false)
+		sendEventIfNew("assocDNI$grp", dnis, false)
+	}
+	else {
+		logDebug "Unhandled Group: $cmd"
 	}
 }
 
