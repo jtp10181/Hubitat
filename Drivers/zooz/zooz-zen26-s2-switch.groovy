@@ -24,6 +24,14 @@
  *      - Added Group3 Associations
  *      - Added Fingerprint for ZEN23
  *
+ *    1.3.0 (12/22/2020) - @jtp10181
+ *      - Fixed some bugs with the groups associations commands
+ *      - Fixed so refresh will update firmware version now
+ *      - Saving model number in deviceModel for quick access
+ *      - Added code to remove params from list when not available for certain models
+ *      - Fixed comparison in SendEventIfNew to handle when value is a number
+ *      - Worked towards unifying the switch and dimmer code between models
+ *
  *  Copyright 2020 Zooz
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -71,6 +79,7 @@ import groovy.transform.Field
 @Field static Map autoOnOffIntervalOptions = [0:"Disabled [DEFAULT]", 1:"1 Minute", 2:"2 Minutes", 3:"3 Minutes", 4:"4 Minutes", 5:"5 Minutes", 6:"6 Minutes", 7:"7 Minutes", 8:"8 Minutes", 9:"9 Minutes", 10:"10 Minutes", 15:"15 Minutes", 20:"20 Minutes", 25:"25 Minutes", 30:"30 Minutes", 45:"45 Minutes", 60:"1 Hour", 120:"2 Hours", 180:"3 Hours", 240:"4 Hours", 300:"5 Hours", 360:"6 Hours", 420:"7 Hours", 480:"8 Hours", 540:"9 Hours", 600:"10 Hours", 720:"12 Hours", 1080:"18 Hours", 1440:"1 Day", 2880:"2 Days", 4320:"3 Days", 5760:"4 Days", 7200:"5 Days", 8640:"6 Days", 10080:"1 Week", 20160:"2 Weeks", 30240:"3 Weeks", 40320:"4 Weeks", 50400:"5 Weeks", 60480:"6 Weeks"]
 @Field static Map powerFailureRecoveryOptions = [2:"Restores Last Status [DEFAULT]", 0:"Forced to Off", 1:"Forced to On"]
 @Field static Map relayControlOptions = [1:"Enable Paddle and Z-Wave [DEFAULT]", 0:"Disable Physical Paddle Control", 2:"Disable Paddle and Z-Wave Control"]
+@Field static Map threeWaySwitchTypeOptions = [0:"Toggle On/Off Switch [DEFAULT]", 1:"Momentary Switch (ZAC99)"]
 @Field static Map relayBehaviorOptions = [0:"Reports Status & Changes LED Always [DEFAULT]", 1:"Doesn't Report Status or Change LED When Relay Control Is Disabled"]
 @Field static Map associationReportsOptions = [
 	0:"None", 1:"Physical Tap On ZEN Only", 2:"Physical Tap On Connected 3-Way Switch Only", 3:"Physical Tap On ZEN / 3-Way Switch",
@@ -100,9 +109,9 @@ metadata {
 
 		command "flash", [[name:"Flash Rate", type: "NUMBER"]]
 
-		attribute "syncStatus", "string"
 		attribute "assocDNI2", "string"
 		attribute "assocDNI3", "string"
+		attribute "syncStatus", "string"
 
 		fingerprint mfr:"027A", prod:"A000", deviceId:"A001", inClusters:"0x5E,0x6C,0x55,0x9F", deviceJoinName:"Zooz ZEN26 S2 Switch"
 	}
@@ -126,7 +135,7 @@ metadata {
 
 		//Logging options similar to other Hubitat drivers
 		input name: "debugEnable", type: "bool", title: "Enable Debug Logging?", defaultValue: true
-        input name: "txtEnable", type: "bool", title: "Enable Description Text logging", defaultValue: false
+		input name: "txtEnable", type: "bool", title: "Enable Description Text Logging?", defaultValue: false
 	}
 }
 
@@ -260,8 +269,8 @@ void clearVariables() {
 }
 
 void debugLogsOff(){
-    log.warn "debug logging disabled..."
-    device.updateSetting("debugEnable",[value:"false",type:"bool"])
+	log.warn "debug logging disabled..."
+	device.updateSetting("debugEnable",[value:"false",type:"bool"])
 }
 
 private getAdjustedParamValue(Map param) {
@@ -294,27 +303,29 @@ private getConfigureAssocsCmds() {
 			sendEventIfNew("assocDNI$i", "none", false)
 		}
 
+		def cmdsEach = []
 		def settingNodeIds = getAssocDNIsSettingNodeIds(i)
 
 		//Need to remove first then add in case we are at limit
 		def oldNodeIds = state."assocNodes$i"?.findAll { !(it in settingNodeIds) }
 		if (oldNodeIds) {
 			logDebug "Removing Nodes: Group $i - $oldNodeIds"
-			cmds << associationRemoveCmd(i, oldNodeIds)
+			cmdsEach << associationRemoveCmd(i, oldNodeIds)
 		}
 
 		def newNodeIds = settingNodeIds?.findAll { !(it in state."assocNodes$i") }
 		if (newNodeIds) {
 			logDebug "Adding Nodes: Group $i - $newNodeIds"
-			cmds << associationSetCmd(i, newNodeIds)
+			cmdsEach << associationSetCmd(i, newNodeIds)
 		}
 
-		if (cmds || state.syncAll) {
-			cmds << associationGetCmd(i)
+		if (cmdsEach || state.resyncAll) {
+			cmdsEach << associationGetCmd(i)
+			cmds += cmdsEach
 		}
 	}
 
-	if (!state.group1Assoc || state.syncAll) {
+	if (!state.group1Assoc || state.resyncAll) {
 		if (state.group1Assoc == false) {
 			logDebug "Adding missing lifeline association..."
 			cmds << associationSetCmd(1, [zwaveHubNodeId])
@@ -379,14 +390,14 @@ String flash(flashRate) {
 }
 
 String flashOn(){
-    if (!state.flashing) return
-    runInMillis((state.flashing).toInteger(), flashOff)
-	return switchBinarySetCmd(0xFF)
+	if (!state.flashing) return
+	runInMillis((state.flashing).toInteger(), flashOff)
+	return switchBinarySetCmd(null) //Use existing brightness
 }
 
 String flashOff(){
-    if (!state.flashing) return
-    runInMillis((state.flashing).toInteger(), flashOn)
+	if (!state.flashing) return
+	runInMillis((state.flashing).toInteger(), flashOn)
 	return switchBinarySetCmd(0x00)
 }
 
@@ -394,9 +405,9 @@ String flashOff(){
 def refresh() {
 	logDebug "refresh..."
 
-	versionGetCmd()
 	refreshSyncStatus()
 
+	sendCommands([versionGetCmd()])
 	sendCommands([switchBinaryGetCmd()])
 
 	return []
@@ -444,19 +455,19 @@ String configGetCmd(Map param) {
 
 //From: https://github.com/hubitat/HubitatPublic/blob/master/examples/drivers/genericZWaveCentralSceneDimmer.groovy
 String secureCmd(String cmd){
-    return zwaveSecureEncap(cmd)
+	return zwaveSecureEncap(cmd)
 }
 
 String secureCmd(hubitat.zwave.Command cmd){
-    return zwaveSecureEncap(cmd)
+	return zwaveSecureEncap(cmd)
 }
 
 def parse(String description) {
 	def cmd = zwave.parse(description, commandClassVersions)
+
 	if (cmd) {
 		zwaveEvent(cmd)
-	}
-	else {
+	} else {
 		log.warn "Unable to parse: $description"
 	}
 
@@ -489,11 +500,11 @@ String convertToLocalTimeString(dt) {
 
 void zwaveEvent(hubitat.zwave.commands.securityv1.SecurityMessageEncapsulation cmd) {
 	logTrace "${cmd}"
-    def encapsulatedCmd = cmd.encapsulatedCommand(commandClassVersions)
+	def encapsulatedCmd = cmd.encapsulatedCommand(commandClassVersions)
+	
 	if (encapsulatedCmd) {
 		zwaveEvent(encapsulatedCmd)
-	}
-	else {
+	} else {
 		log.warn "Unable to extract encapsulated cmd from $cmd"
 	}
 }
@@ -502,13 +513,14 @@ void zwaveEvent(hubitat.zwave.commands.securityv1.SecurityMessageEncapsulation c
 void zwaveEvent(hubitat.zwave.commands.supervisionv1.SupervisionGet cmd) {
 	logTrace "${cmd}"
 	def encapsulatedCmd = cmd.encapsulatedCommand(commandClassVersions)
+	
 	if (encapsulatedCmd) {
 		zwaveEvent(encapsulatedCmd)
-	}
-	else {
+	} else {
 		log.warn "Unable to extract encapsulated cmd from $cmd"
 	}
-    sendHubCommand(new hubitat.device.HubAction(secureCmd(zwave.supervisionV1.supervisionReport(sessionID: cmd.sessionID, reserved: 0, moreStatusUpdates: false, status: 0xFF, duration: 0)), hubitat.device.Protocol.ZWAVE))
+
+	sendHubCommand(new hubitat.device.HubAction(secureCmd(zwave.supervisionV1.supervisionReport(sessionID: cmd.sessionID, reserved: 0, moreStatusUpdates: false, status: 0xFF, duration: 0)), hubitat.device.Protocol.ZWAVE))
 }
 
 
@@ -564,6 +576,33 @@ void zwaveEvent(hubitat.zwave.commands.versionv3.VersionReport cmd) {
 	String fullVersion = "${cmd.firmware0Version}.${subVersion}"
 
 	device.updateDataValue("firmwareVersion", fullVersion)
+
+	//Stash the switch model in a state variable
+	def devTypeId = convertIntListToHexList([safeToInt(device.getDataValue("deviceType")),safeToInt(device.getDataValue("deviceId"))])
+
+	switch (devTypeId.join(".")) {
+		case "B111.1E1C":
+			state.deviceModel = "ZEN21"
+			break
+		case "B112.1F1C":
+			state.deviceModel = "ZEN22"
+			break
+		case "B111.251C":
+			state.deviceModel = "ZEN23"
+			break
+		case "B112.251C":
+			state.deviceModel = "ZEN24"
+			break
+		case "A000.A001":
+			state.deviceModel = "ZEN26"
+			break
+		case "A000.A002":
+			state.deviceModel = "ZEN27"
+			break
+		default:
+			state.deviceModel = "Unknown"
+			logDebug "Unknown Device: ${devTypeId}"
+	}
 }
 
 
@@ -581,7 +620,7 @@ void zwaveEvent(hubitat.zwave.commands.switchbinaryv1.SwitchBinaryReport cmd) {
 
 void sendSwitchEvents(rawVal, String type) {
 	String value = (rawVal ? "on" : "off")
-    String desc = "switch was turned ${value}"
+	String desc = "switch was turned ${value}"
 	sendEventIfNew("switch", value, true, type, "", desc)
 }
 
@@ -679,7 +718,7 @@ void setParamStoredValue(Integer paramNum, Integer value) {
 
 Map getParamStoredMap() {
 	Map configsMap = [:]
-	String configsStr = device.getDataValue("configVals")
+	String configsStr = device?.getDataValue("configVals")
 
 	if (configsStr) {
 		try {
@@ -694,7 +733,7 @@ Map getParamStoredMap() {
 }
 
 List<Map> getConfigParams() {
-	return [
+	def params = [
 		paddlePaddleOrientationParam,
 		ledIndicatorParam,
 		autoOffEnabledParam,
@@ -703,10 +742,20 @@ List<Map> getConfigParams() {
 		autoOnIntervalParam,
 		powerFailureRecoveryParam,
 		sceneControlParam,
+		threeWaySwitchTypeParam,
 		relayControlParam,
 		relayBehaviorParam,
 		associationReportsParam
 	]
+
+	if (state.deviceModel in ["ZEN23", "ZEN24"]) {
+		params.removeAll { it == ledIndicatorParam }
+	}
+	if (state.deviceModel in ["ZEN26", "ZEN27"]) {
+		params.removeAll { it == threeWaySwitchTypeParam }
+	}
+
+	return params
 }
 
 Map getPaddlePaddleOrientationParam() {
@@ -714,7 +763,7 @@ Map getPaddlePaddleOrientationParam() {
 }
 
 Map getLedIndicatorParam() {
-	return getParam(2, "LED Indicator (ZEN26)", 1, 0, ledIndicatorOptions)
+	return getParam(2, "LED Indicator", 1, 0, ledIndicatorOptions)
 }
 
 Map getAutoOffEnabledParam() {
@@ -742,12 +791,18 @@ Map getPowerFailureRecoveryParam() {
 }
 
 Map getSceneControlParam() {
-	//ZEN21=9, ZEN26=10
-	return getParam(10, "Scene Control Events", 1, 0, disabledEnabledOptions)
+	// ZEN26=10, Others=9
+	Integer num = (state.deviceModel == "ZEN26") ? 10 : 9
+	return getParam(num, "Scene Control Events", 1, 0, disabledEnabledOptions)
 }
 
 Map getRelayControlParam() {
 	return getParam(11, "Smart Bulb Mode - Relay Control", 1, 1, relayControlOptions)
+}
+
+// ZEN21/22/23/24 Only
+Map getThreeWaySwitchTypeParam() {
+	return getParam(12, "3-Way Switch Type", 1, 0, threeWaySwitchTypeOptions)
 }
 
 Map getRelayBehaviorParam() {
@@ -772,7 +827,7 @@ Map setDefaultOption(Map options, Integer defaultVal) {
 void sendEventIfNew(String name, value, boolean displayed=true, String type=null, String unit="", String desc=null) {
 	if (desc == null) desc = "${name} set to ${value}${unit}"
 
-	if (device.currentValue(name).toString() != value) {
+	if (device.currentValue(name).toString() != value.toString()) {
 
 		if (name != "syncStatus") logTxt(desc)
 

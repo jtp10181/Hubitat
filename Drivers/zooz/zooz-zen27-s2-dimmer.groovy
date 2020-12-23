@@ -29,6 +29,15 @@
  *    1.2.0 (12/18/2020) - @jtp10181
  *      - Added Group3 Associations
  *
+ *    1.3.0 (12/22/2020) - @jtp10181
+ *      - Fixed some bugs with the groups associations commands
+ *      - Fixed so refresh will update firmware version now
+ *      - Saving model number in deviceModel for quick access
+ *      - Added code to remove params from list when not available for certain models
+ *      - Fixed comparison in SendEventIfNew to handle when value is a number
+ *      - Worked towards unifying the switch and dimmer code between models
+ *      - Added Brightness Correction - to convert full range to set between min/max
+ *
  *  Copyright 2020 Zooz
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -98,6 +107,7 @@ CommandClassReport- class:0x9F, version:1
 @Field static Map doubleTapUp12Options = [0:"Full Brightness (100%) [DEFAULT]", 1:"Maximum Brightness Parameter"]
 @Field static Map doubleTapUp14Options = [0:"Full/Maximum Brightness [DEFAULT]", 1:"Disabled, Single Tap Last Brightness", 2:"Disabled, Single Tap Full/Maximum Brightness"]
 @Field static Map relayControlOptions = [1:"Enable Paddle and Z-Wave [DEFAULT]", 0:"Disable Physical Paddle Control", 2:"Disable Paddle and Z-Wave Control"]
+@Field static Map threeWaySwitchTypeOptions = [0:"Toggle On/Off Switch [DEFAULT]", 1:"Momentary Switch (ZAC99)"]
 @Field static Map relayDimmingOptions = [0:"Report Each Brightness Level for Physical Dimming When Relay Control is Disabled [DEFAULT]", 1:"Report Only Final Brightness Level for Physical Dimming Always"]
 @Field static Map relayBehaviorOptions = [0:"Reports Status & Changes LED Always [DEFAULT]", 1:"Doesn't Report Status or Change LED When Relay Control Is Disabled"]
 @Field static Map zwaveRampRateOptions = [0:"Match Physical Ramp Rate [DEFAULT]", 1:"Z-Wave Can Set Ramp Rate [RECOMMENDED]"]
@@ -130,9 +140,9 @@ metadata {
 
 		command "flash", [[name:"Flash Rate", type: "NUMBER"]]
 
-		attribute "syncStatus", "string"
 		attribute "assocDNI2", "string"
 		attribute "assocDNI3", "string"
+		attribute "syncStatus", "string"
 
 		fingerprint mfr:"027A", prod:"A000", deviceId:"A002", inClusters:"0x5E,0x6C,0x55,0x9F", deviceJoinName:"Zooz ZEN27 S2 Dimmer"
 	}
@@ -154,9 +164,14 @@ metadata {
 			description: "Associations are an advanced feature, only use if you know what you are doing. Supports up to ${maxAssocNodes} Hex Device IDs separated by commas. (Can enter blank or 0 to clear accosiations)",
 			required: false
 
+		input "levelCorrection", "bool",
+			title: "Brightness Correction:",
+			description: "Brightness level set on dimmer is converted to fall within the min/max range but shown with the full range of 1-100%",
+			required: false
+
 		//Logging options similar to other Hubitat drivers
 		input name: "debugEnable", type: "bool", title: "Enable Debug Logging?", defaultValue: true
-        input name: "txtEnable", type: "bool", title: "Enable Description Text logging", defaultValue: false
+		input name: "txtEnable", type: "bool", title: "Enable Description Text Logging?", defaultValue: false
 	}
 }
 
@@ -290,8 +305,8 @@ void clearVariables() {
 }
 
 void debugLogsOff(){
-    log.warn "debug logging disabled..."
-    device.updateSetting("debugEnable",[value:"false",type:"bool"])
+	log.warn "debug logging disabled..."
+	device.updateSetting("debugEnable",[value:"false",type:"bool"])
 }
 
 private getAdjustedParamValue(Map param) {
@@ -324,27 +339,29 @@ private getConfigureAssocsCmds() {
 			sendEventIfNew("assocDNI$i", "none", false)
 		}
 
+		def cmdsEach = []
 		def settingNodeIds = getAssocDNIsSettingNodeIds(i)
 
 		//Need to remove first then add in case we are at limit
 		def oldNodeIds = state."assocNodes$i"?.findAll { !(it in settingNodeIds) }
 		if (oldNodeIds) {
 			logDebug "Removing Nodes: Group $i - $oldNodeIds"
-			cmds << associationRemoveCmd(i, oldNodeIds)
+			cmdsEach << associationRemoveCmd(i, oldNodeIds)
 		}
 
 		def newNodeIds = settingNodeIds?.findAll { !(it in state."assocNodes$i") }
 		if (newNodeIds) {
 			logDebug "Adding Nodes: Group $i - $newNodeIds"
-			cmds << associationSetCmd(i, newNodeIds)
+			cmdsEach << associationSetCmd(i, newNodeIds)
 		}
 
-		if (cmds || state.syncAll) {
-			cmds << associationGetCmd(i)
+		if (cmdsEach || state.resyncAll) {
+			cmdsEach << associationGetCmd(i)
+			cmds += cmdsEach
 		}
 	}
 
-	if (!state.group1Assoc || state.syncAll) {
+	if (!state.group1Assoc || state.resyncAll) {
 		if (state.group1Assoc == false) {
 			logDebug "Adding missing lifeline association..."
 			cmds << associationSetCmd(1, [zwaveHubNodeId])
@@ -404,6 +421,8 @@ List<String> getSetLevelCmds(level, duration=null) {
 	if (level == null) {
 		level = device.currentValue("level")
 	}
+	
+	if (level)  level = convertLevel(level, true)
 
 	state.flashing = false
 	Integer levelVal = validateRange(level, 99, 0, 99)
@@ -426,14 +445,14 @@ String flash(flashRate) {
 }
 
 String flashOn(){
-    if (!state.flashing) return
-    runInMillis((state.flashing).toInteger(), flashOff)
-	return switchMultilevelSetCmd(0xFF, 0)
+	if (!state.flashing) return
+	runInMillis((state.flashing).toInteger(), flashOff)
+	return switchMultilevelSetCmd(null, 0) //Use existing brightness
 }
 
 String flashOff(){
-    if (!state.flashing) return
-    runInMillis((state.flashing).toInteger(), flashOn)
+	if (!state.flashing) return
+	runInMillis((state.flashing).toInteger(), flashOn)
 	return switchMultilevelSetCmd(0x00, 0)
 }
 
@@ -441,9 +460,9 @@ String flashOff(){
 def refresh() {
 	logDebug "refresh..."
 
-	versionGetCmd()
 	refreshSyncStatus()
 
+	sendCommands([versionGetCmd()])
 	sendCommands([switchMultilevelGetCmd()])
 
 	return []
@@ -491,19 +510,19 @@ String configGetCmd(Map param) {
 
 //From: https://github.com/hubitat/HubitatPublic/blob/master/examples/drivers/genericZWaveCentralSceneDimmer.groovy
 String secureCmd(String cmd){
-    return zwaveSecureEncap(cmd)
+	return zwaveSecureEncap(cmd)
 }
 
 String secureCmd(hubitat.zwave.Command cmd){
-    return zwaveSecureEncap(cmd)
+	return zwaveSecureEncap(cmd)
 }
 
 def parse(String description) {
 	def cmd = zwave.parse(description, commandClassVersions)
+
 	if (cmd) {
 		zwaveEvent(cmd)
-	}
-	else {
+	} else {
 		log.warn "Unable to parse: $description"
 	}
 
@@ -536,11 +555,11 @@ String convertToLocalTimeString(dt) {
 
 void zwaveEvent(hubitat.zwave.commands.securityv1.SecurityMessageEncapsulation cmd) {
 	logTrace "${cmd}"
-    def encapsulatedCmd = cmd.encapsulatedCommand(commandClassVersions)
+	def encapsulatedCmd = cmd.encapsulatedCommand(commandClassVersions)
+	
 	if (encapsulatedCmd) {
 		zwaveEvent(encapsulatedCmd)
-	}
-	else {
+	} else {
 		log.warn "Unable to extract encapsulated cmd from $cmd"
 	}
 }
@@ -549,13 +568,14 @@ void zwaveEvent(hubitat.zwave.commands.securityv1.SecurityMessageEncapsulation c
 void zwaveEvent(hubitat.zwave.commands.supervisionv1.SupervisionGet cmd) {
 	logTrace "${cmd}"
 	def encapsulatedCmd = cmd.encapsulatedCommand(commandClassVersions)
+	
 	if (encapsulatedCmd) {
 		zwaveEvent(encapsulatedCmd)
-	}
-	else {
+	} else {
 		log.warn "Unable to extract encapsulated cmd from $cmd"
 	}
-    sendHubCommand(new hubitat.device.HubAction(secureCmd(zwave.supervisionV1.supervisionReport(sessionID: cmd.sessionID, reserved: 0, moreStatusUpdates: false, status: 0xFF, duration: 0)), hubitat.device.Protocol.ZWAVE))
+
+	sendHubCommand(new hubitat.device.HubAction(secureCmd(zwave.supervisionV1.supervisionReport(sessionID: cmd.sessionID, reserved: 0, moreStatusUpdates: false, status: 0xFF, duration: 0)), hubitat.device.Protocol.ZWAVE))
 }
 
 
@@ -611,6 +631,33 @@ void zwaveEvent(hubitat.zwave.commands.versionv3.VersionReport cmd) {
 	String fullVersion = "${cmd.firmware0Version}.${subVersion}"
 
 	device.updateDataValue("firmwareVersion", fullVersion)
+
+	//Stash the switch model in a state variable
+	def devTypeId = convertIntListToHexList([safeToInt(device.getDataValue("deviceType")),safeToInt(device.getDataValue("deviceId"))])
+
+	switch (devTypeId.join(".")) {
+		case "B111.1E1C":
+			state.deviceModel = "ZEN21"
+			break
+		case "B112.1F1C":
+			state.deviceModel = "ZEN22"
+			break
+		case "B111.251C":
+			state.deviceModel = "ZEN23"
+			break
+		case "B112.251C":
+			state.deviceModel = "ZEN24"
+			break
+		case "A000.A001":
+			state.deviceModel = "ZEN26"
+			break
+		case "A000.A002":
+			state.deviceModel = "ZEN27"
+			break
+		default:
+			state.deviceModel = "Unknown"
+			logDebug "Unknown Device: ${devTypeId}"
+	}
 }
 
 
@@ -628,13 +675,16 @@ void zwaveEvent(hubitat.zwave.commands.switchmultilevelv3.SwitchMultilevelReport
 
 void sendSwitchEvents(rawVal, String type) {
 	String value = (rawVal ? "on" : "off")
-    String desc = "switch was turned ${value}"
+	String desc = "switch was turned ${value}"
 	sendEventIfNew("switch", value, true, type, "", desc)
 
 	if (rawVal) {
-		value = (rawVal == 99 ? 100 : rawVal)
-		desc = "level was set to ${value}%"
-		sendEventIfNew("level", value, true, type, "%", desc)
+		Integer level = (rawVal == 99 ? 100 : rawVal)
+		level = convertLevel(level, false)
+
+		desc = "level was set to ${level}%"
+		if (levelCorrection) desc += " [actual: ${rawVal}]"
+		sendEventIfNew("level", level, true, type, "%", desc)
 	}
 }
 
@@ -645,11 +695,13 @@ void zwaveEvent(hubitat.zwave.commands.centralscenev3.CentralSceneNotification c
 
 		logTrace "${cmd}"
 		
-		//ZEN 27 Firmware 3.01 ONLY - need to flip the sceneNumber due to bug
-		if (device.getDataValue("firmwareVersion") == "3.01") {
+		// ZEN22/ZEN27 on certian firmware - need to flip the sceneNumber due to bug
+		if ((state.deviceModel == "ZEN27" && device.getDataValue("firmwareVersion") == "3.01") ||
+			(state.deviceModel == "ZEN22" && device.getDataValue("firmwareVersion") == "4.01"))
+		{
 			if (cmd.sceneNumber == 1) cmd.sceneNumber = 2
 			else if (cmd.sceneNumber == 2) cmd.sceneNumber = 1
-			logTrace "ZEN27[3.01] Fixed: ${cmd}"
+			logTrace "${state.deviceModel} Fix: ${cmd}"
 		}
 
 		Map scene = [name: "pushed", value: 1, descriptionText: "", type:"physical", isStateChange:true]
@@ -739,7 +791,7 @@ void setParamStoredValue(Integer paramNum, Integer value) {
 
 Map getParamStoredMap() {
 	Map configsMap = [:]
-	String configsStr = device.getDataValue("configVals")
+	String configsStr = device?.getDataValue("configVals")
 	
 	if (configsStr) {
 		try {
@@ -754,7 +806,7 @@ Map getParamStoredMap() {
 }
 
 List<Map> getConfigParams() {
-	return [
+	def params = [
 		paddlePaddleOrientationParam,
 		ledIndicatorParam,
 		autoOffEnabledParam,
@@ -774,9 +826,19 @@ List<Map> getConfigParams() {
 		relayBehaviorParam,
 		holdRampRateParam,
 		customBrightnessParam,
+		threeWaySwitchTypeParam,
 		nightLightParam,
 		associationReportsParam
 	]
+
+	if (state.deviceModel in ["ZEN23", "ZEN24"]) {
+		params.removeAll { it == ledIndicatorParam }
+	}
+	if (state.deviceModel in ["ZEN26", "ZEN27"]) {
+		params.removeAll { it == threeWaySwitchTypeParam }
+	}
+
+	return params
 }
 
 Map getPaddlePaddleOrientationParam() {
@@ -855,6 +917,11 @@ Map getCustomBrightnessParam() {
 	return getParam(18, "Custom Brightness when Turned On", 1, 0, setDefaultOption(options, 0))
 }
 
+// ZEN21/22/23/24 Only
+Map getThreeWaySwitchTypeParam() {
+	return getParam(19, "3-Way Switch Type", 1, 0, threeWaySwitchTypeOptions)
+}
+
 Map getRelayDimmingParam() {
 	return getParam(20, "Smart Bulb Mode - Dimming Reporting", 1, 0, relayDimmingOptions)
 }
@@ -887,7 +954,7 @@ Map setDefaultOption(Map options, Integer defaultVal) {
 void sendEventIfNew(String name, value, boolean displayed=true, String type=null, String unit="", String desc=null) {
 	if (desc == null) desc = "${name} set to ${value}${unit}"
 
-	if (device.currentValue(name).toString() != value) {
+	if (device.currentValue(name).toString() != value.toString()) {
 
 		if (name != "syncStatus") logTxt(desc)
 
@@ -926,6 +993,33 @@ private convertHexListToIntList(String[] hexList) {
 	return intList
 }
 
+
+Integer convertLevel(level, userLevel=false) {
+	if (levelCorrection) {
+		Integer brightmax = safeToInt(settings?."configParam${maximumBrightnessParam.num}", 99)
+		Integer brightmin = safeToInt(settings?."configParam${minimumBrightnessParam.num}", 1)
+		brightmax = (brightmax == 99) ? 100 : brightmax
+		brightmin = (brightmin == 1) ? 0 : brightmin
+
+		if (userLevel) {
+			//This converts what the user selected into a physical level within the min/max range
+			level = ((brightmax-brightmin) * (level/100)) + brightmin
+			state.levelActual = level
+			level = validateRange(Math.round(level), brightmax, brightmin, brightmax)
+		}
+		else {
+			//This takes the true physical level and converts to what we want to show to the user
+			if (Math.round(state.levelActual ?: 0) == level) level = state.levelActual
+			level = ((level - brightmin) / (brightmax - brightmin)) * 100
+			level = validateRange(Math.round(level), 100, 1, 100)
+		}
+	}
+	else if (state.levelActual) {
+		state.remove("levelActual")
+	}
+
+	return level
+}
 
 Integer validateRange(val, Integer defaultVal, Integer lowVal, Integer highVal) {
 	Integer intVal = safeToInt(val, defaultVal)
