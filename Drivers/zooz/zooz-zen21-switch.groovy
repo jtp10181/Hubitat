@@ -3,34 +3,60 @@
  *  	(Model: ZEN21 - MINIMUM FIRMWARE 3.04)
  *
  *  Changelog:
- *
- *    4.0 (09/16/2020) - @krlaframboise / Zooz - https://github.com/krlaframboise/SmartThings/tree/master/devicetypes/zooz/
- *      - Initial Release
- *
- *    1.1.0 (12/14/2020) - @jtp10181
- *      - Ported from ST to HE
- *      - Reset / synced version numbers
- *      - Added SupervisionGet Event
- *      - Fixed a few default designations to match zooz documentation
- *      - Changed scene events to user proper button numbers per Zooz docs
- *      - Upgraded command classes when possible
- *      - Changed debug and info logging to match Hubitat standards
- *      - Moved storage of config variables to Data (in a Map)
- *      - Added command to flash the light from Hubitat example driver
- *      - Added Parameter 7
- *      - Cleaned up some parameter wording and ordering
- *
- *    1.2.0 (12/18/2020) - @jtp10181
- *      - Added Group3 Associations
- *      - Added Fingerprint for ZEN23
- *
- *    1.3.0 (12/22/2020) - @jtp10181
- *      - Fixed some bugs with the groups associations commands
- *      - Fixed so refresh will update firmware version now
- *      - Saving model number in deviceModel for quick access
- *      - Added code to remove params from list when not available for certain models
- *      - Fixed comparison in SendEventIfNew to handle when value is a number
- *      - Worked towards unifying the switch and dimmer code between models
+
+## [1.3.1] - 2020-12-29 (@jtp10181)
+  ### Fixed
+  - Spelling mistakes
+  - Force version refresh if deviceModel is blank
+
+## [1.3.0] - 2020-12-22 (@jtp10181)
+  ### Added
+  - Saving model number in deviceModel for quick access
+  - Code to remove params when not available for certain models
+  - Brightness Correction - to convert full range to set between min/max (dimmers only)
+  ### Changed
+  -  Started to unify the switch and dimmer code between models
+  ### Fixed
+  - Bugs with the groups associations commands
+  - Refresh will actually update firmware version now
+  - Comparison in SendEventIfNew to handle when value is a number
+
+## [1.2.0] - 2020-12-18 (@jtp10181)
+  ### Added
+  - Added Group3 Associations
+  - Added Fingerprint for ZEN23/24 (for ZEN21/22 drivers)
+
+## [1.1.0] - 2020-12-14 (@jtp10181)
+*New release of ZEN21/22/26 drivers, all 1.0.0 changes included*
+  ### Added
+  - Parameter 7 for associations
+  - Parameter 20 for Smart Bulb Dimming (dimmers only)
+  ### Fixed
+  - Corrected Fingerprints for Hubitat
+  - Cleaned up some parameter wording and ordering
+  - Reverted Up/Down fix per Zooz (except firmware 3.01 due to a bug)
+
+## [1.0.0] - 2020-12-10 (@jtp10181)
+*ZEN27 Only, all changes rolled into other models as added*
+  ### Added
+  - SupervisionGet Event
+  - Parameter 17 ZWave Ramp Rate (dimmers only)
+  - Command to flash the light from Hubitat example driver
+  ### Changed
+  - Ported from ST to HE
+  - Reset / synced version numbers
+  - Upgraded command classes when possible
+  - Debug and info logging to match Hubitat standards
+  - Moved storage of config variables to Data (in a Map)
+  ### Fixed
+  - Some default designations to match zooz documentation
+  - Up/Down Scene labels which were reporting in reverse
+  - Scene events to user proper button numbers per Zooz docs
+
+## 3.0 / 4.0 - 2020-09-16 (@krlaframboise / Zooz)
+https://github.com/krlaframboise/SmartThings/tree/master/devicetypes/zooz/
+  - Initial Release (for SmartThings)
+
  *
  *  Copyright 2020 Zooz
  *
@@ -50,7 +76,7 @@
 
 import groovy.transform.Field
 
-/*
+/* ZEN21 (4.01)
 CommandClassReport- class:0x25, version:1
 CommandClassReport- class:0x55, version:2
 CommandClassReport- class:0x59, version:1
@@ -144,17 +170,17 @@ metadata {
 
 		input "assocDNI2", "string",
 			title: "Device Associations - Group 2:",
-			description: "Associations are an advanced feature, only use if you know what you are doing. Supports up to ${maxAssocNodes} Hex Device IDs separated by commas. (Can enter blank or 0 to clear accosiations)",
+			description: "Associations are an advanced feature, only use if you know what you are doing. Supports up to ${maxAssocNodes} Hex Device IDs separated by commas. (Can save as blank or 0 to clear)",
 			required: false
 
 		input "assocDNI3", "string",
 			title: "Device Associations - Group 3:",
-			description: "Associations are an advanced feature, only use if you know what you are doing. Supports up to ${maxAssocNodes} Hex Device IDs separated by commas. (Can enter blank or 0 to clear accosiations)",
+			description: "Associations are an advanced feature, only use if you know what you are doing. Supports up to ${maxAssocNodes} Hex Device IDs separated by commas. (Can save as blank or 0 to clear)",
 			required: false
 
 		//Logging options similar to other Hubitat drivers
-		input name: "debugEnable", type: "bool", title: "Enable Debug Logging?", defaultValue: true
 		input name: "txtEnable", type: "bool", title: "Enable Description Text Logging?", defaultValue: false
+		input name: "debugEnable", type: "bool", title: "Enable Debug Logging?", defaultValue: true
 	}
 }
 
@@ -197,7 +223,6 @@ def updated() {
 
 void initialize() {
 	def checkInterval = ((60 * 60 * 3) + (5 * 60))
-
 	Map checkIntervalEvt = [name: "checkInterval", value: checkInterval, displayed: false, data: [protocol: "zwave", hubHardwareId: device.hub.hardwareID, offlinePingable: "1"]]
 
 	if (!device.currentValue("checkInterval")) {
@@ -240,7 +265,7 @@ void executeConfigureCmds() {
 		cmds << switchBinaryGetCmd()
 	}
 
-	if (state.resyncAll || !device.getDataValue("firmwareVersion")) {
+	if (state.resyncAll || !state.deviceModel || !device.getDataValue("firmwareVersion")) {
 		cmds << versionGetCmd()
 	}
 
@@ -802,7 +827,7 @@ Map getAutoOnIntervalParam() {
 }
 
 Map getAssociationReportsParam() {
-	return getParam(7, "Send Status Repot to Associations on", 1, 15, associationReportsOptions)
+	return getParam(7, "Send Status Report to Associations on", 1, 15, associationReportsOptions)
 }
 
 Map getPowerFailureRecoveryParam() {
