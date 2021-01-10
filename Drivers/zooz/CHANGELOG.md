@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.3.2 - 2021-01-09 (@jtp10181) ZEN30 ONLY
+  ### Added
+  - Merged changes into ZEN30 ST driver and ported
+  - Param number to title for easy match up to manufacturer docs
+  ### Changed
+  - Minor text fixes
+  ### Removed
+  - Flash feature was broken, use the community app
+
 ## [1.3.1] - 2020-12-29 (@jtp10181)
   ### Fixed
   - Spelling mistakes
