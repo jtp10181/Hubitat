@@ -4,6 +4,17 @@
  *
  *  Changelog:
 
+## [1.4.0] - 2021-01-12 (@jtp10181)
+  ### Added
+  - Merged some enhancements from ZEN30 back to other drivers
+  - Added support for new ZEN 71/72/76/77
+  - Refresh will get a full parameter report
+  ### Changed
+  - Scene Reverse is setting instead of hard coding into driver
+  ### Fixed
+  - Was running configure twice at install
+  - Added initialize to the install function
+
 ## 1.3.2 - 2021-01-09 (@jtp10181)
   ### Added
   - Merged changes into ZEN30 ST driver and ported
@@ -157,10 +168,10 @@ metadata {
 		input "levelCorrection", "bool",
 			title: "Brightness Correction:",
 			description: "Brightness level set on dimmer is converted to fall within the min/max range but shown with the full range of 1-100%",
-			required: false
+			defaultValue: false
 
 		//Logging options similar to other Hubitat drivers
-		input name: "txtEnable", type: "bool", title: "Enable Description Text Logging?", defaultValue: true
+		input name: "txtEnable", type: "bool", title: "Enable Description Text Logging?", defaultValue: false
 		input name: "debugEnable", type: "bool", title: "Enable Debug Logging?", defaultValue: true
 	}
 }
@@ -223,14 +234,14 @@ def updated() {
 		state.lastUpdated = new Date().time
 
 		log.info "updated..."
-		log.warn "debug logging is: ${debugEnable == true}"
-		log.warn "description logging is: ${txtEnable == true}"
+		log.warn "Debug logging is: ${debugEnable == true}"
+		log.warn "Description logging is: ${txtEnable == true}"
 
 		if (debugEnable) runIn(1800, debugLogsOff, [overwrite: true])
 		
 		initialize()
 
-		runIn(5, executeConfigureCmds, [overwrite: true])
+		runIn(2, executeConfigureCmds, [overwrite: true])
 	}
 	return []
 }
@@ -258,17 +269,14 @@ def configure() {
 	sendEvent(name:"numberOfButtons", value:10, displayed:false)
 	childDevices[0]?.sendEvent(name:"numberOfButtons", value:5, displayed:false)
 
-	if (state.resyncAll == null) {
+	if (!pendingChanges || state.resyncAll == null) {
+		logDebug "Enabling Full Re-Sync"
 		state.resyncAll = true
-		runIn(2, executeRefreshCmds, [overwrite: true])
-		runIn(8, executeConfigureCmds, [overwrite: true])
 	}
-	else {
-		if (!pendingChanges) {
-			state.resyncAll = true
-		}
-		executeConfigureCmds()
-	}
+
+	runIn(2, executeRefreshCmds, [overwrite: true])
+	runIn(6, executeConfigureCmds, [overwrite: true])
+
 	return []
 }
 
@@ -287,11 +295,6 @@ void executeConfigureCmds() {
 		cmds << versionGetCmd()
 	}
 
-	// if ((state.resyncAll == true) || (state.group1Assoc != true)) {
-	// 	cmds << associationSetCmd(1, [zwaveHubNodeId])
-	// 	cmds << associationGetCmd(1)
-	// }
-
 	cmds += getConfigureAssocsCmds()
 	
 	configParams.each { param ->
@@ -308,6 +311,7 @@ void executeConfigureCmds() {
 	if (state.resyncAll) clearVariables()
 
 	state.resyncAll = false
+
 	if (cmds) {
 		sendCommands(delayBetween(cmds, 500))
 	}
@@ -375,6 +379,14 @@ void debugLogsOff(){
 private getConfigureAssocsCmds() {
 	def cmds = []
 
+	// if (!state.group1Assoc || state.resyncAll) {
+	// 	if (state.group1Assoc == false) {
+	// 		logDebug "Adding missing lifeline association..."
+	// 	}
+	// 	cmds << associationSetCmd(1, [zwaveHubNodeId])
+	// 	cmds << associationGetCmd(1)
+	// }
+
 	for (int i = 2; i <= maxAssocGroups; i++) {
 		if (!device.currentValue("assocDNI$i")) {
 			sendEventIfNew("assocDNI$i", "none", false)
@@ -402,14 +414,6 @@ private getConfigureAssocsCmds() {
 		}
 	}
 
-	// if (!state.group1Assoc || state.resyncAll) {
-	// 	if (state.group1Assoc == false) {
-	// 		logDebug "Adding missing lifeline association..."
-	// 		cmds << associationSetCmd(1, [zwaveHubNodeId])
-	// 	}
-	// 	cmds << associationGetCmd(1)
-	// }
-
 	return cmds
 }
 
@@ -419,10 +423,10 @@ private getAssocDNIsSettingNodeIds(grp) {
 	def nodeIds = convertHexListToIntList(dni?.split(","))
 
 	if (dni && !nodeIds) {
-		log.warn "'${dni}' is not a valid value for the 'Device Associations Network IDs' setting.  All z-wave devices have a 2 character Device Network ID and if you're entering more than 1, use commas to separate them."
+		log.warn "'${dni}' is not a valid value for the 'Device Associations - Group ${grp}' setting.  All z-wave devices have a 2 character Device Network ID and if you're entering more than 1, use commas to separate them."
 	}
 	else if (nodeIds?.size() > maxAssocNodes) {
-		log.warn "The 'Device Associations Network IDs' setting contains more than ${maxAssocNodes} IDs so only the first ${maxAssocNodes} will be associated."
+		log.warn "The 'Device Associations - Group ${grp}' setting contains more than ${maxAssocNodes} IDs so some (or all) may not get associated."
 	}
 
 	return nodeIds
@@ -474,10 +478,10 @@ List<String> getSetLevelCmds(level, duration=null) {
 
 def refresh() {
 	logDebug "refresh..."
-	executeRefreshCmds()
+	executeRefreshCmds(true)
 }
 
-void executeRefreshCmds() {
+void executeRefreshCmds(configs=false) {
 	refreshSyncStatus()
 	
 	List<String> cmds = [
@@ -485,6 +489,13 @@ void executeRefreshCmds() {
 		switchMultilevelGetCmd(),
 		switchBinaryGetCmd()
 	]
+
+	if (configs) {
+		configParams.each { param ->
+			cmds << configGetCmd(param)
+		}
+	}
+
 	sendCommands(delayBetween(cmds, 500))
 }
 
@@ -624,8 +635,8 @@ void zwaveEvent(hubitat.zwave.commands.multichannelv3.MultiChannelCmdEncap cmd) 
 
 
 void zwaveEvent(hubitat.zwave.commands.securityv1.SecurityMessageEncapsulation cmd) {
+	logTrace "${cmd}"
 	def encapsulatedCmd = cmd.encapsulatedCommand(commandClassVersions)
-	logTrace "${cmd} --ENCAP-- ${encapsulatedCmd}"
 	
 	if (encapsulatedCmd) {
 		zwaveEvent(encapsulatedCmd)
@@ -636,8 +647,8 @@ void zwaveEvent(hubitat.zwave.commands.securityv1.SecurityMessageEncapsulation c
 
 
 void zwaveEvent(hubitat.zwave.commands.supervisionv1.SupervisionGet cmd, endpoint=0) {
+	logTrace "${cmd}"
 	def encapsulatedCmd = cmd.encapsulatedCommand(commandClassVersions)
-	logTrace "${cmd} --ENCAP-- ${encapsulatedCmd}"
 	
 	if (encapsulatedCmd) {
 		zwaveEvent(encapsulatedCmd, endpoint)
@@ -673,7 +684,6 @@ void zwaveEvent(hubitat.zwave.commands.associationv2.AssociationReport cmd) {
 
 	if (grp == 1) {
 		logDebug "Lifeline Association: ${cmd.nodeId}"
-
 		state.group1Assoc = (cmd.nodeId == [zwaveHubNodeId]) ? true : false
 	}
 	else if (grp > 1 && grp <= maxAssocGroups) {
@@ -689,7 +699,7 @@ void zwaveEvent(hubitat.zwave.commands.associationv2.AssociationReport cmd) {
 		sendEventIfNew("assocDNI$grp", dnis, false)
 	}
 	else {
-		logDebug "Unhandled Association Group: $cmd"
+		logDebug "Unhandled Group: $cmd"
 	}
 }
 
@@ -824,9 +834,9 @@ Integer getPendingChanges() {
 		Integer paramVal = param.value
 		((paramVal != null) && (paramVal != getParamStoredValue(param.num)))
 	}
-	Integer pendingAssocs = getConfigureAssocsCmds()?.size() ?: 0
-	Integer group1Assoc = 0 //(state.group1Assoc != true) ? 1 : 0
-	return (configChanges + pendingAssocs + group1Assoc)
+	Integer pendingAssocs = Math.ceil(getConfigureAssocsCmds()?.size()/2) ?: 0
+	//Integer group1Assoc = (state.group1Assoc != true) ? 1 : 0
+	return (configChanges + pendingAssocs)
 }
 
 
