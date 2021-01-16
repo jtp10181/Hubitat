@@ -952,7 +952,7 @@ List<Map> getConfigParams() {
 }
 
 Map getPaddleOrientationParam() {
-	return getParam(32, "Paddle Orientation", 1, 0, paddleOrientationOptions)
+	return getParam(1, "Paddle Orientation", 1, 0, paddleOrientationOptions)
 }
 
 Map getLedIndicatorParam() {
