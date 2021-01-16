@@ -4,6 +4,14 @@
  *
  *  Changelog:
 
+## 1.4.1-beta - 2021-01-14 (@jtp10181)
+  ###Added
+  - Command button to remove invalid parameters
+  ###Changed
+  - General code cleanup
+  - Send events to child as parse so it can handle its own logging (ZEN30)
+  - Moved Refresh Params to its own command
+
 ## [1.4.0] - 2021-01-12 (@jtp10181)
   ### Added
   - Merged some enhancements from ZEN30 back to other drivers
@@ -15,7 +23,7 @@
   - Was running configure twice at install
   - Added initialize to the install function
 
-## 1.3.2 - 2021-01-09 (@jtp10181)
+## 1.3.2 - 2021-01-09 (@jtp10181) ZEN30 ONLY
   ### Added
   - Merged changes into ZEN30 ST driver and ported
   - Param number to title for easy match up to manufacturer docs
@@ -140,6 +148,7 @@ metadata {
 		capability "DoubleTapableButton"
 
 		command "childDevices", [[name:"Select One*", type: "ENUM", constraints: ["Create","Remove"] ]]
+		command "refreshParams"
 		//command "debugAssociationReports"
 		//command "debugFixLifeline"
 
@@ -225,7 +234,6 @@ String getAssocDNIsSetting(grp) {
 def installed() {
 	log.warn "installed..."
 	initialize()
-	return []
 }
 
 
@@ -243,15 +251,13 @@ def updated() {
 
 		runIn(2, executeConfigureCmds, [overwrite: true])
 	}
-	return []
 }
 
 void initialize() {
 	def checkInterval = ((60 * 60 * 3) + (5 * 60))
-	Map checkIntervalEvt = [name: "checkInterval", value: checkInterval, displayed: false, data: [protocol: "zwave", hubHardwareId: device.hub.hardwareID, offlinePingable: "1"]]
 
 	if (!device.currentValue("checkInterval")) {
-		sendEvent(checkIntervalEvt)
+		sendEvent(name: "checkInterval", value:checkInterval, displayed:false, data:[protocol: "zwave", hubHardwareId: device.hub.hardwareID, offlinePingable: "1"])
 	}
 
 	if (!device.currentValue("numberOfButtons")) {
@@ -275,9 +281,7 @@ def configure() {
 	}
 
 	runIn(2, executeRefreshCmds, [overwrite: true])
-	runIn(6, executeConfigureCmds, [overwrite: true])
-
-	return []
+	runIn(8, executeConfigureCmds, [overwrite: true])
 }
 
 
@@ -312,9 +316,7 @@ void executeConfigureCmds() {
 
 	state.resyncAll = false
 
-	if (cmds) {
-		sendCommands(delayBetween(cmds, 500))
-	}
+	if (cmds) sendCommands(cmds)
 }
 
 void childDevices(str) {
@@ -435,7 +437,7 @@ private getAssocDNIsSettingNodeIds(grp) {
 
 def ping() {
 	logDebug "ping..."
-	return [ switchMultilevelGetCmd() ]
+	return switchMultilevelGetCmd()
 }
 
 
@@ -462,7 +464,7 @@ def setLevel(level, duration) {
 	return getSetLevelCmds(level, duration)
 }
 
-List<String> getSetLevelCmds(level, duration=null) {
+String getSetLevelCmds(level, duration=null) {
 	if (level == null) {
 		level = device.currentValue("level")
 	}
@@ -472,45 +474,49 @@ List<String> getSetLevelCmds(level, duration=null) {
 	Integer levelVal = validateRange(level, 99, 0, 99)
 	Integer durationVal = validateRange(duration, dimmerRampRateParam.value, 0, 99)
 
-	return [ switchMultilevelSetCmd(levelVal, durationVal) ]
+	return switchMultilevelSetCmd(levelVal, durationVal)
 }
 
 
 def refresh() {
 	logDebug "refresh..."
-	executeRefreshCmds(true)
+	executeRefreshCmds()
 }
 
-void executeRefreshCmds(configs=false) {
+void executeRefreshCmds() {
 	refreshSyncStatus()
 	
-	List<String> cmds = [
-		versionGetCmd(),
-		switchMultilevelGetCmd(),
-		switchBinaryGetCmd()
-	]
+	List<String> cmds = []
+	cmds << versionGetCmd()
+	cmds << switchMultilevelGetCmd()
+	cmds << switchBinaryGetCmd()
 
-	if (configs) {
-		configParams.each { param ->
-			cmds << configGetCmd(param)
-		}
+	sendCommands(cmds)
+}
+
+void refreshParams() {
+	refreshSyncStatus()
+
+	List<String> cmds = []
+	configParams.each { param ->
+		cmds << configGetCmd(param)
 	}
 
-	sendCommands(delayBetween(cmds, 500))
+	if (cmds) sendCommands(cmds)
 }
 
 // Child Device Methods
 def componentOn(cd) {
 	logDebug "componentOn from ${cd.displayName}"
 	state.pendingRelay = true
-	sendCommands([ switchBinarySetCmd(0xFF) ])
+	sendCommands(switchBinarySetCmd(0xFF))
 }
 
 
 def componentOff(cd) {
 	logDebug "componentOff from ${cd.displayName}"
 	state.pendingRelay = true
-	sendCommands([ switchBinarySetCmd(0x00) ])
+	sendCommands(switchBinarySetCmd(0x00))
 }
 
 def componentRefresh(cd) {
@@ -519,10 +525,12 @@ def componentRefresh(cd) {
 }
 
 
-void sendCommands(List<String> cmds) {
-	if (cmds) {
-		sendHubCommand(new hubitat.device.HubMultiAction(cmds, hubitat.device.Protocol.ZWAVE))
-	}
+void sendCommands(List<String> cmds, Long delay=400) {
+	sendHubCommand(new hubitat.device.HubMultiAction(delayBetween(cmds, delay), hubitat.device.Protocol.ZWAVE))
+}
+
+void sendCommands(String cmd) {
+    sendHubCommand(new hubitat.device.HubAction(cmd, hubitat.device.Protocol.ZWAVE))
 }
 
 
@@ -542,12 +550,12 @@ String versionGetCmd() {
 	return secureCmd(zwave.versionV3.versionGet())
 }
 
-String switchBinaryGetCmd() {
-	return multiChannelCmdEncapCmd(zwave.switchBinaryV1.switchBinaryGet(), endpoints.switch)
-}
-
 String switchBinarySetCmd(Integer val) {
 	return multiChannelCmdEncapCmd(zwave.switchBinaryV1.switchBinarySet(switchValue: val), endpoints.switch)
+}
+
+String switchBinaryGetCmd() {
+	return multiChannelCmdEncapCmd(zwave.switchBinaryV1.switchBinaryGet(), endpoints.switch)
 }
 
 String switchMultilevelSetCmd(Integer value, Integer duration) {
@@ -595,7 +603,6 @@ def parse(String description) {
 	}
 
 	updateLastCheckIn()
-	return []
 }
 
 void updateLastCheckIn() {
@@ -621,22 +628,9 @@ String convertToLocalTimeString(dt) {
 }
 
 
-void zwaveEvent(hubitat.zwave.commands.multichannelv3.MultiChannelCmdEncap cmd) {
+void zwaveEvent(hubitat.zwave.commands.securityv1.SecurityMessageEncapsulation cmd) {
 	def encapsulatedCmd = cmd.encapsulatedCommand(commandClassVersions)
 	logTrace "${cmd} --ENCAP-- ${encapsulatedCmd}"
-	
-	if (encapsulatedCmd) {
-		zwaveEvent(encapsulatedCmd, cmd.sourceEndPoint)
-	}
-	else {
-		log.warn "Unable to extract encapsulated cmd from $cmd"
-	}
-}
-
-
-void zwaveEvent(hubitat.zwave.commands.securityv1.SecurityMessageEncapsulation cmd) {
-	logTrace "${cmd}"
-	def encapsulatedCmd = cmd.encapsulatedCommand(commandClassVersions)
 	
 	if (encapsulatedCmd) {
 		zwaveEvent(encapsulatedCmd)
@@ -645,10 +639,20 @@ void zwaveEvent(hubitat.zwave.commands.securityv1.SecurityMessageEncapsulation c
 	}
 }
 
+void zwaveEvent(hubitat.zwave.commands.multichannelv3.MultiChannelCmdEncap cmd) {
+	def encapsulatedCmd = cmd.encapsulatedCommand(commandClassVersions)
+	logTrace "${cmd} --ENCAP-- ${encapsulatedCmd}"
+	
+	if (encapsulatedCmd) {
+		zwaveEvent(encapsulatedCmd, cmd.sourceEndPoint as Integer)
+	} else {
+		log.warn "Unable to extract encapsulated cmd from $cmd"
+	}
+}
 
 void zwaveEvent(hubitat.zwave.commands.supervisionv1.SupervisionGet cmd, endpoint=0) {
-	logTrace "${cmd}"
 	def encapsulatedCmd = cmd.encapsulatedCommand(commandClassVersions)
+	logTrace "${cmd} --ENCAP-- ${encapsulatedCmd}"
 	
 	if (encapsulatedCmd) {
 		zwaveEvent(encapsulatedCmd, endpoint)
@@ -656,7 +660,7 @@ void zwaveEvent(hubitat.zwave.commands.supervisionv1.SupervisionGet cmd, endpoin
 		log.warn "Unable to extract encapsulated cmd from $cmd"
 	}
 
-	sendHubCommand(new hubitat.device.HubAction(secureCmd(zwave.supervisionV1.supervisionReport(sessionID: cmd.sessionID, reserved: 0, moreStatusUpdates: false, status: 0xFF, duration: 0)), hubitat.device.Protocol.ZWAVE))
+	sendCommands(multiChannelCmdEncapCmd(zwave.supervisionV1.supervisionReport(sessionID: cmd.sessionID, reserved: 0, moreStatusUpdates: false, status: 0xFF, duration: 0),endpoint))
 }
 
 
@@ -805,8 +809,8 @@ void zwaveEvent(hubitat.zwave.commands.centralscenev3.CentralSceneNotification c
 			}
 			else if (childDevices) {
 				def child = childDevices[0]
-				logTxt "RELAY: ${scene.descriptionText}"
-				child.sendEvent(scene)
+				scene.descriptionText = "${child.displayName}: ${scene.descriptionText}"
+				child.parse([scene])
 			}
 		}
 	}
@@ -907,7 +911,7 @@ List<Map> getConfigParams() {
 
 	//Remove params not supported with this firmware
 	BigDecimal firmware = firmwareVersion
-	params = params.findAll {firmwareSupportsParam(firmware, it)}
+	params.removeAll { !firmwareSupportsParam(firmware, it) }
 
 	return params
 }
@@ -1052,28 +1056,32 @@ Map setDefaultOption(Map options, Integer defaultVal) {
 
 void sendEventIfNew(String name, value, boolean displayed=true, String type=null, String unit="", String desc=null, Integer endpoint=0) {
 	if (desc == null) desc = "${name} set to ${value}${unit}"
-	String descLog = (endpoint ? "RELAY: " : "") + desc
+	String logEp = (endpoint ? "(RELAY) " : "")
 	def eventDev = (endpoint ? childDevices[0] : device)
 
 	if (!eventDev) {
 		log.error "No device for endpoint (${endpoint}). Use command button to create child devices."
 	}
 	else if (eventDev.currentValue(name).toString() != value.toString()) {
-
-		if (name != "syncStatus") logTxt(descLog)
-
 		Map evt = [name: name, value: value, descriptionText: desc, displayed: displayed]
 
 		if (type) evt.type = type
 		if (unit) evt.unit = unit
-		evt.isStateChange = true
 
-		eventDev.sendEvent(evt)
+		if (endpoint) {
+			evt.descriptionText = "${eventDev.displayName}: ${evt.descriptionText}"
+			eventDev.parse([evt])
+		}
+		else {
+			if (name != "syncStatus") logTxt(desc)
+			eventDev.sendEvent(evt)
+		}
 	}
 	else if (name != "syncStatus") {
-		logDebug "${descLog} [NOT CHANGED]"
+		logDebug "${logEp}${desc} [NOT CHANGED]"
 	}
 }
+
 
 boolean firmwareSupportsParam(BigDecimal firmware, Map param) {
 	return (((param.minVer == null) || (firmware >= param.minVer)) && ((param.maxVer == null) || (firmware <= param.maxVer)))

@@ -7,6 +7,14 @@
  *
  *  Changelog:
 
+## 1.4.1-beta - 2021-01-14 (@jtp10181)
+  ###Added
+  - Command button to remove invalid parameters
+  ###Changed
+  - General code cleanup
+  - Send events to child as parse so it can handle its own logging (ZEN30)
+  - Moved Refresh Params to its own command
+
 ## [1.4.0] - 2021-01-12 (@jtp10181)
   ### Added
   - Merged some enhancements from ZEN30 back to other drivers
@@ -184,6 +192,9 @@ metadata {
 		capability "HoldableButton"
 		capability "ReleasableButton"
 
+		command "hideInvalidParams"
+		command "refreshParams"
+
 		attribute "assocDNI2", "string"
 		attribute "assocDNI3", "string"
 		attribute "syncStatus", "string"
@@ -236,11 +247,30 @@ String getAssocDNIsSetting(grp) {
 	return ((val && (val.trim() != "0")) ? val : "") // iOS app has no way of clearing string input so workaround is to have users enter 0.
 }
 
+def hideInvalidParams() {
+	device.removeDataValue("configHide")
+	
+	List configDisabled = []
+	Map configsMap = getParamStoredMap()
+	configParams.each { param ->
+		if (!(configsMap.find { it.key.toInteger() == param.num } )) {
+			configDisabled << param.num
+		}
+	}
+	if (configDisabled) {
+		logDebug "Disabled Parameters: ${configDisabled}"
+		device.updateDataValue("configHide", configDisabled.inspect())
+	}
+	else {
+		logDebug "Disabled Parameters: NONE"
+
+	}
+}
+
 
 def installed() {
 	log.warn "installed..."
 	initialize()
-	return []
 }
 
 
@@ -258,15 +288,13 @@ def updated() {
 
 		runIn(2, executeConfigureCmds, [overwrite: true])
 	}
-	return []
 }
 
 void initialize() {
 	def checkInterval = ((60 * 60 * 3) + (5 * 60))
-	Map checkIntervalEvt = [name: "checkInterval", value: checkInterval, displayed: false, data: [protocol: "zwave", hubHardwareId: device.hub.hardwareID, offlinePingable: "1"]]
 
 	if (!device.currentValue("checkInterval")) {
-		sendEvent(checkIntervalEvt)
+		sendEvent(name: "checkInterval", value:checkInterval, displayed:false, data:[protocol: "zwave", hubHardwareId: device.hub.hardwareID, offlinePingable: "1"])
 	}
 
 	if (!device.currentValue("numberOfButtons")) {
@@ -287,9 +315,7 @@ def configure() {
 	}
 
 	runIn(2, executeRefreshCmds, [overwrite: true])
-	runIn(6, executeConfigureCmds, [overwrite: true])
-
-	return []
+	runIn(8, executeConfigureCmds, [overwrite: true])
 }
 
 
@@ -317,7 +343,7 @@ void executeConfigureCmds() {
 			logDebug "Changing ${param.name} (#${param.num}) from ${storedVal} to ${paramVal}"
 			cmds << configSetCmd(param, paramVal)
 			//ZEN7x models automatically report back and longer delays helps, otherwise request report
-			if (state.deviceModel ==~ /ZEN7\d/) cmds << "delay 200"
+			if (state.deviceModel ==~ /ZEN7\d/) cmds << "delay 250"
 			else cmds << configGetCmd(param)
 		}
 	}
@@ -326,9 +352,7 @@ void executeConfigureCmds() {
 
 	state.resyncAll = false
 
-	if (cmds) {
-		sendCommands(delayBetween(cmds, 500))
-	}
+	if (cmds) sendCommands(cmds)
 }
 
 void clearVariables() {
@@ -342,6 +366,7 @@ void clearVariables() {
 
 	//Clear Data from other Drivers
 	device.removeDataValue("configVals")
+	device.removeDataValue("configHide")
 	device.removeDataValue("firmwareVersion")
 	device.removeDataValue("protocolVersion")
 	device.removeDataValue("hardwareVersion")
@@ -371,13 +396,13 @@ private getAdjustedParamValue(Map param) {
 			paramVal = autoOffIntervalParam.value == 0 ? 0 : 1
 			break
 		case autoOffIntervalParam.num:
-			paramVal = autoOffIntervalParam.value ?: null
+			paramVal = autoOffIntervalParam.value ?: 60
 			break
 		case autoOnEnabledParam.num:
 			paramVal = autoOnIntervalParam.value == 0 ? 0 : 1
 			break
 		case autoOnIntervalParam.num:
-			paramVal = autoOnIntervalParam.value ?: null
+			paramVal = autoOnIntervalParam.value ?: 60
 			break
 		default:
 			paramVal = param.value
@@ -445,55 +470,54 @@ private getAssocDNIsSettingNodeIds(grp) {
 
 def ping() {
 	logDebug "ping..."
-	return [ switchBinaryGetCmd() ]
+	return switchBinaryGetCmd()
 }
 
 
 def on() {
 	logDebug "on..."
-	return delayBetween([
-		switchBinarySetCmd(0xFF),
-		switchBinaryGetCmd()
-	], 500)
+	return switchBinarySetCmd(0xFF)
 }
-
 
 def off() {
 	logDebug "off..."
-	return delayBetween([
-		switchBinarySetCmd(0x00),
-		switchBinaryGetCmd()
-	], 500)
+	return switchBinarySetCmd(0x00)
 }
 
 
 def refresh() {
 	logDebug "refresh..."
-	executeRefreshCmds(true)
+	executeRefreshCmds()
 }
 
-void executeRefreshCmds(configs=false) {
+void executeRefreshCmds() {
 	refreshSyncStatus()
 
-	List<String> cmds = [
-		versionGetCmd(),
-		switchBinaryGetCmd()
-	]	
+	List<String> cmds = []
+	cmds << versionGetCmd()
+	cmds << switchBinaryGetCmd()
 
-	if (configs) {
-		configParams.each { param ->
-			cmds << configGetCmd(param)
-		}
+	sendCommands(cmds)
+}
+
+void refreshParams() {
+	refreshSyncStatus()
+
+	List<String> cmds = []
+	configParams.each { param ->
+		cmds << configGetCmd(param)
 	}
 
-	sendCommands(delayBetween(cmds, 500))
+	if (cmds) sendCommands(cmds)
 }
 
 
-void sendCommands(List<String> cmds) {
-	if (cmds) {
-		sendHubCommand(new hubitat.device.HubMultiAction(cmds, hubitat.device.Protocol.ZWAVE))
-	}
+void sendCommands(List<String> cmds, Long delay=400) {
+	sendHubCommand(new hubitat.device.HubMultiAction(delayBetween(cmds, delay), hubitat.device.Protocol.ZWAVE))
+}
+
+void sendCommands(String cmd) {
+    sendHubCommand(new hubitat.device.HubAction(cmd, hubitat.device.Protocol.ZWAVE))
 }
 
 
@@ -549,7 +573,6 @@ def parse(String description) {
 	}
 
 	updateLastCheckIn()
-	return []
 }
 
 void updateLastCheckIn() {
@@ -576,8 +599,8 @@ String convertToLocalTimeString(dt) {
 
 
 void zwaveEvent(hubitat.zwave.commands.securityv1.SecurityMessageEncapsulation cmd) {
-	logTrace "${cmd}"
 	def encapsulatedCmd = cmd.encapsulatedCommand(commandClassVersions)
+	logTrace "${cmd} --ENCAP-- ${encapsulatedCmd}"
 	
 	if (encapsulatedCmd) {
 		zwaveEvent(encapsulatedCmd)
@@ -588,8 +611,8 @@ void zwaveEvent(hubitat.zwave.commands.securityv1.SecurityMessageEncapsulation c
 
 
 void zwaveEvent(hubitat.zwave.commands.supervisionv1.SupervisionGet cmd) {
-	logTrace "${cmd}"
 	def encapsulatedCmd = cmd.encapsulatedCommand(commandClassVersions)
+	logTrace "${cmd} --ENCAP-- ${encapsulatedCmd}"
 	
 	if (encapsulatedCmd) {
 		zwaveEvent(encapsulatedCmd)
@@ -597,7 +620,7 @@ void zwaveEvent(hubitat.zwave.commands.supervisionv1.SupervisionGet cmd) {
 		log.warn "Unable to extract encapsulated cmd from $cmd"
 	}
 
-	sendHubCommand(new hubitat.device.HubAction(secureCmd(zwave.supervisionV1.supervisionReport(sessionID: cmd.sessionID, reserved: 0, moreStatusUpdates: false, status: 0xFF, duration: 0)), hubitat.device.Protocol.ZWAVE))
+	sendCommands(secureCmd(zwave.supervisionV1.supervisionReport(sessionID: cmd.sessionID, reserved: 0, moreStatusUpdates: false, status: 0xFF, duration: 0)))
 }
 
 
@@ -830,6 +853,13 @@ List<Map> getConfigParams() {
 		associationReportsParam
 	]
 
+	//Remove Hidden Invalid Params
+	String configHide = device?.getDataValue("configHide")
+	if (configHide != null) {
+		List configDisabled = evaluate(configHide)
+		params.removeAll { configDisabled.contains(it.num) }
+	}	
+
 	// ZEN23/24 does not have a LED at all
 	if (state.deviceModel in ["ZEN23", "ZEN24"]) {
 		params.removeAll { it == ledIndicatorParam }
@@ -842,24 +872,28 @@ List<Map> getConfigParams() {
 
 	// Remove from all except ZEN7x
 	if (!(state.deviceModel ==~ /ZEN7\d/)) {
-		params.removeAll { it == ledColorParam }
-		params.removeAll { it == ledBrightnessParam }
-		params.removeAll { it == statusReportsParam }
-		params.removeAll { it == singleTapParam }
+ 		params.removeAll {
+ 			it == ledColorParam ||
+	 		it == ledBrightnessParam ||
+	 		it == statusReportsParam ||
+	 		it == singleTapParam
+	 	}
 	}
 	//Remove from Only ZEN7x
 	else {
-		params.removeAll { it == autoOffEnabledParam }
-		params.removeAll { it == autoOnEnabledParam }
-		params.removeAll { it == doubleTapFunctionParam }
-		params.removeAll { it == zwaveRampRateParam }
+		params.removeAll { 
+			it == autoOffEnabledParam ||
+			it == autoOnEnabledParam ||
+			it == doubleTapFunctionParam ||
+			it == zwaveRampRateParam
+		}
 	}
 
 	return params
 }
 
 Map getPaddleOrientationParam() {
-	return getParam(1, "Paddle Orientation", 1, 0, paddleOrientationOptions)
+	return getParam(32, "Paddle Orientation", 1, 0, paddleOrientationOptions)
 }
 
 Map getLedIndicatorParam() {
@@ -965,15 +999,12 @@ void sendEventIfNew(String name, value, boolean displayed=true, String type=null
 	if (desc == null) desc = "${name} set to ${value}${unit}"
 
 	if (device.currentValue(name).toString() != value.toString()) {
-
-		if (name != "syncStatus") logTxt(desc)
-
 		Map evt = [name: name, value: value, descriptionText: desc, displayed: displayed]
 
 		if (type) evt.type = type
 		if (unit) evt.unit = unit
-		evt.isStateChange = true
 
+		if (name != "syncStatus") logTxt(desc)
 		sendEvent(evt)
 	}
 	else if (name != "syncStatus") {
