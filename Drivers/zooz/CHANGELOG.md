@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.2] - 2021-01-31 (@jtp10181)
+  ### Added
+  - Command to change indicator color (can be used from Rule Machine!)
+  - New method to test the params and find the ones that dont actually work
+  - Command button to remove invalid parameters
+  ### Changed
+  - More cleanup and adding some comments
+  - Consolidated parameters related commands
+  - Changed ZEN30 from Multi Channel V3 to V4
+  - Send events to child as parse so it can handle its own logging (ZEN30)
+  - Moved Refresh Params to its own command
+  ### Fixed
+  - Scene reverse setting was reset to default after running configure
+
 ## [1.4.0] - 2021-01-12 (@jtp10181)
   ### Added
   - Merged some enhancements from ZEN30 back to other drivers
@@ -77,7 +91,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 https://github.com/krlaframboise/SmartThings/tree/master/devicetypes/zooz/
   - Initial Release (for SmartThings)
 
-[Unreleased]: https://github.com/jtp10181/Hubitat/compare/zooz-v1.4.0...HEAD
+[Unreleased]: https://github.com/jtp10181/Hubitat/compare/zooz-v1.4.2...HEAD
+[1.4.2]: https://github.com/jtp10181/Hubitat/compare/zooz-v1.4.0...zooz-v1.4.2
 [1.4.0]: https://github.com/jtp10181/Hubitat/compare/zooz-v1.3.1...zooz-v1.4.0
 [1.3.1]: https://github.com/jtp10181/Hubitat/compare/zooz-v1.3.0...zooz-v1.3.1
 [1.3.0]: https://github.com/jtp10181/Hubitat/compare/zooz-v1.2.0...zooz-v1.3.0
