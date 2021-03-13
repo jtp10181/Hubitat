@@ -4,6 +4,14 @@
  *
  *  Changelog:
 
+## [1.4.3] - 2021-03-12 (@jtp10181)
+  ### Added
+  - Uses new custom child driver by default, falls back to hubitat generic (ZEN30)
+  ### Changed
+  - Removed unnecessary capabilities
+  ### Fixed
+  - Status Syncing... was not always updating properly
+
 ## [1.4.2] - 2021-01-31 (@jtp10181)
   ### Added
   - Command to change indicator color (can be used from Rule Machine!)
@@ -141,11 +149,8 @@ metadata {
 		author: "Jeff Page / Kevin LaFramboise (@krlaframboise)",
 		importUrl: "https://raw.githubusercontent.com/jtp10181/hubitat/master/Drivers/zooz/zooz-zen30-double-switch.groovy"
 	) {
-		capability "Actuator"
-		capability "Sensor"
 		capability "Switch"
 		capability "SwitchLevel"
-		//capability "Light"  //Redundant with Switch
 		capability "Configuration"
 		capability "Refresh"
 		capability "HealthCheck"
@@ -272,7 +277,7 @@ void paramsHideInvalid() {
 		//Clean up configVals, remove hidden params
 		configDisabled.each { configsMap.remove(it) }
 		device.updateDataValue("configVals", configsMap.inspect())
-		runIn(1,refreshSyncStatus)
+		updateSyncingStatus()
 	}
 	else {
 		logDebug "Disabled Parameters: NONE"
@@ -289,7 +294,7 @@ void paramsClearHidden() {
 	state.remove("tmpLastTest")
 	state.remove("tmpFailedTest")
 	device.removeDataValue("configHide")
-	runIn(1,refreshSyncStatus)
+	updateSyncingStatus()
 
 	sendEvent(name: "WARNING", value: "COMPLETE - RELOAD THE PAGE!", isStateChange: true)
 }
@@ -320,7 +325,7 @@ def updated() {
 
 		initialize()
 
-		runIn(2, executeConfigureCmds, [overwrite: true])
+		runIn(1, executeConfigureCmds, [overwrite: true])
 	}
 }
 
@@ -351,7 +356,9 @@ def configure() {
 		state.resyncAll = true
 	}
 
+	updateSyncingStatus()
 	runIn(2, executeRefreshCmds, [overwrite: true])
+	runIn(5, updateSyncingStatus, [overwrite: true])
 	runIn(8, executeConfigureCmds, [overwrite: true])
 }
 
@@ -406,15 +413,21 @@ void childDevicesCreate() {
 	if (childDevices) return
 
 	logDebug "Creating Child Device for RELAY"
-	def child = addChildDevice(
-		"hubitat",
-		"Generic Component Central Scene Switch",
-		"${device.deviceNetworkId}-1",
-		[
-			isComponent: true,
-			name: "${device.name} RELAY"
-		]
-	)
+
+	String deviceType = "Child Central Scene Switch"
+	String deviceTypeBak = "Generic Component Central Scene Switch"
+	String dni = "${device.deviceNetworkId}-1"
+	Map properties = [isComponent: true, name: "${device.name} RELAY"]
+
+	def child
+	try {
+		child = addChildDevice(deviceType, dni, properties)
+	}
+	catch (e) {
+		log.warn "The '${deviceType}' driver failed, using '${deviceTypeBak}' instead"
+		child = addChildDevice("hubitat", deviceTypeBak, dni, properties)
+	}
+
 	child.sendEvent(name:"numberOfButtons", value:5, displayed:false)
 }
 
@@ -553,7 +566,7 @@ def refresh() {
 }
 
 void executeRefreshCmds() {
-	refreshSyncStatus()
+	updateSyncingStatus()
 
 	List<String> cmds = []
 	cmds << versionGetCmd()
@@ -564,7 +577,7 @@ void executeRefreshCmds() {
 }
 
 void paramsRefresh() {
-	refreshSyncStatus()
+	updateSyncingStatus()
 
 	List<String> cmds = []
 	configParams.each { param ->
@@ -910,7 +923,6 @@ void zwaveEvent(hubitat.zwave.commands.centralscenev3.CentralSceneNotification c
 			}
 			else if (childDevices) {
 				def child = childDevices[0]
-				scene.descriptionText = "${child.displayName}: ${scene.descriptionText}"
 				child.parse([scene])
 			}
 		}
@@ -1177,7 +1189,6 @@ void sendEventIfNew(String name, value, boolean displayed=true, String type=null
 		if (unit) evt.unit = unit
 
 		if (endpoint) {
-			evt.descriptionText = "${eventDev.displayName}: ${evt.descriptionText}"
 			eventDev.parse([evt])
 		}
 		else {
