@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.3] - 2021-04-21 (@jtp10181)
+  ### Added
+  - ZEN30 Uses new custom child driver by default, falls back to hubitat generic
+  - Command to change indicator on/off settings
+  - Support for ZEN73 and ZEN74
+  - Support for Push, Hold, and Release commands
+  ### Changed
+  - Removed unnecessary capabilities
+  - Renamed indicatorColor to setLED to match other Zooz drivers
+  ### Fixed
+  - Status Syncing... was not always updating properly
+
 ## [1.4.2] - 2021-01-31 (@jtp10181)
   ### Added
   - Command to change indicator color (can be used from Rule Machine!)
@@ -91,7 +103,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 https://github.com/krlaframboise/SmartThings/tree/master/devicetypes/zooz/
   - Initial Release (for SmartThings)
 
-[Unreleased]: https://github.com/jtp10181/Hubitat/compare/zooz-v1.4.2...HEAD
+[Unreleased]: https://github.com/jtp10181/Hubitat/compare/zooz-v1.4.3...HEAD
+[1.4.3]: https://github.com/jtp10181/Hubitat/compare/zooz-v1.4.2...zooz-v1.4.3
 [1.4.2]: https://github.com/jtp10181/Hubitat/compare/zooz-v1.4.0...zooz-v1.4.2
 [1.4.0]: https://github.com/jtp10181/Hubitat/compare/zooz-v1.3.1...zooz-v1.4.0
 [1.3.1]: https://github.com/jtp10181/Hubitat/compare/zooz-v1.3.0...zooz-v1.3.1

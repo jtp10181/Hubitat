@@ -4,6 +4,18 @@
  *
  *  Changelog:
 
+## [1.4.3] - 2021-04-21 (@jtp10181)
+  ### Added
+  - ZEN30 Uses new custom child driver by default, falls back to hubitat generic
+  - Command to change indicator on/off settings
+  - Support for ZEN73 and ZEN74
+  - Support for Push, Hold, and Release commands
+  ### Changed
+  - Removed unnecessary capabilities
+  - Renamed indicatorColor to setLED to match other Zooz drivers
+  ### Fixed
+  - Status Syncing... was not always updating properly
+
 ## [1.4.2] - 2021-01-31 (@jtp10181)
   ### Added
   - Command to change indicator color (can be used from Rule Machine!)
@@ -117,7 +129,7 @@ CommandClassReport- class:0x9F, version:1
 @Field static final int maxAssocGroups = 3
 @Field static final int maxAssocNodes = 5
 
-@Field static Map endpoints = ["dimmer": 0, "switch": 1]
+@Field static Map endpoints = ["dimmer":0, "switch":1]
 
 @Field static Map paddleControlOptions = [0:"Normal", 1:"Reverse", 2:"Toggle Mode"]
 @Field static Map ledModeOptions = [0:"LED On When Switch Off", 1:"LED On When Switch On", 2:"LED Always Off", 3:"LED Always On"]
@@ -142,27 +154,29 @@ metadata {
 		importUrl: "https://raw.githubusercontent.com/jtp10181/hubitat/master/Drivers/zooz/zooz-zen30-double-switch.groovy"
 	) {
 		capability "Actuator"
-		capability "Sensor"
 		capability "Switch"
 		capability "SwitchLevel"
-		//capability "Light"  //Redundant with Switch
 		capability "Configuration"
 		capability "Refresh"
-		capability "HealthCheck"
 		capability "PushableButton"
 		capability "HoldableButton"
 		capability "ReleasableButton"
-		capability "DoubleTapableButton"
+		//capability "DoubleTapableButton"
 
 		command "childDevices", [[name:"Select One*", type: "ENUM", constraints: ["Create","Remove"] ]]
-		command "paramCommands", [[name:"Select One*", type: "ENUM", constraints: ["Refresh","Test All","Hide Invalid","Clear Hidden"] ]]
-		command "indicatorColor", [[name:"Select LED*", type: "ENUM", constraints: ["Dimmer","Relay"] ], [name:"Select Color*", type: "ENUM", constraints: ledColorOptions ]]
+		command "paramCommands", [[name:"Select Command*", type: "ENUM", constraints: ["Refresh","Test All","Hide Invalid","Clear Hidden"] ]]
+		command "setLED", [
+			[name:"Select LED*", type: "ENUM", constraints: ["Dimmer","Relay"] ],
+			[name:"Select Color*", type: "ENUM", constraints: ledColorOptions] ]
+		command "setLEDMode", [
+			[name:"Select LED*", type: "ENUM", constraints: ["Dimmer","Relay"] ],
+			[name:"Select Mode*", description:"This Sets Preference (#2)*", type: "ENUM", constraints: ["Default","Reverse","Off","On"]] ]
 
 		attribute "assocDNI2", "string"
 		attribute "assocDNI3", "string"
 		attribute "syncStatus", "string"
 
-		fingerprint mfr:"027A", prod:"A000", deviceId:"A008", inClusters:"0x5E,0x6C,0x55,0x9F", deviceJoinName:"Zooz ZEN30 Double Switch"
+		fingerprint mfr:"027A", prod:"A000", deviceId:"A008", deviceJoinName:"Zooz ZEN30 Double Switch"
 	}
 
 	preferences {
@@ -205,6 +219,18 @@ String getAssocDNIsSetting(grp) {
 	return ((val && (val.trim() != "0")) ? val : "") 
 }
 
+void push(buttonId) { sendBasicButtonEvent(buttonId, "pushed") }
+void hold(buttonId) { sendBasicButtonEvent(buttonId, "held") }
+void release(buttonId) { sendBasicButtonEvent(buttonId, "released") }
+void doubleTap(buttonId) { sendBasicButtonEvent(buttonId, "doubleTapped") }
+
+void sendBasicButtonEvent(BigDecimal buttonId, String name) {
+	Map event = [name: name, value: buttonId, type:"digital", isStateChange:true]
+	event.descriptionText="button ${buttonId} ${name}"
+	logTxt "${event.descriptionText} (${event.type})"
+	sendEvent(event)
+}
+
 void paramCommands(str) {
 	switch (str) {
 		case "Refresh":
@@ -228,7 +254,7 @@ void paramCommands(str) {
 void paramsTestAll() {
 	Map configsMap = getParamStoredMap()
 	List lastTest = state.tmpLastTest.collect()
-	Integer key = configsMap.find { !lastTest || it.key > lastTest[0] } ?.key
+	Integer key = configsMap.find{ !lastTest || it.key > lastTest[0] }?.key
 	if (!key) {
 		logDebug "Finished Testing All Params"
 		runInMillis(1400, paramsHideInvalid)
@@ -272,7 +298,7 @@ void paramsHideInvalid() {
 		//Clean up configVals, remove hidden params
 		configDisabled.each { configsMap.remove(it) }
 		device.updateDataValue("configVals", configsMap.inspect())
-		runIn(1,refreshSyncStatus)
+		updateSyncingStatus()
 	}
 	else {
 		logDebug "Disabled Parameters: NONE"
@@ -289,15 +315,27 @@ void paramsClearHidden() {
 	state.remove("tmpLastTest")
 	state.remove("tmpFailedTest")
 	device.removeDataValue("configHide")
-	runIn(1,refreshSyncStatus)
+	updateSyncingStatus()
 
 	sendEvent(name: "WARNING", value: "COMPLETE - RELOAD THE PAGE!", isStateChange: true)
 }
 
-void indicatorColor(which, color) {
+void setLED(String which, String colorName) {
 	def param = (which =="Dimmer") ? dimmerLedColorParam : relayLedColorParam
-	def paramVal = ledColorOptions.find{it.value == color}?.key
-	logDebug "indicatorColor Value: ${which} ${color} : ${paramVal}"
+	Integer paramVal = ledColorOptions.find{ it.value?.toUpperCase() == colorName?.toUpperCase() }?.key
+	logDebug "Indicator Color Value (${which}) [${colorName} : ${paramVal}]"
+	//Set the Preference to match new setting, then send command to device
+	device.updateSetting("configParam${param.num}",[value:"${paramVal}", type:"enum"])
+	sendCommands(configSetGetCmd(param, paramVal))
+}
+
+void setLEDMode(String which, String modeName) {
+	def param = (which =="Dimmer") ? dimmerLedModeParam : relayLedModeParam
+	Map modeMap = ["default":0,"reverse":1,"off":2,"on":3]
+	Integer paramVal = modeMap[modeName?.toLowerCase()] ?: 0
+	logDebug "Indicator Value (${which}) [${modeName} : ${paramVal}]"
+	//Set the Preference to match new setting, then send command to device
+	device.updateSetting("configParam${param.num}",[value:"${paramVal}", type:"enum"])
 	sendCommands(configSetGetCmd(param, paramVal))
 }
 
@@ -320,17 +358,11 @@ def updated() {
 
 		initialize()
 
-		runIn(2, executeConfigureCmds, [overwrite: true])
+		runIn(1, executeConfigureCmds, [overwrite: true])
 	}
 }
 
 void initialize() {
-	def checkInterval = ((60 * 60 * 3) + (5 * 60))
-
-	if (!device.currentValue("checkInterval")) {
-		sendEvent(name: "checkInterval", value:checkInterval, displayed:false, data:[protocol: "zwave", hubHardwareId: device.hub.hardwareID, offlinePingable: "1"])
-	}
-
 	if (!device.currentValue("numberOfButtons")) {
 		sendEvent(name:"numberOfButtons", value:10, displayed:false)
 	}
@@ -351,7 +383,9 @@ def configure() {
 		state.resyncAll = true
 	}
 
+	updateSyncingStatus()
 	runIn(2, executeRefreshCmds, [overwrite: true])
+	runIn(5, updateSyncingStatus, [overwrite: true])
 	runIn(8, executeConfigureCmds, [overwrite: true])
 }
 
@@ -406,15 +440,21 @@ void childDevicesCreate() {
 	if (childDevices) return
 
 	logDebug "Creating Child Device for RELAY"
-	def child = addChildDevice(
-		"hubitat",
-		"Generic Component Central Scene Switch",
-		"${device.deviceNetworkId}-1",
-		[
-			isComponent: true,
-			name: "${device.name} RELAY"
-		]
-	)
+
+	String deviceType = "Child Central Scene Switch"
+	String deviceTypeBak = "Generic Component Central Scene Switch"
+	String dni = "${device.deviceNetworkId}-1"
+	Map properties = [isComponent: true, name: "${device.name} RELAY"]
+
+	def child
+	try {
+		child = addChildDevice(deviceType, dni, properties)
+	}
+	catch (e) {
+		log.warn "The '${deviceType}' driver failed, using '${deviceTypeBak}' instead"
+		child = addChildDevice("hubitat", deviceTypeBak, dni, properties)
+	}
+
 	child.sendEvent(name:"numberOfButtons", value:5, displayed:false)
 }
 
@@ -451,6 +491,7 @@ void debugLogsOff(){
 private getConfigureAssocsCmds() {
 	def cmds = []
 
+	//This is BROKEN in ZEN30 due to factory set MultiChannel Association
 	// if (!state.group1Assoc || state.resyncAll) {
 	// 	if (state.group1Assoc == false) {
 	// 		logDebug "Adding missing lifeline association..."
@@ -505,12 +546,6 @@ private getAssocDNIsSettingNodeIds(grp) {
 }
 
 
-def ping() {
-	logDebug "ping..."
-	return switchMultilevelGetCmd()
-}
-
-
 def on() {
 	logDebug "on..."
 	return getSetLevelCmds(null)
@@ -553,7 +588,7 @@ def refresh() {
 }
 
 void executeRefreshCmds() {
-	refreshSyncStatus()
+	updateSyncingStatus()
 
 	List<String> cmds = []
 	cmds << versionGetCmd()
@@ -564,7 +599,7 @@ void executeRefreshCmds() {
 }
 
 void paramsRefresh() {
-	refreshSyncStatus()
+	updateSyncingStatus()
 
 	List<String> cmds = []
 	configParams.each { param ->
@@ -580,7 +615,6 @@ def componentOn(cd) {
 	state.pendingRelay = true
 	sendCommands(switchBinarySetCmd(0xFF))
 }
-
 
 def componentOff(cd) {
 	logDebug "componentOff from ${cd.displayName}"
@@ -910,7 +944,6 @@ void zwaveEvent(hubitat.zwave.commands.centralscenev3.CentralSceneNotification c
 			}
 			else if (childDevices) {
 				def child = childDevices[0]
-				scene.descriptionText = "${child.displayName}: ${scene.descriptionText}"
 				child.parse([scene])
 			}
 		}
@@ -1177,7 +1210,6 @@ void sendEventIfNew(String name, value, boolean displayed=true, String type=null
 		if (unit) evt.unit = unit
 
 		if (endpoint) {
-			evt.descriptionText = "${eventDev.displayName}: ${evt.descriptionText}"
 			eventDev.parse([evt])
 		}
 		else {
