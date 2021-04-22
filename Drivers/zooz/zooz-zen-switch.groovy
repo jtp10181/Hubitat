@@ -1,11 +1,22 @@
 /*
  *  Zooz ZEN On/Off Switches Universal
- *    - Model: ZEN21/23 - MINIMUM FIRMWARE 3.04
+ *    - Model: ZEN21, ZEN23 - MINIMUM FIRMWARE 3.04
  *    - Model: ZEN26 - MINIMUM FIRMWARE 2.03
- *    - Model: ZEN71
- *    - Model: ZEN76
+ *    - Model: ZEN71, ZEN73, ZEN76 - All Firmware
  *
  *  Changelog:
+
+## [1.4.3] - 2021-04-21 (@jtp10181)
+  ### Added
+  - ZEN30 Uses new custom child driver by default, falls back to hubitat generic
+  - Command to change indicator on/off settings
+  - Support for ZEN73 and ZEN74
+  - Support for Push, Hold, and Release commands
+  ### Changed
+  - Removed unnecessary capabilities
+  - Renamed indicatorColor to setLED to match other Zooz drivers
+  ### Fixed
+  - Status Syncing... was not always updating properly
 
 ## [1.4.2] - 2021-01-31 (@jtp10181)
   ### Added
@@ -159,8 +170,10 @@ CommandClassReport- class:0x9F, version:1
 @Field static final int maxAssocGroups = 3
 @Field static final int maxAssocNodes = 5
 
-@Field static Map deviceModelNames = ["B111:1E1C":"ZEN21", "B112:1F1C":"ZEN22", "B111:251C":"ZEN23", "B112:261C":"ZEN24", 
-	"A000:A001":"ZEN26", "A000:A002":"ZEN27", "7000:A001":"ZEN71", "7000:A002":"ZEN72", "7000:A006":"ZEN76", "7000:A007":"ZEN77"]
+@Field static Map deviceModelNames =
+	["B111:1E1C":"ZEN21", "B112:1F1C":"ZEN22", "B111:251C":"ZEN23", "B112:261C":"ZEN24",
+	"A000:A001":"ZEN26", "A000:A002":"ZEN27", "7000:A001":"ZEN71", "7000:A002":"ZEN72",
+	"7000:A003":"ZEN73", "7000:A004":"ZEN74", "7000:A006":"ZEN76", "7000:A007":"ZEN77"]
 
 @Field static Map paddleControlOptions = [0:"Normal", 1:"Reverse", 2:"Toggle Mode"]
 @Field static Map ledModeOptions = [0:"LED On When Switch Off", 1:"LED On When Switch On", 2:"LED Always Off", 3:"LED Always On"]
@@ -188,29 +201,30 @@ metadata {
 		importUrl: "https://raw.githubusercontent.com/jtp10181/hubitat/master/Drivers/zooz/zooz-zen-switch.groovy"
 	) {
 		capability "Actuator"
-		capability "Sensor"
 		capability "Switch"
-		//capability "Light"  //Redundant with Switch
 		capability "Configuration"
 		capability "Refresh"
-		capability "HealthCheck"
 		capability "PushableButton"
 		capability "HoldableButton"
 		capability "ReleasableButton"
-		capability "DoubleTapableButton"
+		//capability "DoubleTapableButton"
 
-		command "paramCommands", [[name:"Select One*", type: "ENUM", constraints: ["Refresh","Test All","Hide Invalid","Clear Hidden"] ]]
-		command "indicatorColor", [[name:"Works ONLY on ZEN7x Series!*", type: "ENUM", constraints: ledColorOptions ]]
+		command "paramCommands", [[name:"Select Command*", type: "ENUM", constraints: ["Refresh","Test All","Hide Invalid","Clear Hidden"] ]]
+		command "setLED", [
+			[name:"Select Color*", description:"Works ONLY on ZEN7x Series!", type: "ENUM", constraints: ledColorOptions] ]
+		command "setLEDMode", [
+			[name:"Select Mode*", description:"This Sets Preference (#2)*", type: "ENUM", constraints: ["Default","Reverse","Off","On"]] ]
 
 		attribute "assocDNI2", "string"
 		attribute "assocDNI3", "string"
 		attribute "syncStatus", "string"
 
-		fingerprint mfr:"027A", prod:"B111", deviceId:"1E1C", inClusters:"0x5E,0x6C,0x55,0x9F", deviceJoinName:"Zooz ZEN21 Switch"
-		fingerprint mfr:"027A", prod:"B111", deviceId:"251C", inClusters:"0x5E,0x6C,0x55,0x9F", deviceJoinName:"Zooz ZEN23 Switch"
-		fingerprint mfr:"027A", prod:"A000", deviceId:"A001", inClusters:"0x5E,0x6C,0x55,0x9F", deviceJoinName:"Zooz ZEN26 S2 Switch"
-		fingerprint mfr:"027A", prod:"7000", deviceId:"A001", inClusters:"0x5E,0x6C,0x55,0x9F", deviceJoinName:"Zooz ZEN71 Switch"
-		fingerprint mfr:"027A", prod:"7000", deviceId:"A006", inClusters:"0x5E,0x6C,0x55,0x9F", deviceJoinName:"Zooz ZEN76 S2 Switch"
+		fingerprint mfr:"027A", prod:"B111", deviceId:"1E1C", deviceJoinName:"Zooz ZEN21 Switch"
+		fingerprint mfr:"027A", prod:"B111", deviceId:"251C", deviceJoinName:"Zooz ZEN23 Switch"
+		fingerprint mfr:"027A", prod:"A000", deviceId:"A001", deviceJoinName:"Zooz ZEN26 S2 Switch"
+		fingerprint mfr:"027A", prod:"7000", deviceId:"A001", deviceJoinName:"Zooz ZEN71 Switch"
+		fingerprint mfr:"027A", prod:"7000", deviceId:"A003", deviceJoinName:"Zooz ZEN73 Switch"
+		fingerprint mfr:"027A", prod:"7000", deviceId:"A006", deviceJoinName:"Zooz ZEN76 S2 Switch"
 	}
 
 	preferences {
@@ -255,6 +269,18 @@ String getAssocDNIsSetting(grp) {
 	return ((val && (val.trim() != "0")) ? val : "") 
 }
 
+void push(buttonId) { sendBasicButtonEvent(buttonId, "pushed") }
+void hold(buttonId) { sendBasicButtonEvent(buttonId, "held") }
+void release(buttonId) { sendBasicButtonEvent(buttonId, "released") }
+void doubleTap(buttonId) { sendBasicButtonEvent(buttonId, "doubleTapped") }
+
+void sendBasicButtonEvent(BigDecimal buttonId, String name) {
+	Map event = [name: name, value: buttonId, type:"digital", isStateChange:true]
+	event.descriptionText="button ${buttonId} ${name}"
+	logTxt "${event.descriptionText} (${event.type})"
+	sendEvent(event)
+}
+
 void paramCommands(str) {
 	switch (str) {
 		case "Refresh":
@@ -278,7 +304,7 @@ void paramCommands(str) {
 void paramsTestAll() {
 	Map configsMap = getParamStoredMap()
 	List lastTest = state.tmpLastTest.collect()
-	Integer key = configsMap.find { !lastTest || it.key > lastTest[0] } ?.key
+	Integer key = configsMap.find{ !lastTest || it.key > lastTest[0] }?.key
 	if (!key) {
 		logDebug "Finished Testing All Params"
 		runInMillis(1400, paramsHideInvalid)
@@ -322,7 +348,7 @@ void paramsHideInvalid() {
 		//Clean up configVals, remove hidden params
 		configDisabled.each { configsMap.remove(it) }
 		device.updateDataValue("configVals", configsMap.inspect())
-		runIn(1,refreshSyncStatus)
+		updateSyncingStatus()
 	}
 	else {
 		logDebug "Disabled Parameters: NONE"
@@ -339,20 +365,38 @@ void paramsClearHidden() {
 	state.remove("tmpLastTest")
 	state.remove("tmpFailedTest")
 	device.removeDataValue("configHide")
-	runIn(1,refreshSyncStatus)
+	updateSyncingStatus()
 
 	sendEvent(name: "WARNING", value: "COMPLETE - RELOAD THE PAGE!", isStateChange: true)
 }
 
-void indicatorColor(color) {
+void setLED(String colorName) {
 	if (!(state.deviceModel ==~ /ZEN7\d/)) {
 		log.warn "Indicator Color can only be changed on ZEN7x models"
 		return
 	}
 
-	def paramVal = ledColorOptions.find{it.value == color}?.key
-	logDebug "indicatorColor Value: ${color} : ${paramVal}"
-	sendCommands(configSetGetCmd(ledColorParam, paramVal))
+	def param = ledColorParam
+	Integer paramVal = ledColorOptions.find{ it.value?.toUpperCase() == colorName?.toUpperCase() }?.key
+	logDebug "Indicator Color Value [${colorName} : ${paramVal}]"
+	//Set the Preference to match new setting, then send command to device
+	device.updateSetting("configParam${param.num}",[value:"${paramVal}", type:"enum"])
+	sendCommands(configSetGetCmd(param, paramVal))
+}
+
+void setLEDMode(String modeName) {
+	if (deviceModelShort in [23,24]) {
+		log.warn "There is No Indicator on ZEN23/24 models"
+		return
+	}
+
+	def param = ledModeParam
+	Map modeMap = ["default":0,"reverse":1,"off":2,"on":3]
+	Integer paramVal = modeMap[modeName?.toLowerCase()] ?: 0
+	logDebug "Indicator Value [${modeName} : ${paramVal}]"
+	//Set the Preference to match new setting, then send command to device
+	device.updateSetting("configParam${param.num}",[value:"${paramVal}", type:"enum"])
+	sendCommands(configSetGetCmd(param, paramVal))
 }
 
 
@@ -374,17 +418,11 @@ def updated() {
 
 		initialize()
 
-		runIn(2, executeConfigureCmds, [overwrite: true])
+		runIn(1, executeConfigureCmds, [overwrite: true])
 	}
 }
 
 void initialize() {
-	def checkInterval = ((60 * 60 * 3) + (5 * 60))
-
-	if (!device.currentValue("checkInterval")) {
-		sendEvent(name: "checkInterval", value:checkInterval, displayed:false, data:[protocol: "zwave", hubHardwareId: device.hub.hardwareID, offlinePingable: "1"])
-	}
-
 	if (!device.currentValue("numberOfButtons")) {
 		sendEvent(name:"numberOfButtons", value:10, displayed:false)
 	}
@@ -402,7 +440,9 @@ def configure() {
 		state.resyncAll = true
 	}
 
+	updateSyncingStatus()
 	runIn(2, executeRefreshCmds, [overwrite: true])
+	runIn(5, updateSyncingStatus, [overwrite: true])
 	runIn(8, executeConfigureCmds, [overwrite: true])
 }
 
@@ -417,7 +457,7 @@ void executeConfigureCmds() {
 		cmds << switchBinaryGetCmd()
 	}
 
-	if (state.resyncAll || !state.deviceModel || !firmwareVersion) {
+	if (state.resyncAll || !firmwareVersion || !state.deviceModel) {
 		cmds << versionGetCmd()
 	}
 
@@ -551,10 +591,8 @@ private getAssocDNIsSettingNodeIds(grp) {
 	return nodeIds
 }
 
-
-def ping() {
-	logDebug "ping..."
-	return switchBinaryGetCmd()
+private getDeviceModelShort() {
+	return safeToInt(state?.deviceModel.drop(3))
 }
 
 
@@ -575,7 +613,7 @@ def refresh() {
 }
 
 void executeRefreshCmds() {
-	refreshSyncStatus()
+	updateSyncingStatus()
 
 	List<String> cmds = []
 	cmds << versionGetCmd()
@@ -585,7 +623,7 @@ void executeRefreshCmds() {
 }
 
 void paramsRefresh() {
-	refreshSyncStatus()
+	updateSyncingStatus()
 
 	List<String> cmds = []
 	configParams.each { param ->
@@ -977,12 +1015,12 @@ List<Map> getConfigParams() {
 	}	
 
 	// ZEN23/24 does not have a LED at all
-	if (state.deviceModel in ["ZEN23", "ZEN24"]) {
+	if (deviceModelShort in [23,24]) {
 		params.removeAll { it == ledModeParam }
 	}
 
 	// Remove from all except ZEN21/22/23/24/71/72
-	if (!(state.deviceModel ==~ /ZEN\d[1234]/)) {
+	if (!(deviceModelShort in [21,22,23,24,71,72])) {
 		params.removeAll { it == threeWaySwitchTypeParam }
 	}
 
@@ -1013,7 +1051,9 @@ Map getPaddleControlParam() {
 }
 
 Map getLedModeParam() {
-	return getParam(2, "LED Indicator", 1, 0, ledModeOptions)
+	// ZEN73/74 have LED but it is hidden and defaulted to always off
+	Integer defaultVal = (deviceModelShort in [73,74]) ? 2 : 0
+	return getParam(2, "LED Indicator", 1, defaultVal, ledModeOptions)
 }
 
 Map getAutoOffEnabledParam() {
@@ -1049,21 +1089,21 @@ Map getPowerFailureParam() {
 }
 
 Map getSceneControlParam() {
-	// ZEN26/76=10, Other Switches=9, Dimmers=13
-	Integer num = (state.deviceModel in ["ZEN26", "ZEN76"]) ? 10 : 9
+	// ZEN26/73/76=10, Other Switches=9, Dimmers=13
+	Integer num = (deviceModelShort in [26,73,76]) ? 10 : 9
 	return getParam(num, "Scene Control Events", 1, 0, disabledEnabledOptions)
 }
 
 Map getLoadControlParam() {
-	// ZEN76=12, Other Switches=11, Dimmers=15
-	Integer num = (state.deviceModel in ["ZEN76"]) ? 12 : 11
+	// ZEN73/76=12, Other Switches=11, Dimmers=15
+	Integer num = (deviceModelShort in [73,76]) ? 12 : 11
 	return getParam(num, "Smart Bulb Mode - Load Control", 1, 1, loadControlOptions)
 }
 
 // ZEN21/22/23/24/71/72 Only
 Map getThreeWaySwitchTypeParam() {
-	// ZEN76 duplicate param number
-	Integer num = (state.deviceModel in ["ZEN76"]) ? null : 12
+	// ZEN73/76 duplicate param number and not used
+	Integer num = (deviceModelShort in [73,76]) ? null : 12
 	return getParam(num, "3-Way Switch Type", 1, 0, threeWaySwitchTypeOptions)
 }
 
@@ -1072,19 +1112,19 @@ Map getRelayBehaviorParam() {
 	return getParam(num, "Smart Bulb - On/Off when Physical Disabled", 1, 0, relayBehaviorOptions)
 }
 
-// ZEN71/72/76/77
+// ZEN7x Models
 Map getLedColorParam() {
 	Integer num = 14
 	return getParam(num, "LED Indicator Color", 1, 1, ledColorOptions)
 }
 
-// ZEN71/72/76/77
+// ZEN7x Models
 Map getLedBrightnessParam() {
 	Integer num = 15
 	return getParam(num, "LED Indicator Brightness", 1, 1, ledBrightnessOptions)
 }
 
-// ZEN71/76 -- HIDDEN, should always be set to 0
+// ZEN71/73/76 -- HIDDEN, should always be set to 0
 Map getStatusReportsParam() {
 	return getParam(16, "All Reports Use SwitchBinary", 1, 0, disabledEnabledOptions)
 }
