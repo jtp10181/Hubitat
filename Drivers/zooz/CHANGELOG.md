@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.3] - 2021-04-21 (@jtp10181)
+  ### Added
+  - ZEN30 Uses new custom child driver by default, falls back to hubitat generic
+  - Command to change indicator on/off settings
+  - Support for ZEN73 and ZEN74
+  - Support for Push, Hold, and Release commands
+  ### Changed
+  - Removed unnecessary capabilities
+  - Renamed indicatorColor to setLED to match other Zooz drivers
+  ### Fixed
+  - Status Syncing... was not always updating properly
+
 ## [1.4.2] - 2021-01-31 (@jtp10181)
   ### Added
   - Command to change indicator color (can be used from Rule Machine!)
