@@ -1,6 +1,6 @@
 /*
  *  Zooz ZEN30 Double Switch
- *  	(Model: ZEN30 - All Firmware)
+ *    - Model: ZEN30 - Minimum Firmware 1.05
  *
  *  Changelog:
 
@@ -112,13 +112,13 @@ CommandClassReport- class:0x9F, version:1
 	0x59: 1,	// Association Grp Info (associationgrpinfov1)
 	0x5A: 1,	// Device Reset Locally	(deviceresetlocallyv1)
 	0x5B: 3,	// CentralScene (centralscenev3)
-	0x5E: 2,	// Zwaveplus Info (zwaveplusinfov2)
+	0x5E: 2,	// ZWave Plus Info (zwaveplusinfov2)
 	0x60: 4,	// MultiChannel (multichannelv4)
 	0x6C: 1,	// Supervision (supervisionv1)
 	0x70: 1,	// Configuration (configurationv1)
 	0x7A: 4,	// Firmware Update Md (firmwareupdatemdv4)
 	0x72: 2,	// Manufacturer Specific (manufacturerspecificv2)
-	0x73: 1,	// Powerlevel (powerlevelv1)
+	0x73: 1,	// Power Level (powerlevelv1)
 	0x85: 2,	// Association (associationv2)
 	0x86: 3,	// Version (versionv3)
 	0x8E: 3,	// Multi Channel Association (multichannelassociationv3)
@@ -135,6 +135,7 @@ CommandClassReport- class:0x9F, version:1
 @Field static Map ledModeOptions = [0:"LED On When Switch Off", 1:"LED On When Switch On", 2:"LED Always Off", 3:"LED Always On"]
 @Field static Map ledColorOptions = [0:"White", 1:"Blue", 2:"Green", 3:"Red"]
 @Field static Map ledBrightnessOptions = [0:"Bright (100%)", 1:"Medium (60%)", 2:"Low (30%)"]
+@Field static Map disabledEnabledOptions = [0:"Disabled", 1:"Enabled"]
 @Field static Map ledSceneControlOptions = [0:"LED Enabled", 1:"LED Disabled"]
 @Field static Map autoOnOffIntervalOptions = [0:"Disabled", 1:"1 Minute", 2:"2 Minutes", 3:"3 Minutes", 4:"4 Minutes", 5:"5 Minutes", 6:"6 Minutes", 7:"7 Minutes", 8:"8 Minutes", 9:"9 Minutes", 10:"10 Minutes", 15:"15 Minutes", 20:"20 Minutes", 25:"25 Minutes", 30:"30 Minutes", 45:"45 Minutes", 60:"1 Hour", 120:"2 Hours", 180:"3 Hours", 240:"4 Hours", 300:"5 Hours", 360:"6 Hours", 420:"7 Hours", 480:"8 Hours", 540:"9 Hours", 600:"10 Hours", 720:"12 Hours", 1080:"18 Hours", 1440:"1 Day", 2880:"2 Days", 4320:"3 Days", 5760:"4 Days", 7200:"5 Days", 8640:"6 Days", 10080:"1 Week", 20160:"2 Weeks", 30240:"3 Weeks", 40320:"4 Weeks", 50400:"5 Weeks", 60480:"6 Weeks"]
 @Field static Map powerFailureOptions = [0:"Dimmer Off / Relay Off", 1:"Dimmer Off / Relay On", 2:"Dimmer On / Relay Off", 3:"Dimmer Restored / Relay Restored", 4:"Dimmer Restored / Relay On", 5:"Dimmer Restored / Relay Off", 6:"Dimmer On / Relay Restored", 7:"Dimmer Off / Relay Restored", 8:"Dimmer On / Relay On"]
@@ -148,7 +149,7 @@ CommandClassReport- class:0x9F, version:1
 
 metadata {
 	definition (
-		name: "Zooz ZEN30 Double Switch",
+		name: "Zooz ZEN30 Double Switch BETA",
 		namespace: "jtp10181",
 		author: "Jeff Page / Kevin LaFramboise (@krlaframboise)",
 		importUrl: "https://raw.githubusercontent.com/jtp10181/hubitat/master/Drivers/zooz/zooz-zen30-double-switch.groovy"
@@ -354,11 +355,11 @@ def updated() {
 		log.warn "Debug logging is: ${debugEnable == true}"
 		log.warn "Description logging is: ${txtEnable == true}"
 
-		if (debugEnable) runIn(1800, debugLogsOff, [overwrite: true])
+		if (debugEnable) runIn(1800, debugLogsOff)
 
 		initialize()
 
-		runIn(1, executeConfigureCmds, [overwrite: true])
+		runIn(1, executeConfigureCmds)
 	}
 }
 
@@ -373,7 +374,7 @@ void initialize() {
 
 def configure() {
 	log.warn "configure..."
-	if (debugEnable) runIn(1800, debugLogsOff, [overwrite: true])
+	if (debugEnable) runIn(1800, debugLogsOff)
 
 	sendEvent(name:"numberOfButtons", value:10, displayed:false)
 	childDevices[0]?.sendEvent(name:"numberOfButtons", value:5, displayed:false)
@@ -384,9 +385,9 @@ def configure() {
 	}
 
 	updateSyncingStatus()
-	runIn(2, executeRefreshCmds, [overwrite: true])
-	runIn(5, updateSyncingStatus, [overwrite: true])
-	runIn(8, executeConfigureCmds, [overwrite: true])
+	runIn(2, executeRefreshCmds)
+	runIn(5, updateSyncingStatus)
+	runIn(8, executeConfigureCmds)
 }
 
 
@@ -630,6 +631,15 @@ def componentRefresh(cd) {
 
 //These send commands to the device either a list or a single command
 void sendCommands(List<String> cmds, Long delay=400) {
+	//Calculate supervisionCheck delay based on how many commands
+	Integer packetsCount = supervisedPackets?."${device.id}"?.size()
+	if (packetsCount > 0) {
+		Integer delayTotal = (cmds.size() * delay) + 2000
+		logDebug "Setting supervisionCheck to ${delayTotal}ms | ${packetsCount} | ${cmds.size()} | ${delay}"
+		runInMillis(delayTotal, supervisionCheck, [data:1])
+	}
+
+	//Send the commands
 	sendHubCommand(new hubitat.device.HubMultiAction(delayBetween(cmds, delay), hubitat.device.Protocol.ZWAVE))
 }
 
@@ -640,11 +650,11 @@ void sendCommands(String cmd) {
 
 //Consolidated zwave command functions so other code is easier to read
 String associationSetCmd(Integer group, List<Integer> nodes) {
-	return secureCmd(zwave.associationV2.associationSet(groupingIdentifier: group, nodeId: nodes))
+	return secureCmd(supervisionEncap(zwave.associationV2.associationSet(groupingIdentifier: group, nodeId: nodes)))
 }
 
 String associationRemoveCmd(Integer group, List<Integer> nodes) {
-	return secureCmd(zwave.associationV2.associationRemove(groupingIdentifier: group, nodeId: nodes))
+	return secureCmd(supervisionEncap(zwave.associationV2.associationRemove(groupingIdentifier: group, nodeId: nodes)))
 }
 
 String associationGetCmd(Integer group) {
@@ -655,24 +665,24 @@ String versionGetCmd() {
 	return secureCmd(zwave.versionV3.versionGet())
 }
 
-String switchBinarySetCmd(Integer val) {
-	return multiChannelCmdEncapCmd(zwave.switchBinaryV1.switchBinarySet(switchValue: val), endpoints.switch)
+String switchBinarySetCmd(Integer value) {
+	return secureCmd(supervisionEncap(zwave.switchBinaryV1.switchBinarySet(switchValue: value), endpoints.switch))
 }
 
 String switchBinaryGetCmd() {
-	return multiChannelCmdEncapCmd(zwave.switchBinaryV1.switchBinaryGet(), endpoints.switch)
+	return secureCmd(zwave.switchBinaryV1.switchBinaryGet(), endpoints.switch)
 }
 
 String switchMultilevelSetCmd(Integer value, Integer duration) {
-	return multiChannelCmdEncapCmd(zwave.switchMultilevelV3.switchMultilevelSet(dimmingDuration: duration, value: value), endpoints.dimmer)
+	return secureCmd(supervisionEncap(zwave.switchMultilevelV3.switchMultilevelSet(dimmingDuration: duration, value: value), endpoints.dimmer))
 }
 
 String switchMultilevelGetCmd() {
-	return multiChannelCmdEncapCmd(zwave.switchMultilevelV3.switchMultilevelGet(), endpoints.dimmer)
+	return secureCmd(zwave.switchMultilevelV3.switchMultilevelGet(), endpoints.dimmer)
 }
 
 String configSetCmd(Map param, Integer value) {
-	return secureCmd(zwave.configurationV1.configurationSet(parameterNumber: param.num, size: param.size, scaledConfigurationValue: value))
+	return secureCmd(supervisionEncap(zwave.configurationV1.configurationSet(parameterNumber: param.num, size: param.size, scaledConfigurationValue: value)))
 }
 
 String configGetCmd(Map param) {
@@ -686,24 +696,92 @@ List configSetGetCmd(Map param, Integer value) {
 	return cmds
 }
 
-//MultiChannel Encapsulate
-String multiChannelCmdEncapCmd(cmd, endpoint) {
-	//logTrace "multiChannelCmdEncapCmd: ${cmd} (ep ${endpoint})"
-	if (endpoint) {
-		cmd = zwave.multiChannelV4.multiChannelCmdEncap(destinationEndPoint:safeToInt(endpoint)).encapsulate(cmd)
+//Secure and MultiChannel Encapsulate
+String secureCmd(hubitat.zwave.Command cmd, ep=0) {
+	return secureCmd(cmd.format(), ep)
+}
+String secureCmd(String cmd, ep=0) {
+	return zwaveSecureEncap(multiChannelEncap(cmd, ep))
+}
+
+//MultiChannel Encapsulate if needed
+String multiChannelEncap(String cmd, ep) {
+	//logTrace "multiChannelEncap: ${cmd} (ep ${ep})"
+	if (ep > 0) {
+		cmd = zwave.multiChannelV4.multiChannelCmdEncap(destinationEndPoint:ep, sourceEndPoint:0, bitAddress:0, res01:0).encapsulate(cmd)
 	}
-	return secureCmd(cmd)
+	return cmd
 }
 
-//Secure Encapsulate commands
-//From: https://github.com/hubitat/HubitatPublic/blob/master/examples/drivers/genericZWaveCentralSceneDimmer.groovy
-String secureCmd(String cmd){
-	return zwaveSecureEncap(cmd)
+//====== Supervision Encapsulate START ======\\
+@Field static Map<String, Map<Short, String>> supervisedPackets = [:]
+@Field static Map<String, Short> sessionIDs = [:]
+
+String supervisionEncap(hubitat.zwave.Command cmd, ep=0) {
+	//logTrace "supervisionEncap: ${cmd} (ep ${ep})"
+
+	//Encap Supervised and save as String 
+    hubitat.zwave.commands.supervisionv1.SupervisionGet supervised = new hubitat.zwave.commands.supervisionv1.SupervisionGet()
+    supervised.sessionID = getSessionId()
+	String cmdStr = (supervised.encapsulate(cmd)).format()
+
+	//Encap that with MultiChannel
+	cmdStr = multiChannelEncap(cmdStr, ep)
+
+	logDebug "New Supervised Packet for Session: ${supervised.sessionID}"
+    if (!supervisedPackets."${device.id}") { supervisedPackets."${device.id}" = [:] }
+	supervisedPackets["${device.id}"][supervised.sessionID] = cmdStr
+
+	//Calculate supervisionCheck delay based on how many cached packets
+	Integer packetsCount = supervisedPackets?."${device.id}"?.size()
+	Integer delayTotal = (packetsCount * 500) + 2000
+	//logDebug "Setting supervisionCheck to ${delayTotal}ms | ${packetsCount}"
+	runInMillis(delayTotal, supervisionCheck, [data:1])
+
+	return cmdStr
 }
 
-String secureCmd(hubitat.zwave.Command cmd){
-	return zwaveSecureEncap(cmd)
+void zwaveEvent(hubitat.zwave.commands.supervisionv1.SupervisionReport cmd, ep=0 ) {
+	logTrace "${cmd}"
+    logDebug "Supervision Report for Session: ${cmd.sessionID}"
+
+    if (!supervisedPackets."${device.id}") { supervisedPackets."${device.id}" = [:] }
+    
+    if (supervisedPackets["${device.id}"][cmd.sessionID] != null) {
+    	supervisedPackets["${device.id}"].remove(cmd.sessionID)
+    }
 }
+
+Short getSessionId() {
+    Short sessId = (sessionIDs?."${device.id}" ?: 0) + 1
+    if (sessId > 63) { sessId = 1 }
+    sessionIDs["${device.id}"] = sessId
+
+    return sessId
+}
+
+void supervisionCheck(Integer num) {
+    if (!supervisedPackets."${device.id}") { supervisedPackets."${device.id}" = [:] }    
+    Integer packetsCount = supervisedPackets?."${device.id}"?.size()
+    logDebug "Supervision Check #${num} - Packet Count: ${packetsCount}"
+    
+    if (packetsCount > 0 ) {
+	    supervisedPackets["${device.id}"].each { k, v ->
+	        logDebug "Re-Sending Supervised Session: ${k}"
+	        sendCommands(secureCmd(v))
+	    }
+
+	   	if (num >= 4) { //Clear after this many attempts
+	        logDebug "Supervision MAX RETIES Reached"
+	        supervisedPackets["${device.id}"].clear()
+	    }
+	    else { //Otherwise keep trying
+	    	Integer delayTotal = (packetsCount * 500) + 2000
+			runInMillis(delayTotal, supervisionCheck, [data:num+1])
+	    }
+	}
+}
+//====== Supervision Encapsulate END ======\\
 
 
 def parse(String description) {
@@ -764,17 +842,17 @@ void zwaveEvent(hubitat.zwave.commands.multichannelv4.MultiChannelCmdEncap cmd) 
 	}
 }
 
-void zwaveEvent(hubitat.zwave.commands.supervisionv1.SupervisionGet cmd, endpoint=0) {
+void zwaveEvent(hubitat.zwave.commands.supervisionv1.SupervisionGet cmd, ep=0) {
 	def encapsulatedCmd = cmd.encapsulatedCommand(commandClassVersions)
 	logTrace "${cmd} --ENCAP-- ${encapsulatedCmd}"
 	
 	if (encapsulatedCmd) {
-		zwaveEvent(encapsulatedCmd, endpoint)
+		zwaveEvent(encapsulatedCmd, ep)
 	} else {
 		log.warn "Unable to extract encapsulated cmd from $cmd"
 	}
 
-	sendCommands(multiChannelCmdEncapCmd(zwave.supervisionV1.supervisionReport(sessionID: cmd.sessionID, reserved: 0, moreStatusUpdates: false, status: 0xFF, duration: 0),endpoint))
+	sendCommands(secureCmd(zwave.supervisionV1.supervisionReport(sessionID: cmd.sessionID, reserved: 0, moreStatusUpdates: false, status: 0xFF, duration: 0), ep))
 }
 
 
@@ -851,49 +929,49 @@ void zwaveEvent(hubitat.zwave.commands.versionv3.VersionReport cmd) {
 }
 
 
-void zwaveEvent(hubitat.zwave.commands.basicv1.BasicReport cmd, endpoint=0) {
-	logTrace "${cmd} (ep ${endpoint})"
-	sendSwitchEvents(cmd.value, "physical", endpoint)
+void zwaveEvent(hubitat.zwave.commands.basicv1.BasicReport cmd, ep=0) {
+	logTrace "${cmd} (ep ${ep})"
+	sendSwitchEvents(cmd.value, "physical", ep)
 }
 
 
-void zwaveEvent(hubitat.zwave.commands.switchbinaryv1.SwitchBinaryReport cmd, endpoint=0) {
-	logTrace "${cmd} (ep ${endpoint})"
+void zwaveEvent(hubitat.zwave.commands.switchbinaryv1.SwitchBinaryReport cmd, ep=0) {
+	logTrace "${cmd} (ep ${ep})"
 	
 	String type = (state.pendingRelay ? "digital" : "physical")
 	state.remove("pendingRelay")
 	
-	sendSwitchEvents(cmd.value, type, endpoint)
+	sendSwitchEvents(cmd.value, type, ep)
 }
 
 
-void zwaveEvent(hubitat.zwave.commands.switchmultilevelv3.SwitchMultilevelReport cmd, endpoint=0) {
-	logTrace "${cmd} (ep ${endpoint})"
-	sendSwitchEvents(cmd.value, "digital", endpoint)
+void zwaveEvent(hubitat.zwave.commands.switchmultilevelv3.SwitchMultilevelReport cmd, ep=0) {
+	logTrace "${cmd} (ep ${ep})"
+	sendSwitchEvents(cmd.value, "digital", ep)
 }
 
 
-void sendSwitchEvents(rawVal, String type, Integer endpoint) {
+void sendSwitchEvents(rawVal, String type, Integer ep) {
 	String value = (rawVal ? "on" : "off")
 	String desc = "switch was turned ${value} (${type})"
-	sendEventIfNew("switch", value, true, type, "", desc, endpoint)
+	sendEventIfNew("switch", value, true, type, "", desc, ep)
 
-	if (rawVal && endpoint == endpoints.dimmer) {
+	if (rawVal && ep == endpoints.dimmer) {
 		Integer level = (rawVal == 99 ? 100 : rawVal)
 		level = convertLevel(level, false)
 
 		desc = "level was set to ${level}% (${type})"
 		if (levelCorrection) desc += " [actual: ${rawVal}]"
-		sendEventIfNew("level", level, true, type, "%", desc, endpoint)
+		sendEventIfNew("level", level, true, type, "%", desc, ep)
 	}
 }
 
 
-void zwaveEvent(hubitat.zwave.commands.centralscenev3.CentralSceneNotification cmd, endpoint=0){
+void zwaveEvent(hubitat.zwave.commands.centralscenev3.CentralSceneNotification cmd, ep=0){
 	if (state.lastSequenceNumber != cmd.sequenceNumber) {
 		state.lastSequenceNumber = cmd.sequenceNumber
 
-		logTrace "${cmd} (ep ${endpoint})"
+		logTrace "${cmd} (ep ${ep})"
 
 		Map scene = [name: "pushed", value: cmd.sceneNumber, descriptionText: "", type:"physical", isStateChange:true]
 		String actionType
@@ -951,8 +1029,8 @@ void zwaveEvent(hubitat.zwave.commands.centralscenev3.CentralSceneNotification c
 }
 
 
-void zwaveEvent(hubitat.zwave.Command cmd, endpoint=0) {
-	logDebug "Unhandled zwaveEvent: $cmd (ep ${endpoint})"
+void zwaveEvent(hubitat.zwave.Command cmd, ep=0) {
+	logDebug "Unhandled zwaveEvent: $cmd (ep ${ep})"
 }
 
 
@@ -1024,23 +1102,21 @@ List<Map> getConfigParams() {
 		relayAutoOnParam,
 
 		powerFailureParam,
-
 		rampRateParam,
-		zwaveRampRateParam,
-
-		dimmerMinimumBrightnessParam,
-		dimmerMaximumBrightnessParam,
-		dimmerDoubleTapBrightnessParam,
-		dimmerDoubleTapFunctionParam,
+		//zwaveRampRateParam, //Removed in firmware 1.05
+		minimumBrightnessParam,
+		maximumBrightnessParam,
+		doubleTapBrightnessParam,
+		doubleTapFunctionParam,
 
 		dimmerLoadControlParam,
 		relayLoadControlParam,
 		dimmerPhysicalDisabledBehaviorParam,
 		relayPhysicalDisabledBehaviorParam,
 
-		dimmerPaddleHeldRampRateParam,
-		dimmerCustomBrightnessParam,
-		dimmerNightModeBrightnessParam
+		holdRampRateParam,
+		customBrightnessParam,
+		nightLightParam
 	]
 
 	//Remove Hidden Invalid Params
@@ -1049,10 +1125,6 @@ List<Map> getConfigParams() {
 		List configDisabled = evaluate(configHide)
 		params.removeAll { configDisabled.contains(it.num) }
 	}	
-
-	//Remove params not supported with this firmware
-	BigDecimal firmware = firmwareVersion
-	params.removeAll { !firmwareSupportsParam(firmware, it) }
 
 	return params
 }
@@ -1111,19 +1183,19 @@ Map getRampRateParam() {
 	return getParam(13, "Dimmer Ramp Rate to Full On/Off", 1, 1, options)
 }
 
-Map getDimmerMinimumBrightnessParam() {
+Map getMinimumBrightnessParam() {
 	return getParam(14, "Dimmer Minimum Brightness", 1, 1, brightnessOptions)
 }
 
-Map getDimmerMaximumBrightnessParam() {
+Map getMaximumBrightnessParam() {
 	return getParam(15, "Dimmer Maximum Brightness", 1, 99, brightnessOptions)
 }
 
-Map getDimmerDoubleTapBrightnessParam() {
+Map getDoubleTapBrightnessParam() {
 	return getParam(17, "Dimmer Double Tap Up Brightness", 1, 0, doubleTapBrightnessOptions)
 }
 
-Map getDimmerDoubleTapFunctionParam() {
+Map getDoubleTapFunctionParam() {
 	return getParam(18, "Dimmer Double Tap Up Function", 1, 0, doubleTapFunctionOptions)
 }
 
@@ -1135,47 +1207,43 @@ Map getRelayLoadControlParam() {
 	return getParam(20, "Smart Bulb Mode - Relay Load", 1, 1, loadControlOptions)
 }
 
-Map getDimmerPaddleHeldRampRateParam() {
-	return getParam(21, "Dimming Speed when Paddle is Held", 1, 4, rampRateOptions)
+Map getHoldRampRateParam() {
+	return getParam(21, "Dimming Speed when Paddle is Held", 1, 5, rampRateOptions)
 }
 
 // Removed in firmware v1.05
-Map getZwaveRampRateParam() {
-	return getParam(22, "Dimmer Z-Wave Ramp Rate", 1, 0, zwaveRampRateOptions, 0, 1.04)
-}
+// Map getZwaveRampRateParam() {
+// 	return getParam(22, "Dimmer Z-Wave Ramp Rate", 1, 0, zwaveRampRateOptions)
+// }
 
-Map getDimmerCustomBrightnessParam() {	
+Map getCustomBrightnessParam() {
 	Map options = [0:"Last Brightness Level"]
-	options << brightnessOptions
+	options += brightnessOptions
 	return getParam(23, "Custom Brightness when Turned On", 1, 0, options)
 }
 
-// Added in firmware v1.05
 Map getDimmerPhysicalDisabledBehaviorParam() {
-	return getParam(24, "Smart Bulb - Dimmer when Physical Disabled", 1, 0, physicalDisabledBehaviorOptions, 1.05)
+	return getParam(24, "Smart Bulb - Dimmer when Physical Disabled", 1, 0, physicalDisabledBehaviorOptions)
 }
 
-// Added in firmware v1.05
 Map getRelayPhysicalDisabledBehaviorParam() {
-	return getParam(25, "Smart Bulb - Relay when Physical Disabled", 1, 0, physicalDisabledBehaviorOptions, 1.05)
+	return getParam(25, "Smart Bulb - Relay when Physical Disabled", 1, 0, physicalDisabledBehaviorOptions)
 }
 
-// Added in firmware v1.05
-Map getDimmerNightModeBrightnessParam() {
+Map getNightLightParam() {
 	Map options = [0:"Disabled"]
 	options << brightnessOptions
-	return getParam(26, "Night Light Brightness", 1, 20, options, 1.05)
+	return getParam(26, "Night Light Brightness", 1, 20, options)
 }
 
-// Added in firmware v1.05
 Map getDimmerPaddleControlParam() {
-	return getParam(27, "Paddle Orientation for Dimmer", 1, 0, paddleControlOptions, 1.05)
+	return getParam(27, "Paddle Orientation for Dimmer", 1, 0, paddleControlOptions)
 }
 
 
-Map getParam(Integer num, String name, Integer size, Integer defaultVal, Map options, BigDecimal minVer=null, BigDecimal maxVer=null) {
+Map getParam(Integer num, String name, Integer size, Integer defaultVal, Map options) {
 	Integer val = safeToInt(settings?."configParam${num}", defaultVal)
-	Map retMap = [num: num, name: name, size: size, value: val, options: options, minVer: minVer, maxVer: maxVer]
+	Map retMap = [num: num, name: name, size: size, value: val, options: options]
 
 	if (options) {
 		retMap.valueName = options?.find { k, v -> "${k}" == "${val}" }?.value
@@ -1195,13 +1263,13 @@ Map setDefaultOption(Map options, Integer defaultVal) {
 }
 
 
-void sendEventIfNew(String name, value, boolean displayed=true, String type=null, String unit="", String desc=null, Integer endpoint=0) {
+void sendEventIfNew(String name, value, boolean displayed=true, String type=null, String unit="", String desc=null, Integer ep=0) {
 	if (desc == null) desc = "${name} set to ${value}${unit}"
-	String logEp = (endpoint ? "(RELAY) " : "")
-	def eventDev = (endpoint ? childDevices[0] : device)
+	String logEp = (ep ? "(RELAY) " : "")
+	def eventDev = (ep ? childDevices[0] : device)
 
 	if (!eventDev) {
-		log.error "No device for endpoint (${endpoint}). Use command button to create child devices."
+		log.error "No device for endpoint (${ep}). Use command button to create child devices."
 	}
 	else if (eventDev.currentValue(name).toString() != value.toString()) {
 		Map evt = [name: name, value: value, descriptionText: desc, displayed: displayed]
@@ -1209,7 +1277,7 @@ void sendEventIfNew(String name, value, boolean displayed=true, String type=null
 		if (type) evt.type = type
 		if (unit) evt.unit = unit
 
-		if (endpoint) {
+		if (ep) {
 			eventDev.parse([evt])
 		}
 		else {
@@ -1222,10 +1290,6 @@ void sendEventIfNew(String name, value, boolean displayed=true, String type=null
 	}
 }
 
-
-boolean firmwareSupportsParam(BigDecimal firmware, Map param) {
-	return (((param.minVer == null) || (firmware >= param.minVer)) && ((param.maxVer == null) || (firmware <= param.maxVer)))
-}
 
 BigDecimal getFirmwareVersion() {
 	String version = device?.getDataValue("firmwareVersion")
@@ -1257,8 +1321,8 @@ private convertHexListToIntList(String[] hexList) {
 
 Integer convertLevel(level, userLevel=false) {
 	if (levelCorrection) {
-		Integer brightmax = safeToInt(dimmerMaximumBrightnessParam.value, 99)
-		Integer brightmin = safeToInt(dimmerMinimumBrightnessParam.value, 1)
+		Integer brightmax = safeToInt(maximumBrightnessParam.value, 99)
+		Integer brightmin = safeToInt(minimumBrightnessParam.value, 1)
 		brightmax = (brightmax == 99) ? 100 : brightmax
 		brightmin = (brightmin == 1) ? 0 : brightmin
 
