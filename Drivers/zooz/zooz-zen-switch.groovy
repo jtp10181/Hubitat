@@ -6,6 +6,14 @@
  *
  *  Changelog:
 
+## [Unreleased] - 2021-XX-XX (@jtp10181)
+  ### Added
+  - Full supervision support for outgoing Set and Remove commands
+  - Toggle to enable/disable outbound supervision encapsulation
+  - Associations update with refresh command in case edited via other methods
+  ### Changed
+  - Code cleanup and standardized more code across drivers
+
 ## [1.4.3] - 2021-04-21 (@jtp10181)
   ### Added
   - ZEN30 Uses new custom child driver by default, falls back to hubitat generic
@@ -110,7 +118,7 @@ https://github.com/krlaframboise/SmartThings/tree/master/devicetypes/zooz/
 ## 3.0 / 4.0 - 2020-09-16 (@krlaframboise / Zooz)
   - Initial Release (for SmartThings)
 
- *  Copyright 2020 Jeff Page
+ *  Copyright 2020-2021 Jeff Page
  *  Copyright 2020 Zooz
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -195,7 +203,7 @@ CommandClassReport- class:0x9F, version:1
 
 metadata {
 	definition (
-		name: "Zooz ZEN Switch Advanced BETA",
+		name: "Zooz ZEN Switch Advanced",
 		namespace: "jtp10181",
 		author: "Jeff Page / Kevin LaFramboise (@krlaframboise)",
 		importUrl: "https://raw.githubusercontent.com/jtp10181/hubitat/master/Drivers/zooz/zooz-zen-switch.groovy"
@@ -243,6 +251,11 @@ metadata {
 			title: "Device Associations - Group 3:",
 			description: "Associations are an advanced feature, only use if you know what you are doing. Supports up to ${maxAssocNodes} Hex Device IDs separated by commas. (Can save as blank or 0 to clear)",
 			required: false
+
+		input "supervisionGetEncap", "bool",
+			title: "Supervision Encapsulation Support:",
+			description: "This can increase reliability when the device is paired with security. If the device is not operating normally with this on, turn it back off.",
+			defaultValue: false
 
 		input "sceneReverse", "bool",
 			title: "Scene Up-Down Reversal:",
@@ -619,6 +632,10 @@ void executeRefreshCmds() {
 	cmds << versionGetCmd()
 	cmds << switchBinaryGetCmd()
 
+	for (int i = 1; i <= maxAssocGroups; i++) {
+		cmds << associationGetCmd(i)
+	}
+
 	sendCommands(cmds)
 }
 
@@ -655,11 +672,11 @@ void sendCommands(String cmd) {
 
 //Consolidated zwave command functions so other code is easier to read
 String associationSetCmd(Integer group, List<Integer> nodes) {
-	return secureCmd(supervisionEncap(zwave.associationV2.associationSet(groupingIdentifier: group, nodeId: nodes)))
+	return supervisionEncap(zwave.associationV2.associationSet(groupingIdentifier: group, nodeId: nodes))
 }
 
 String associationRemoveCmd(Integer group, List<Integer> nodes) {
-	return secureCmd(supervisionEncap(zwave.associationV2.associationRemove(groupingIdentifier: group, nodeId: nodes)))
+	return supervisionEncap(zwave.associationV2.associationRemove(groupingIdentifier: group, nodeId: nodes))
 }
 
 String associationGetCmd(Integer group) {
@@ -671,7 +688,7 @@ String versionGetCmd() {
 }
 
 String switchBinarySetCmd(Integer value) {
-	return secureCmd(supervisionEncap(zwave.switchBinaryV1.switchBinarySet(switchValue: value)))
+	return supervisionEncap(zwave.switchBinaryV1.switchBinarySet(switchValue: value))
 }
 
 String switchBinaryGetCmd() {
@@ -679,7 +696,7 @@ String switchBinaryGetCmd() {
 }
 
 String switchMultilevelSetCmd(Integer value, Integer duration) {
-	return secureCmd(supervisionEncap(zwave.switchMultilevelV3.switchMultilevelSet(dimmingDuration: duration, value: value)))
+	return supervisionEncap(zwave.switchMultilevelV3.switchMultilevelSet(dimmingDuration: duration, value: value))
 }
 
 String switchMultilevelGetCmd() {
@@ -687,7 +704,7 @@ String switchMultilevelGetCmd() {
 }
 
 String configSetCmd(Map param, Integer value) {
-	return secureCmd(supervisionEncap(zwave.configurationV1.configurationSet(parameterNumber: param.num, size: param.size, scaledConfigurationValue: value)))
+	return supervisionEncap(zwave.configurationV1.configurationSet(parameterNumber: param.num, size: param.size, scaledConfigurationValue: value))
 }
 
 String configGetCmd(Map param) {
@@ -710,12 +727,14 @@ String secureCmd(String cmd, ep=0) {
 }
 
 //MultiChannel Encapsulate if needed
+//This is called from secureCmd or supervisionEncap, do not call directly
 String multiChannelEncap(String cmd, ep) {
 	//logTrace "multiChannelEncap: ${cmd} (ep ${ep})"
 	if (ep > 0) {
-		cmd = zwave.multiChannelV4.multiChannelCmdEncap(destinationEndPoint:ep, sourceEndPoint:0, bitAddress:0, res01:0).encapsulate(cmd)
+		return zwave.multiChannelV4.multiChannelCmdEncap(destinationEndPoint:ep).encapsulate(cmd)
+	} else {
+		return cmd
 	}
-	return cmd
 }
 
 //====== Supervision Encapsulate START ======\\
@@ -725,25 +744,32 @@ String multiChannelEncap(String cmd, ep) {
 String supervisionEncap(hubitat.zwave.Command cmd, ep=0) {
 	//logTrace "supervisionEncap: ${cmd} (ep ${ep})"
 
-	//Encap Supervised and save as String 
-    hubitat.zwave.commands.supervisionv1.SupervisionGet supervised = new hubitat.zwave.commands.supervisionv1.SupervisionGet()
-    supervised.sessionID = getSessionId()
-	String cmdStr = (supervised.encapsulate(cmd)).format()
+	if (settings?.supervisionGetEncap) {
+		//Encap Supervised and save as String 
+		hubitat.zwave.commands.supervisionv1.SupervisionGet supervised = new hubitat.zwave.commands.supervisionv1.SupervisionGet()
+		supervised.sessionID = getSessionId()
+		String cmdStr = (supervised.encapsulate(cmd)).format()
 
-	//Encap that with MultiChannel
-	cmdStr = multiChannelEncap(cmdStr, ep)
+		//Encap that with MultiChannel now so it is cached that way below
+		cmdStr = multiChannelEncap(cmdStr, ep)
 
-	logDebug "New Supervised Packet for Session: ${supervised.sessionID}"
-    if (!supervisedPackets."${device.id}") { supervisedPackets."${device.id}" = [:] }
-	supervisedPackets["${device.id}"][supervised.sessionID] = cmdStr
+		logDebug "New Supervised Packet for Session: ${supervised.sessionID}"
+		if (!supervisedPackets."${device.id}") { supervisedPackets."${device.id}" = [:] }
+		supervisedPackets["${device.id}"][supervised.sessionID] = cmdStr
 
-	//Calculate supervisionCheck delay based on how many cached packets
-	Integer packetsCount = supervisedPackets?."${device.id}"?.size()
-	Integer delayTotal = (packetsCount * 500) + 2000
-	//logDebug "Setting supervisionCheck to ${delayTotal}ms | ${packetsCount}"
-	runInMillis(delayTotal, supervisionCheck, [data:1])
+		//Calculate supervisionCheck delay based on how many cached packets
+		Integer packetsCount = supervisedPackets?."${device.id}"?.size()
+		Integer delayTotal = (packetsCount * 500) + 2000
+		//logDebug "Setting supervisionCheck to ${delayTotal}ms | ${packetsCount}"
+		runInMillis(delayTotal, supervisionCheck, [data:1])
 
-	return cmdStr
+		//Already handled MC so don't send endpoint here
+		return secureCmd(cmdStr)
+	}
+	else {
+		//If supervision disabled just multichannel and secure
+		return secureCmd(cmd.format(), ep)
+	}
 }
 
 void zwaveEvent(hubitat.zwave.commands.supervisionv1.SupervisionReport cmd, ep=0 ) {
@@ -902,7 +928,7 @@ void zwaveEvent(hubitat.zwave.commands.associationv2.AssociationReport cmd) {
 	logTrace "${cmd}"
 	updateSyncingStatus()
 
-	def grp = cmd.groupingIdentifier
+	Integer grp = cmd.groupingIdentifier
 
 	if (grp == 1) {
 		logDebug "Lifeline Association: ${cmd.nodeId}"
@@ -917,8 +943,9 @@ void zwaveEvent(hubitat.zwave.commands.associationv2.AssociationReport cmd) {
 			state.remove("assocNodes$grp".toString())
 		}
 
-		def dnis = convertIntListToHexList(cmd.nodeId)?.join(", ") ?: "none"
-		sendEventIfNew("assocDNI$grp", dnis, false)
+		String dnis = convertIntListToHexList(cmd.nodeId)?.join(", ")
+		sendEventIfNew("assocDNI$grp", dnis ?: "none", false)
+		device.updateSetting("assocDNI$grp", [value:"${dnis}", type:"string"])
 	}
 	else {
 		logDebug "Unhandled Group: $cmd"
@@ -948,7 +975,7 @@ void zwaveEvent(hubitat.zwave.commands.versionv3.VersionReport cmd) {
 		   (devModel ==~ /ZEN7\d/))
 		{
 			logDebug "Scene Reverse switched off, known Model/Firmware match found."
-			device.updateSetting("sceneReverse", false)
+			device.updateSetting("sceneReverse", [value:"false",type:"bool"])
 		} else if (settings?.sceneReverse == false) {
 			log.warn "Scene Reverse is off, not a known Model/Firmware match but leaving how it is set."
 		} else {
@@ -990,7 +1017,7 @@ void zwaveEvent(hubitat.zwave.commands.centralscenev3.CentralSceneNotification c
 		logTrace "${cmd} (ep ${ep})"
 
 		//Flip the sceneNumber if needed (per parameter setting)
-		if (settings?.sceneReverse)	{
+		if (settings?.sceneReverse) {
 			if (cmd.sceneNumber == 1) cmd.sceneNumber = 2
 			else if (cmd.sceneNumber == 2) cmd.sceneNumber = 1
 			logTrace "Scene Reversed: ${cmd}"
