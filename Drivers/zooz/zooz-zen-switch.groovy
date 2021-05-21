@@ -549,7 +549,7 @@ private getAdjustedParamValue(Map param) {
 
 
 private getConfigureAssocsCmds() {
-	def cmds = []
+	List<String> cmds = []
 
 	if (!state.group1Assoc || state.resyncAll) {
 		if (state.group1Assoc == false) {
@@ -564,17 +564,17 @@ private getConfigureAssocsCmds() {
 			sendEventIfNew("assocDNI$i", "none", false)
 		}
 
-		def cmdsEach = []
-		def settingNodeIds = getAssocDNIsSettingNodeIds(i)
+		List<String> cmdsEach = []
+		List settingNodeIds = getAssocDNIsSettingNodeIds(i)
 
 		//Need to remove first then add in case we are at limit
-		def oldNodeIds = state."assocNodes$i"?.findAll { !(it in settingNodeIds) }
+		List oldNodeIds = state."assocNodes$i"?.findAll { !(it in settingNodeIds) }
 		if (oldNodeIds) {
 			logDebug "Removing Nodes: Group $i - $oldNodeIds"
 			cmdsEach << associationRemoveCmd(i, oldNodeIds)
 		}
 
-		def newNodeIds = settingNodeIds?.findAll { !(it in state."assocNodes$i") }
+		List newNodeIds = settingNodeIds?.findAll { !(it in state."assocNodes$i") }
 		if (newNodeIds) {
 			logDebug "Adding Nodes: Group $i - $newNodeIds"
 			cmdsEach << associationSetCmd(i, newNodeIds)
@@ -719,22 +719,21 @@ List configSetGetCmd(Map param, Integer value) {
 }
 
 //Secure and MultiChannel Encapsulate
-String secureCmd(hubitat.zwave.Command cmd, ep=0) {
-	return secureCmd(cmd.format(), ep)
+String secureCmd(String cmd) {
+	return zwaveSecureEncap(cmd)
 }
-String secureCmd(String cmd, ep=0) {
+String secureCmd(hubitat.zwave.Command cmd, ep=0) {
 	return zwaveSecureEncap(multiChannelEncap(cmd, ep))
 }
 
 //MultiChannel Encapsulate if needed
 //This is called from secureCmd or supervisionEncap, do not call directly
-String multiChannelEncap(String cmd, ep) {
+String multiChannelEncap(hubitat.zwave.Command cmd, ep) {
 	//logTrace "multiChannelEncap: ${cmd} (ep ${ep})"
 	if (ep > 0) {
-		return zwave.multiChannelV4.multiChannelCmdEncap(destinationEndPoint:ep).encapsulate(cmd)
-	} else {
-		return cmd
+		cmd = zwave.multiChannelV4.multiChannelCmdEncap(destinationEndPoint:ep).encapsulate(cmd)
 	}
+	return cmd.format()
 }
 
 //====== Supervision Encapsulate START ======\\
@@ -748,10 +747,10 @@ String supervisionEncap(hubitat.zwave.Command cmd, ep=0) {
 		//Encap Supervised and save as String 
 		hubitat.zwave.commands.supervisionv1.SupervisionGet supervised = new hubitat.zwave.commands.supervisionv1.SupervisionGet()
 		supervised.sessionID = getSessionId()
-		String cmdStr = (supervised.encapsulate(cmd)).format()
+		cmd = supervised.encapsulate(cmd)
 
 		//Encap that with MultiChannel now so it is cached that way below
-		cmdStr = multiChannelEncap(cmdStr, ep)
+		String cmdStr = multiChannelEncap(cmd, ep)
 
 		logDebug "New Supervised Packet for Session: ${supervised.sessionID}"
 		if (!supervisedPackets."${device.id}") { supervisedPackets."${device.id}" = [:] }
@@ -768,13 +767,13 @@ String supervisionEncap(hubitat.zwave.Command cmd, ep=0) {
 	}
 	else {
 		//If supervision disabled just multichannel and secure
-		return secureCmd(cmd.format(), ep)
+		return secureCmd(cmd, ep)
 	}
 }
 
 void zwaveEvent(hubitat.zwave.commands.supervisionv1.SupervisionReport cmd, ep=0 ) {
 	logTrace "${cmd}"
-    logDebug "Supervision Report for Session: ${cmd.sessionID}"
+    logDebug "Supervision Report - SessionID: ${cmd.sessionID} Status: ${cmd.status} "
 
     if (!supervisedPackets."${device.id}") { supervisedPackets."${device.id}" = [:] }
     
@@ -1150,7 +1149,11 @@ List<Map> getConfigParams() {
 	if (configHide != null) {
 		List configDisabled = evaluate(configHide)
 		params.removeAll { configDisabled.contains(it.num) }
-	}	
+	}
+
+	//Remove Params not supported with this firmware
+	BigDecimal firmware = firmwareVersion
+	params.removeAll { !firmwareSupportsParam(firmware, it) }
 
 	// ZEN23/24 does not have a LED at all
 	if (deviceModelShort in [23,24]) {
@@ -1267,9 +1270,9 @@ Map getStatusReportsParam() {
 	return getParam(16, "All Reports Use SwitchBinary", 1, 0, disabledEnabledOptions)
 }
 
-Map getParam(Integer num, String name, Integer size, Integer defaultVal, Map options) {
+Map getParam(Integer num, String name, Integer size, Integer defaultVal, Map options, BigDecimal minVer=null) {
 	Integer val = safeToInt(settings?."configParam${num}", defaultVal)
-	Map retMap = [num: num, name: name, size: size, value: val, options: options]
+	Map retMap = [num: num, name: name, size: size, value: val, options: options, minVer: minVer]
 
 	if (options) {
 		retMap.valueName = options?.find { k, v -> "${k}" == "${val}" }?.value
@@ -1306,6 +1309,10 @@ void sendEventIfNew(String name, value, boolean displayed=true, String type=null
 	}
 }
 
+
+boolean firmwareSupportsParam(BigDecimal firmware, Map param) {
+	return (firmware >= param.minVer ?: 0)
+}
 
 BigDecimal getFirmwareVersion() {
 	String version = device?.getDataValue("firmwareVersion")

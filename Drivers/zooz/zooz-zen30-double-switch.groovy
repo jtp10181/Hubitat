@@ -1,6 +1,6 @@
 /*
  *  Zooz ZEN30 Double Switch
- *    - Model: ZEN30 - Minimum Firmware 1.05
+ *    - Model: ZEN30 - All Firmware
  *
  *  Changelog:
 
@@ -503,7 +503,7 @@ void debugLogsOff(){
 
 
 private getConfigureAssocsCmds() {
-	def cmds = []
+	List<String> cmds = []
 
 	//This is BROKEN in ZEN30 due to factory set MultiChannel Association
 	// if (!state.group1Assoc || state.resyncAll) {
@@ -519,17 +519,17 @@ private getConfigureAssocsCmds() {
 			sendEventIfNew("assocDNI$i", "none", false)
 		}
 
-		def cmdsEach = []
-		def settingNodeIds = getAssocDNIsSettingNodeIds(i)
+		List<String> cmdsEach = []
+		List settingNodeIds = getAssocDNIsSettingNodeIds(i)
 
 		//Need to remove first then add in case we are at limit
-		def oldNodeIds = state."assocNodes$i"?.findAll { !(it in settingNodeIds) }
+		List oldNodeIds = state."assocNodes$i"?.findAll { !(it in settingNodeIds) }
 		if (oldNodeIds) {
 			logDebug "Removing Nodes: Group $i - $oldNodeIds"
 			cmdsEach << associationRemoveCmd(i, oldNodeIds)
 		}
 
-		def newNodeIds = settingNodeIds?.findAll { !(it in state."assocNodes$i") }
+		List newNodeIds = settingNodeIds?.findAll { !(it in state."assocNodes$i") }
 		if (newNodeIds) {
 			logDebug "Adding Nodes: Group $i - $newNodeIds"
 			cmdsEach << associationSetCmd(i, newNodeIds)
@@ -768,7 +768,7 @@ String supervisionEncap(hubitat.zwave.Command cmd, ep=0) {
 
 void zwaveEvent(hubitat.zwave.commands.supervisionv1.SupervisionReport cmd, ep=0 ) {
 	logTrace "${cmd}"
-    logDebug "Supervision Report for Session: ${cmd.sessionID}"
+    logDebug "Supervision Report - SessionID: ${cmd.sessionID} Status: ${cmd.status} "
 
     if (!supervisedPackets."${device.id}") { supervisedPackets."${device.id}" = [:] }
     
@@ -1150,7 +1150,11 @@ List<Map> getConfigParams() {
 	if (configHide != null) {
 		List configDisabled = evaluate(configHide)
 		params.removeAll { configDisabled.contains(it.num) }
-	}	
+	}
+
+	//Remove Params not supported with this firmware
+	BigDecimal firmware = firmwareVersion
+	params.removeAll { !firmwareSupportsParam(firmware, it) }
 
 	return params
 }
@@ -1248,28 +1252,32 @@ Map getCustomBrightnessParam() {
 	return getParam(23, "Custom Brightness when Turned On", 1, 0, options)
 }
 
+// Added in firmware v1.05
 Map getDimmerPhysicalDisabledBehaviorParam() {
-	return getParam(24, "Smart Bulb - Dimmer when Physical Disabled", 1, 0, physicalDisabledBehaviorOptions)
+	return getParam(24, "Smart Bulb - Dimmer when Physical Disabled", 1, 0, physicalDisabledBehaviorOptions, 1.05)
 }
 
+// Added in firmware v1.05
 Map getRelayPhysicalDisabledBehaviorParam() {
-	return getParam(25, "Smart Bulb - Relay when Physical Disabled", 1, 0, physicalDisabledBehaviorOptions)
+	return getParam(25, "Smart Bulb - Relay when Physical Disabled", 1, 0, physicalDisabledBehaviorOptions, 1.05)
 }
 
+// Added in firmware v1.05
 Map getNightLightParam() {
 	Map options = [0:"Disabled"]
 	options << brightnessOptions
-	return getParam(26, "Night Light Brightness", 1, 20, options)
+	return getParam(26, "Night Light Brightness", 1, 20, options, 1.05)
 }
 
+// Added in firmware v1.05
 Map getDimmerPaddleControlParam() {
-	return getParam(27, "Paddle Orientation for Dimmer", 1, 0, paddleControlOptions)
+	return getParam(27, "Paddle Orientation for Dimmer", 1, 0, paddleControlOptions, 1.05)
 }
 
 
-Map getParam(Integer num, String name, Integer size, Integer defaultVal, Map options) {
+Map getParam(Integer num, String name, Integer size, Integer defaultVal, Map options, BigDecimal minVer=null) {
 	Integer val = safeToInt(settings?."configParam${num}", defaultVal)
-	Map retMap = [num: num, name: name, size: size, value: val, options: options]
+	Map retMap = [num: num, name: name, size: size, value: val, options: options, minVer: minVer]
 
 	if (options) {
 		retMap.valueName = options?.find { k, v -> "${k}" == "${val}" }?.value
@@ -1316,6 +1324,10 @@ void sendEventIfNew(String name, value, boolean displayed=true, String type=null
 	}
 }
 
+
+boolean firmwareSupportsParam(BigDecimal firmware, Map param) {
+	return (firmware >= param.minVer ?: 0)
+}
 
 BigDecimal getFirmwareVersion() {
 	String version = device?.getDataValue("firmwareVersion")

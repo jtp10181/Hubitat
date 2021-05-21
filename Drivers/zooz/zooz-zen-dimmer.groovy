@@ -563,7 +563,7 @@ private getAdjustedParamValue(Map param) {
 
 
 private getConfigureAssocsCmds() {
-	def cmds = []
+	List<String> cmds = []
 
 	if (!state.group1Assoc || state.resyncAll) {
 		if (state.group1Assoc == false) {
@@ -578,17 +578,17 @@ private getConfigureAssocsCmds() {
 			sendEventIfNew("assocDNI$i", "none", false)
 		}
 
-		def cmdsEach = []
-		def settingNodeIds = getAssocDNIsSettingNodeIds(i)
+		List<String> cmdsEach = []
+		List settingNodeIds = getAssocDNIsSettingNodeIds(i)
 
 		//Need to remove first then add in case we are at limit
-		def oldNodeIds = state."assocNodes$i"?.findAll { !(it in settingNodeIds) }
+		List oldNodeIds = state."assocNodes$i"?.findAll { !(it in settingNodeIds) }
 		if (oldNodeIds) {
 			logDebug "Removing Nodes: Group $i - $oldNodeIds"
 			cmdsEach << associationRemoveCmd(i, oldNodeIds)
 		}
 
-		def newNodeIds = settingNodeIds?.findAll { !(it in state."assocNodes$i") }
+		List newNodeIds = settingNodeIds?.findAll { !(it in state."assocNodes$i") }
 		if (newNodeIds) {
 			logDebug "Adding Nodes: Group $i - $newNodeIds"
 			cmdsEach << associationSetCmd(i, newNodeIds)
@@ -812,7 +812,7 @@ String supervisionEncap(hubitat.zwave.Command cmd, ep=0) {
 
 void zwaveEvent(hubitat.zwave.commands.supervisionv1.SupervisionReport cmd, ep=0 ) {
 	logTrace "${cmd}"
-    logDebug "Supervision Report for Session: ${cmd.sessionID}"
+    logDebug "Supervision Report - SessionID: ${cmd.sessionID} Status: ${cmd.status} "
 
     if (!supervisedPackets."${device.id}") { supervisedPackets."${device.id}" = [:] }
     
@@ -1207,7 +1207,11 @@ List<Map> getConfigParams() {
 	if (configHide != null) {
 		List configDisabled = evaluate(configHide)
 		params.removeAll { configDisabled.contains(it.num) }
-	}	
+	}
+
+	//Remove Params not supported with this firmware
+	BigDecimal firmware = firmwareVersion
+	params.removeAll { !firmwareSupportsParam(firmware, it) }
 
 	// ZEN23/24 does not have a LED at all
 	if (deviceModelShort in [23,24]) {
@@ -1371,9 +1375,9 @@ Map getSingleTapParam() {
 	return getParam(25, "Single Tap Up Brightness", 1, 0, singleTapOptions)
 }
 
-Map getParam(Integer num, String name, Integer size, Integer defaultVal, Map options) {
+Map getParam(Integer num, String name, Integer size, Integer defaultVal, Map options, BigDecimal minVer=null) {
 	Integer val = safeToInt(settings?."configParam${num}", defaultVal)
-	Map retMap = [num: num, name: name, size: size, value: val, options: options]
+	Map retMap = [num: num, name: name, size: size, value: val, options: options, minVer: minVer]
 
 	if (options) {
 		retMap.valueName = options?.find { k, v -> "${k}" == "${val}" }?.value
@@ -1410,6 +1414,10 @@ void sendEventIfNew(String name, value, boolean displayed=true, String type=null
 	}
 }
 
+
+boolean firmwareSupportsParam(BigDecimal firmware, Map param) {
+	return (firmware >= param.minVer ?: 0)
+}
 
 BigDecimal getFirmwareVersion() {
 	String version = device?.getDataValue("firmwareVersion")
