@@ -748,7 +748,7 @@ String supervisionEncap(hubitat.zwave.Command cmd, ep=0) {
 		String cmdStr = multiChannelEncap(cmd, ep)
 
 		logDebug "New Supervised Packet for Session: ${supervised.sessionID}"
-		if (!supervisedPackets."${device.id}") { supervisedPackets."${device.id}" = [:] }
+		if (!supervisedPackets["${device.id}"]) { supervisedPackets["${device.id}"] = [:] }
 		supervisedPackets["${device.id}"][supervised.sessionID] = cmdStr
 
 		//Calculate supervisionCheck delay based on how many cached packets
@@ -767,43 +767,42 @@ String supervisionEncap(hubitat.zwave.Command cmd, ep=0) {
 }
 
 void zwaveEvent(hubitat.zwave.commands.supervisionv1.SupervisionReport cmd, ep=0 ) {
-	logTrace "${cmd}"
-    logDebug "Supervision Report - SessionID: ${cmd.sessionID} Status: ${cmd.status} "
+	logDebug "Supervision Report - SessionID: ${cmd.sessionID} Status: ${cmd.status}"
 
-    if (!supervisedPackets."${device.id}") { supervisedPackets."${device.id}" = [:] }
-    
-    if (supervisedPackets["${device.id}"][cmd.sessionID] != null) {
-    	supervisedPackets["${device.id}"].remove(cmd.sessionID)
-    }
+	if (!supervisedPackets["${device.id}"]) { supervisedPackets["${device.id}"] = [:] }
+		
+	if (supervisedPackets["${device.id}"][cmd.sessionID] != null) {
+		supervisedPackets["${device.id}"].remove(cmd.sessionID)
+	}
 }
 
 Short getSessionId() {
-    Short sessId = (sessionIDs?."${device.id}" ?: 0) + 1
-    if (sessId > 63) { sessId = 1 }
-    sessionIDs["${device.id}"] = sessId
+	Short sessId = (sessionIDs?."${device.id}" ?: 0) + 1
+	if (sessId > 63) { sessId = 1 }
+	sessionIDs["${device.id}"] = sessId
 
-    return sessId
+	return sessId
 }
 
 void supervisionCheck(Integer num) {
-    if (!supervisedPackets."${device.id}") { supervisedPackets."${device.id}" = [:] }    
-    Integer packetsCount = supervisedPackets?."${device.id}"?.size()
-    logDebug "Supervision Check #${num} - Packet Count: ${packetsCount}"
-    
-    if (packetsCount > 0 ) {
-	    supervisedPackets["${device.id}"].each { k, v ->
-	        logDebug "Re-Sending Supervised Session: ${k}"
-	        sendCommands(secureCmd(v))
-	    }
+	if (!supervisedPackets["${device.id}"]) { supervisedPackets["${device.id}"] = [:] }
+	Integer packetsCount = supervisedPackets?."${device.id}"?.size()
+	logDebug "Supervision Check #${num} - Packet Count: ${packetsCount}"
 
-	   	if (num >= 4) { //Clear after this many attempts
-	        logDebug "Supervision MAX RETIES Reached"
-	        supervisedPackets["${device.id}"].clear()
-	    }
-	    else { //Otherwise keep trying
-	    	Integer delayTotal = (packetsCount * 500) + 2000
+	if (packetsCount > 0 ) {
+		supervisedPackets["${device.id}"].each { k, v ->
+			log.warn "Re-Sending Supervised Session: ${k} (Retry #${num})"
+			sendCommands(secureCmd(v))
+		}
+
+		if (num >= 2) { //Clear after this many attempts
+			log.warn "Supervision MAX RETIES (${num}) Reached"
+			supervisedPackets["${device.id}"].clear()
+		}
+		else { //Otherwise keep trying
+			Integer delayTotal = (packetsCount * 500) + 2000
 			runInMillis(delayTotal, supervisionCheck, [data:num+1])
-	    }
+		}
 	}
 }
 //====== Supervision Encapsulate END ======\\
