@@ -10,7 +10,7 @@
   ### Added
   - Full supervision support for outgoing Set and Remove commands
   - Toggle to enable/disable outbound supervision encapsulation
-  - Associations update with refresh command in case edited via other methods
+  - Associations update with Params Refresh command so you can sync if edited elsewhere
   ### Changed
   - Code cleanup and standardized more code across drivers
 
@@ -632,10 +632,6 @@ void executeRefreshCmds() {
 	cmds << versionGetCmd()
 	cmds << switchBinaryGetCmd()
 
-	for (int i = 1; i <= maxAssocGroups; i++) {
-		cmds << associationGetCmd(i)
-	}
-
 	sendCommands(cmds)
 }
 
@@ -643,6 +639,10 @@ void paramsRefresh() {
 	updateSyncingStatus()
 
 	List<String> cmds = []
+	for (int i = 1; i <= maxAssocGroups; i++) {
+		cmds << associationGetCmd(i)
+	}
+	
 	configParams.each { param ->
 		cmds << configGetCmd(param)
 	}
@@ -744,26 +744,24 @@ String supervisionEncap(hubitat.zwave.Command cmd, ep=0) {
 	//logTrace "supervisionEncap: ${cmd} (ep ${ep})"
 
 	if (settings?.supervisionGetEncap) {
-		//Encap Supervised and save as String 
-		hubitat.zwave.commands.supervisionv1.SupervisionGet supervised = new hubitat.zwave.commands.supervisionv1.SupervisionGet()
-		supervised.sessionID = getSessionId()
-		cmd = supervised.encapsulate(cmd)
+		//Encap with SupervisionGet
+		Short sessId = getSessionId()
+		def cmdEncap = zwave.supervisionV1.supervisionGet(sessionID: sessId).encapsulate(cmd)
 
 		//Encap that with MultiChannel now so it is cached that way below
-		String cmdStr = multiChannelEncap(cmd, ep)
+		cmdEncap = multiChannelEncap(cmdEncap, ep)
 
-		logDebug "New Supervised Packet for Session: ${supervised.sessionID}"
-		if (!supervisedPackets["${device.id}"]) { supervisedPackets["${device.id}"] = [:] }
-		supervisedPackets["${device.id}"][supervised.sessionID] = cmdStr
+		logDebug "New Supervised Packet for Session: ${sessId}"
+		if (supervisedPackets["${device.id}"] == null) { supervisedPackets["${device.id}"] = [:] }
+		supervisedPackets["${device.id}"][sessId] = cmdEncap
 
 		//Calculate supervisionCheck delay based on how many cached packets
 		Integer packetsCount = supervisedPackets?."${device.id}"?.size()
 		Integer delayTotal = (packetsCount * 500) + 2000
-		//logDebug "Setting supervisionCheck to ${delayTotal}ms | ${packetsCount}"
 		runInMillis(delayTotal, supervisionCheck, [data:1])
 
 		//Already handled MC so don't send endpoint here
-		return secureCmd(cmdStr)
+		return secureCmd(cmdEncap)
 	}
 	else {
 		//If supervision disabled just multichannel and secure
@@ -772,25 +770,31 @@ String supervisionEncap(hubitat.zwave.Command cmd, ep=0) {
 }
 
 void zwaveEvent(hubitat.zwave.commands.supervisionv1.SupervisionReport cmd, ep=0 ) {
-	logDebug "Supervision Report - SessionID: ${cmd.sessionID} Status: ${cmd.status}"
+	logDebug "Supervision Report - SessionID: ${cmd.sessionID}, Status: ${cmd.status}"
+	if (supervisedPackets["${device.id}"] == null) { supervisedPackets["${device.id}"] = [:] }
 
-	if (!supervisedPackets["${device.id}"]) { supervisedPackets["${device.id}"] = [:] }
-		
-	if (supervisedPackets["${device.id}"][cmd.sessionID] != null) {
-		supervisedPackets["${device.id}"].remove(cmd.sessionID)
+	switch (cmd.status as Integer) {
+		case 0x00: // "No Support" 
+		case 0x01: // "Working"
+		case 0x02: // "Failed"
+			log.warn "Supervision NOT Successful - SessionID: ${cmd.sessionID}, Status: ${cmd.status}"
+			break
+		case 0xFF: // "Success"
+			supervisedPackets["${device.id}"].remove(cmd.sessionID)
+			break
 	}
 }
 
 Short getSessionId() {
-	Short sessId = (sessionIDs?."${device.id}" ?: 0) + 1
-	if (sessId > 63) { sessId = 1 }
+	Short sessId = sessionIDs["${device.id}"] ?: state.lastSupervision ?: 0
+	sessId = (sessId + 1) % 64  // Will always will return between 0-63
+	state.lastSupervision = sessId
 	sessionIDs["${device.id}"] = sessId
 
 	return sessId
 }
 
 void supervisionCheck(Integer num) {
-	if (!supervisedPackets["${device.id}"]) { supervisedPackets["${device.id}"] = [:] }
 	Integer packetsCount = supervisedPackets?."${device.id}"?.size()
 	logDebug "Supervision Check #${num} - Packet Count: ${packetsCount}"
 
