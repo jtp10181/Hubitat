@@ -6,7 +6,7 @@
  *
  *  Changelog:
 
-## [Unreleased] - 2021-XX-XX (@jtp10181)
+## [1.4.4] - 2021-06-08 (@jtp10181)
   ### Added
   - Full supervision support for outgoing Set and Remove commands
   - Toggle to enable/disable outbound supervision encapsulation

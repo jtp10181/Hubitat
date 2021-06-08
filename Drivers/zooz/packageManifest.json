@@ -1,48 +1,28 @@
 {
   "packageName": "Zooz Switches Advanced Drivers",
   "author": "jtp10181",
-  "version": "1.4.3",
+  "version": "1.4.4",
   "minimumHEVersion": "2.2.3",
-  "dateReleased": "2021-04-21",
+  "dateReleased": "2021-06-08",
   "documentationLink": "https://github.com/jtp10181/Hubitat/tree/main/Drivers/zooz",
   "communityLink": "https://community.hubitat.com/t/release-zooz-zen-switches-advanced-drivers/58649",
-  "releaseNotes": "Version [1.4.3] - 2021-04-21 (@jtp10181) \n Check community post and changelog for full details.",
+  "releaseNotes": "Version [1.4.4] - 2021-06-08 (@jtp10181)\n -Added full supervision support\n Check community post and changelog for full details.",
   "drivers": [
     {
       "id": "2d54004e-e51e-4abf-a4ac-6a73c9e587f4",
       "name": "Zooz ZEN Switch Advanced",
       "namespace": "jtp10181",
-      "alternateNames": [
-        {
-          "name": "Zooz ZEN21 Switch 4.0",
-          "namespace": "jtp10181"
-        },
-        {
-          "name": "Zooz ZEN26 S2 Switch 3.0",
-          "namespace": "jtp10181"
-        }
-      ],
-      "location": "https://github.com/jtp10181/Hubitat/raw/main/Drivers/zooz/zooz-zen-switch.groovy",
+      "location": "https://raw.githubusercontent.com/jtp10181/Hubitat/main/Drivers/zooz/zooz-zen-switch.groovy",
       "required": false,
-      "version": "1.4.3"
+      "version": "1.4.4"
     },
     {
       "id": "8aa273a7-8424-4aed-9d40-92aade1c5d73",
       "name": "Zooz ZEN Dimmer Advanced",
       "namespace": "jtp10181",
-      "alternateNames": [
-        {
-          "name": "Zooz ZEN22 Dimmer 4.0",
-          "namespace": "jtp10181"
-        },
-        {
-          "name": "Zooz ZEN27 S2 Dimmer 3.0",
-          "namespace": "jtp10181"
-        }
-      ],
-      "location": "https://github.com/jtp10181/Hubitat/raw/main/Drivers/zooz/zooz-zen-dimmer.groovy",
+      "location": "https://raw.githubusercontent.com/jtp10181/Hubitat/main/Drivers/zooz/zooz-zen-dimmer.groovy",
       "required": false,
-      "version": "1.4.3"
+      "version": "1.4.4"
     },
     {
       "id": "fd30cdaf-f6e6-4d5f-bf27-82d0aed75649",
@@ -50,7 +30,7 @@
       "namespace": "jtp10181",
       "location": "https://raw.githubusercontent.com/jtp10181/Hubitat/main/Drivers/zooz/zooz-zen30-double-switch.groovy",
       "required": false,
-      "version": "1.4.3"
+      "version": "1.4.4"
     },
     {
       "id": "b026a8cb-aae5-46a1-89a4-09441e73916e",
