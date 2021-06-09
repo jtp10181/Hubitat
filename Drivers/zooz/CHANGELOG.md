@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.4] - 2021-06-08 (@jtp10181)
+  ### Added
+  - Full supervision support for outgoing Set and Remove commands
+  - Toggle to enable/disable outbound supervision encapsulation
+  - Associations update with Params Refresh command so you can sync if edited elsewhere
+  ### Changed
+  - Code cleanup and standardized more code across drivers
+
 ## [1.4.3] - 2021-04-21 (@jtp10181)
   ### Added
   - ZEN30 Uses new custom child driver by default, falls back to hubitat generic
@@ -103,7 +111,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 https://github.com/krlaframboise/SmartThings/tree/master/devicetypes/zooz/
   - Initial Release (for SmartThings)
 
-[Unreleased]: https://github.com/jtp10181/Hubitat/compare/zooz-v1.4.3...HEAD
+[Unreleased]: https://github.com/jtp10181/Hubitat/compare/zooz-v1.4.4...HEAD
+[1.4.4]: https://github.com/jtp10181/Hubitat/compare/zooz-v1.4.3...zooz-v1.4.4
 [1.4.3]: https://github.com/jtp10181/Hubitat/compare/zooz-v1.4.2...zooz-v1.4.3
 [1.4.2]: https://github.com/jtp10181/Hubitat/compare/zooz-v1.4.0...zooz-v1.4.2
 [1.4.0]: https://github.com/jtp10181/Hubitat/compare/zooz-v1.3.1...zooz-v1.4.0
