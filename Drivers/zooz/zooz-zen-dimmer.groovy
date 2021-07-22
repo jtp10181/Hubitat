@@ -6,6 +6,13 @@
  *
  *  Changelog:
 
+## [Unreleased] - 2021-07-21 (@jtp10181)
+  ### Added
+  - ChangeLevel capability support so level can be adjusted from button holds
+  ### Changed
+  ### Fixed
+  - The lastActivityDate will only update when the device responds to the hub
+
 ## [1.4.4] - 2021-06-08 (@jtp10181)
   ### Added
   - Full supervision support for outgoing Set and Remove commands
@@ -219,6 +226,7 @@ metadata {
 		capability "Actuator"
 		capability "Switch"
 		capability "SwitchLevel"
+		capability "ChangeLevel"
 		capability "Configuration"
 		capability "Refresh"
 		capability "PushableButton"
@@ -460,23 +468,19 @@ def configure() {
 	log.warn "configure..."
 	if (debugEnable) runIn(1800, debugLogsOff)
 
-	sendEvent(name:"numberOfButtons", value:10, displayed:false)
-
 	if (!pendingChanges || state.resyncAll == null) {
 		logDebug "Enabling Full Re-Sync"
 		state.resyncAll = true
 	}
 
-	updateSyncingStatus()
+	updateSyncingStatus(8)
 	runIn(2, executeRefreshCmds)
-	runIn(5, updateSyncingStatus)
-	runIn(8, executeConfigureCmds)
+	runIn(6, executeConfigureCmds)
 }
 
 
 void executeConfigureCmds() {
 	logDebug "executeConfigureCmds..."
-	runIn(6, refreshSyncStatus)
 
 	List<String> cmds = []
 
@@ -504,7 +508,10 @@ void executeConfigureCmds() {
 
 	state.resyncAll = false
 
-	if (cmds) sendCommands(cmds)
+	if (cmds) {
+		updateSyncingStatus(6)
+		sendCommands(cmds)
+	}
 }
 
 void clearVariables() {
@@ -658,6 +665,21 @@ String getSetLevelCmds(level, duration=null) {
 	return switchMultilevelSetCmd(levelVal, durationVal)
 }
 
+void startLevelChange(direction) {
+	Boolean upDown = (direction == "down") ? true : false
+	Integer dimmingDuration = safeToInt(holdRampRateParam.value, 1)
+	Integer rampRate = safeToInt(rampRateParam.value, 1)
+
+	List<String> cmds = []
+	cmds += configSetCmd(rampRateParam, dimmingDuration) 
+	cmds += secureCmd(zwave.switchMultilevelV2.switchMultilevelStartLevelChange(dimmingDuration: dimmingDuration, upDown: upDown))
+	cmds += configSetCmd(rampRateParam, rampRate) 
+	sendCommands(cmds, 600)
+}
+
+void stopLevelChange() {
+	sendCommands(secureCmd(zwave.switchMultilevelV2.switchMultilevelStopLevelChange()))
+}
 
 def refresh() {
 	logDebug "refresh..."
@@ -665,8 +687,6 @@ def refresh() {
 }
 
 void executeRefreshCmds() {
-	updateSyncingStatus()
-
 	List<String> cmds = []
 	cmds << versionGetCmd()
 	cmds << switchMultilevelGetCmd()
@@ -995,10 +1015,14 @@ void zwaveEvent(hubitat.zwave.commands.associationv2.AssociationReport cmd) {
 
 
 void zwaveEvent(hubitat.zwave.commands.versionv3.VersionReport cmd) {
+	logTrace "${cmd}"
+
 	String subVersion = String.format("%02d", cmd.firmware0SubVersion)
 	String fullVersion = "${cmd.firmware0Version}.${subVersion}"
 
+	logDebug "Received Version Report - Firmware: ${fullVersion}"
 	device.updateDataValue("firmwareVersion", fullVersion)
+	sendEvent(name:"numberOfButtons", value:10, displayed:false)
 
 	//Stash the switch model in a state variable
 	def devTypeId = convertIntListToHexList([safeToInt(device.getDataValue("deviceType")),safeToInt(device.getDataValue("deviceId"))])
@@ -1123,8 +1147,8 @@ void zwaveEvent(hubitat.zwave.Command cmd, ep=0) {
 }
 
 
-void updateSyncingStatus() {
-	runIn(4, refreshSyncStatus)
+void updateSyncingStatus(Integer delay=4) {
+	runIn(delay, refreshSyncStatus)
 	sendEventIfNew("syncStatus", "Syncing...", false)
 }
 
@@ -1403,18 +1427,19 @@ Map setDefaultOption(Map options, Integer defaultVal) {
 void sendEventIfNew(String name, value, boolean displayed=true, String type=null, String unit="", String desc=null, Integer ep=0) {
 	if (desc == null) desc = "${name} set to ${value}${unit}"
 
-	if (device.currentValue(name).toString() != value.toString()) {
-		Map evt = [name: name, value: value, descriptionText: desc, displayed: displayed]
+	Map evt = [name: name, value: value, descriptionText: desc, displayed: displayed]
+	if (type) evt.type = type
+	if (unit) evt.unit = unit
 
-		if (type) evt.type = type
-		if (unit) evt.unit = unit
-
-		if (name != "syncStatus") logTxt(desc)
-		sendEvent(evt)
+	if (name != "syncStatus") {
+		if (device.currentValue(name).toString() != value.toString()) {
+			logTxt(desc)
+		}
+		else {
+			logDebug "${desc} [NOT CHANGED]"
+		}
 	}
-	else if (name != "syncStatus") {
-		logDebug "${desc} [NOT CHANGED]"
-	}
+	sendEvent(evt)
 }
 
 

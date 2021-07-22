@@ -1,7 +1,6 @@
 {
   "packageName": "Zooz Switches Advanced Drivers",
   "author": "jtp10181",
-  "version": "1.4.4",
   "minimumHEVersion": "2.2.3",
   "dateReleased": "2021-06-08",
   "documentationLink": "https://github.com/jtp10181/Hubitat/tree/main/Drivers/zooz",
