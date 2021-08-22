@@ -178,7 +178,6 @@ CommandClassReport- class:0x9F, version:1
 	0x85: 2,	// Association (associationv2)
 	0x86: 3,	// Version (versionv3)
 	0x8E: 3,	// Multi Channel Association (multichannelassociationv3)
-	0x98: 1,	// Security S0 (securityv1)
 	0x9F: 1		// Security S2
 ]
 
@@ -669,15 +668,17 @@ void startLevelChange(direction) {
 	Boolean upDown = (direction == "down") ? true : false
 	Integer dimmingDuration = safeToInt(holdRampRateParam.value, 1)
 	Integer rampRate = safeToInt(rampRateParam.value, 1)
+	logDebug "startLevelChange($direction) for ${dimmingDuration}s"
 
 	List<String> cmds = []
 	cmds += configSetCmd(rampRateParam, dimmingDuration) 
-	cmds += secureCmd(zwave.switchMultilevelV2.switchMultilevelStartLevelChange(dimmingDuration: dimmingDuration, upDown: upDown))
+	cmds += secureCmd(zwave.switchMultilevelV2.switchMultilevelStartLevelChange(dimmingDuration: dimmingDuration, upDown: upDown, ignoreStartLevel:1))
 	cmds += configSetCmd(rampRateParam, rampRate) 
-	sendCommands(cmds, 600)
+	sendCommands(cmds, 1000)
 }
 
 void stopLevelChange() {
+	logDebug "stopLevelChange()"
 	sendCommands(secureCmd(zwave.switchMultilevelV2.switchMultilevelStopLevelChange()))
 }
 
