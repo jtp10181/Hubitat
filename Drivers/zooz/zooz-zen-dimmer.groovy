@@ -6,7 +6,7 @@
  *
  *  Changelog:
 
-## [Unreleased] - 2021-08-31 (@jtp10181)
+## [1.5.0] - 2021-11-24 (@jtp10181)
   ### Added
   - ChangeLevel capability support so level can be adjusted from button holds (Dimmers Only)
   - Warning if driver is loaded on unsupported device (including wrong type)
@@ -39,7 +39,7 @@
 ## [1.4.2] - 2021-01-31 (@jtp10181)
   ### Added
   - Command to change indicator color (can be used from Rule Machine!)
-  - New method to test the params and find the ones that dont actually work
+  - New method to test the params and find the ones that don't actually work
   - Command button to remove invalid parameters
   ### Changed
   - More cleanup and adding some comments
@@ -170,6 +170,7 @@ import groovy.transform.Field
 @Field static final int maxAssocGroups = 3
 @Field static final int maxAssocNodes = 5
 
+@Field static final String VERSION = "1.5.0" 
 @Field static Map deviceModelNames =
 	["B112:1F1C":"ZEN22", "B112:261C":"ZEN24", "A000:A002":"ZEN27", 
 	"7000:A002":"ZEN72", "7000:A004":"ZEN74", "7000:A007":"ZEN77"]
@@ -179,7 +180,7 @@ import groovy.transform.Field
 
 metadata {
 	definition (
-		name: "Zooz ZEN Dimmer Advanced BETA",
+		name: "Zooz ZEN Dimmer Advanced",
 		namespace: "jtp10181",
 		author: "Jeff Page (@jtp10181)",
 		importUrl: "https://raw.githubusercontent.com/jtp10181/hubitat/master/Drivers/zooz/zooz-zen-dimmer.groovy"
@@ -195,6 +196,9 @@ metadata {
 		capability "ReleasableButton"
 		//capability "DoubleTapableButton"
 
+		command "startLevelChange", [
+			[name:"Direction*", description:"Direction for level change request", type: "ENUM", constraints: ["up","down"]],
+			[name:"Duration", type:"NUMBER", description:"Transition duration in seconds", constraints:["NUMBER"]] ]
 		command "paramCommands", [[name:"Select Command*", type: "ENUM", constraints: ["Refresh","Test All","Hide Invalid","Clear Hidden"] ]]
 		command "setLED", [
 			[name:"Select Color*", description:"Works ONLY on ZEN7x Series!", type: "ENUM", constraints: ledColorOptions] ]
@@ -202,7 +206,7 @@ metadata {
 			[name:"Select Mode*", description:"This Sets Preference (#2)*", type: "ENUM", constraints: ledModeCmdOptions] ]
 
 		//DEBUGGING
-		command "debugShowVars"
+		//command "debugShowVars"
 
 		attribute "assocDNI2", "string"
 		attribute "assocDNI3", "string"
@@ -239,8 +243,8 @@ metadata {
 			required: false
 
 		input "supervisionGetEncap", "bool",
-			title: "Supervision Encapsulation Support:",
-			description: "This can increase reliability when the device is paired with security. If the device is not operating normally with this on, turn it back off.",
+			title: "Supervision Encapsulation (Experimental):",
+			description: "This can increase reliability when the device is paired with security, but may not work correctly on all models.",
 			defaultValue: false
 
 		input "levelCorrection", "bool",
@@ -377,7 +381,8 @@ void debugShowVars() {
 	],
 	//sceneControl - Dimmers=13, ZEN26/73/76=10, Other Switches=9
 	sceneControl: [ num: 13,
-		title: "Scene Control Events", 
+		title: "Scene Control Events",
+		description: "Enable to report pushed and multi-tap events",
 		size: 1, defaultVal: 0,
 		options: [0:"Disabled", 1:"Enabled"],
 	],
@@ -665,9 +670,12 @@ void clearVariables() {
 	if (devModel) state.deviceModel = devModel
 }
 
-void debugLogsOff(){
+void debugLogsOff() {
 	log.warn "debug logging disabled..."
 	device.updateSetting("debugEnable",[value:"false",type:"bool"])
+}
+void logsOff() {
+	//Do nothing, this is commonly scheduled by other drivers and this prevents an error message.
 }
 
 private getBrightnessOptions() {
@@ -813,16 +821,24 @@ String getSetLevelCmds(level, duration=null) {
 	return switchMultilevelSetCmd(levelVal, durationVal)
 }
 
-def startLevelChange(direction) {
+def startLevelChange(direction, duration=null) {
 	Boolean upDown = (direction == "down") ? true : false
-	Map holdRampRateParam = getParam("holdRampRate")
 	Map rampRateParam = getParam("rampRate")
-	logDebug "startLevelChange($direction) for ${holdRampRateParam.value}s"
+	Integer durationVal = validateRange(duration, getParam("holdRampRate").value, 0, 99)
+	String devModel = state.deviceModel
+	BigDecimal firmware = firmwareVersion
+
+	logDebug "startLevelChange($direction) for ${durationVal}s"
 
 	List<String> cmds = []
-	cmds += configSetCmd(rampRateParam, holdRampRateParam.value) 
-	cmds += secureCmd(zwave.switchMultilevelV2.switchMultilevelStartLevelChange(dimmingDuration: holdRampRateParam.value, upDown: upDown, ignoreStartLevel:1))
-	cmds += configSetCmd(rampRateParam, rampRateParam.value) 
+	cmds += secureCmd(zwave.switchMultilevelV2.switchMultilevelStartLevelChange(dimmingDuration: durationVal, upDown: upDown, ignoreStartLevel:1))
+	
+	//Hack for devices that don't implement the duration correctly
+	if (firmware <= 10.0) {
+		cmds.add( 0, configSetCmd(rampRateParam, durationVal) )
+		cmds.add( configSetCmd(rampRateParam, rampRateParam.value) )
+	}
+
 	return delayBetween(cmds, 1000)
 }
 

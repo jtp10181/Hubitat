@@ -6,7 +6,7 @@
  *
  *  Changelog:
 
-## [Unreleased] - 2021-08-31 (@jtp10181)
+## [1.5.0] - 2021-11-24 (@jtp10181)
   ### Added
   - ChangeLevel capability support so level can be adjusted from button holds (Dimmers Only)
   - Warning if driver is loaded on unsupported device (including wrong type)
@@ -39,7 +39,7 @@
 ## [1.4.2] - 2021-01-31 (@jtp10181)
   ### Added
   - Command to change indicator color (can be used from Rule Machine!)
-  - New method to test the params and find the ones that dont actually work
+  - New method to test the params and find the ones that don't actually work
   - Command button to remove invalid parameters
   ### Changed
   - More cleanup and adding some comments
@@ -170,6 +170,7 @@ import groovy.transform.Field
 @Field static final int maxAssocGroups = 3
 @Field static final int maxAssocNodes = 5
 
+@Field static final String VERSION = "1.5.0" 
 @Field static Map deviceModelNames =
 	["B111:1E1C":"ZEN21", "B111:251C":"ZEN23", "A000:A001":"ZEN26", 
 	"7000:A001":"ZEN71", "7000:A003":"ZEN73", "7000:A006":"ZEN76"]
@@ -179,7 +180,7 @@ import groovy.transform.Field
 
 metadata {
 	definition (
-		name: "Zooz ZEN Switch Advanced BETA",
+		name: "Zooz ZEN Switch Advanced",
 		namespace: "jtp10181",
 		author: "Jeff Page (@jtp10181)",
 		importUrl: "https://raw.githubusercontent.com/jtp10181/hubitat/master/Drivers/zooz/zooz-zen-switch.groovy"
@@ -200,7 +201,7 @@ metadata {
 			[name:"Select Mode*", description:"This Sets Preference (#2)*", type: "ENUM", constraints: ledModeCmdOptions] ]
 
 		//DEBUGGING
-		command "debugShowVars"
+		//command "debugShowVars"
 
 		attribute "assocDNI2", "string"
 		attribute "assocDNI3", "string"
@@ -237,8 +238,8 @@ metadata {
 			required: false
 
 		input "supervisionGetEncap", "bool",
-			title: "Supervision Encapsulation Support:",
-			description: "This can increase reliability when the device is paired with security. If the device is not operating normally with this on, turn it back off.",
+			title: "Supervision Encapsulation (Experimental):",
+			description: "This can increase reliability when the device is paired with security, but may not work correctly on all models.",
 			defaultValue: false
 
 		input "sceneReverse", "bool",
@@ -316,7 +317,8 @@ void debugShowVars() {
 	],
 	//sceneControl - Dimmers=13, ZEN26/73/76=10, Other Switches=9
 	sceneControl: [ num: 9,
-		title: "Scene Control Events", 
+		title: "Scene Control Events",
+		description: "Enable to report pushed and multi-tap events",
 		size: 1, defaultVal: 0,
 		options: [0:"Disabled", 1:"Enabled"],
 		changes: [26:[num: 10], 73:[num: 10], 76:[num: 10]]
@@ -608,9 +610,12 @@ void clearVariables() {
 	if (devModel) state.deviceModel = devModel
 }
 
-void debugLogsOff(){
+void debugLogsOff() {
 	log.warn "debug logging disabled..."
 	device.updateSetting("debugEnable",[value:"false",type:"bool"])
+}
+void logsOff() {
+	//Do nothing, this is commonly scheduled by other drivers and this prevents an error message.
 }
 
 private getAutoOnOffIntervalOptions() {

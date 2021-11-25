@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2021-11-24 (@jtp10181)
+  ### Added
+  - ChangeLevel capability support so level can be adjusted from button holds (Dimmers Only)
+  - Warning if driver is loaded on unsupported device (including wrong type)
+  ### Changed
+  - Total overhaul of parameters code to make it easier to maintain
+  - Changed switchMultiLevel class down to V2 as no V3 features are needed (Dimmers Only)
+  ### Fixed
+  - The internal lastActivityDate will only update when the device responds to the hub
+
 ## [1.4.4] - 2021-06-08 (@jtp10181)
   ### Added
   - Full supervision support for outgoing Set and Remove commands
@@ -111,7 +121,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 https://github.com/krlaframboise/SmartThings/tree/master/devicetypes/zooz/
   - Initial Release (for SmartThings)
 
-[Unreleased]: https://github.com/jtp10181/Hubitat/compare/zooz-v1.4.4...HEAD
+[Unreleased]: https://github.com/jtp10181/Hubitat/compare/zooz-v1.5.0...HEAD
+[1.5.0]: https://github.com/jtp10181/Hubitat/compare/zooz-v1.4.4...zooz-v1.5.0
 [1.4.4]: https://github.com/jtp10181/Hubitat/compare/zooz-v1.4.3...zooz-v1.4.4
 [1.4.3]: https://github.com/jtp10181/Hubitat/compare/zooz-v1.4.2...zooz-v1.4.3
 [1.4.2]: https://github.com/jtp10181/Hubitat/compare/zooz-v1.4.0...zooz-v1.4.2
