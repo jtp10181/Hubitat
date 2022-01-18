@@ -7,9 +7,25 @@
       "id": "1b4a1f7e-7bff-44aa-8a65-5d0cb5ca6959",
       "name": "Zooz Switches Advanced Drivers",
       "category": "Control",
-      "location": "https://raw.githubusercontent.com/jtp10181/Hubitat/main/Drivers/zooz/packageManifest.json",
-      "description": "Zooz Drivers with Advanced Settings and Features",
-      "tags": [ "Lights & Switches", "ZWave" ]
+      "location": "https://raw.githubusercontent.com/jtp10181/Hubitat/main/packageManifest/zooz-zen-switch-dimmer.json",
+      "description": "Zooz Switch Drivers with Advanced Settings and Features",
+      "tags": [
+        "Lights & Switches",
+        "ZWave"
+      ]
+    },
+    {
+      "id": "77f47cd6-9acd-47fa-9b3a-26c8a986123f",
+      "name": "Zooz Sensors Advanced Drivers",
+      "category": "Utility",
+      "location": "https://raw.githubusercontent.com/jtp10181/Hubitat/main/packageManifest/zooz-zen-sensors.json",
+      "description": "Zooz Sensor Drivers with Advanced Settings and Features",
+      "tags": [
+        "Multi Sensors",
+        "Motion Control",
+        "Temperature & Humidity",
+        "ZWave"
+      ]
     }
   ]
 }

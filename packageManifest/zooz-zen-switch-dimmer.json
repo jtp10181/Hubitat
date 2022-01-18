@@ -1,7 +1,7 @@
 {
   "packageName": "Zooz Switches Advanced Drivers",
   "author": "jtp10181",
-  "minimumHEVersion": "2.2.3",
+  "minimumHEVersion": "2.2.8",
   "dateReleased": "2021-11-24",
   "documentationLink": "https://github.com/jtp10181/Hubitat/tree/main/Drivers/zooz",
   "communityLink": "https://community.hubitat.com/t/release-zooz-zen-switches-advanced-drivers/58649",
