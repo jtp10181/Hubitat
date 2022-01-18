@@ -4,14 +4,23 @@
  *
  *  Changelog:
 
+## [0.2.0] - 2022-01-01 (@jtp10181)
+  ### Added
+  - Temperature, Humidity, and Light offsets
+  - Refresh command to force full refresh next wakeup
+  - Log messages with instructions when you need to wake up the device
+  - Properly sending wakeUpNoMoreInfoCmd to save battery
+  ### Fixed
+  - Added min firmware to parameter 8 setting
+  - Wakeup only gets battery level by default
+  - parse() logTrace would fail if command could not be parsed
+
 ## [0.1.0] - 2021-09-29 (@jtp10181)
   ### Added
   - Initial Release, supports all known settings and features except associations
 
 NOTICE: This file has been created by *Jeff Page* with some code used 
 	from the original work of *Zooz* and *Kevin LaFramboise* under compliance with the Apache 2.0 License.
-
-Below link is for original source (Kevin LaFramboise @krlaframboise)
 
  *  Copyright 2021 Jeff Page
  *  Copyright ????? Zooz
@@ -32,7 +41,7 @@ Below link is for original source (Kevin LaFramboise @krlaframboise)
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "0.1.0" 
+@Field static final String VERSION = "0.2.0" 
 @Field static final Map deviceModelNames = ["2021:2101":"ZSE40"]
 
 metadata {
@@ -40,7 +49,6 @@ metadata {
 		name: "Zooz ZSE40 4-in-1 Multisensor",
 		namespace: "jtp10181",
 		author: "Jeff Page (@jtp10181)",
-		importUrl: ""
 	) {
 		capability "Sensor"
 		capability "Configuration"
@@ -50,7 +58,7 @@ metadata {
 		capability "Temperature Measurement"
 		capability "Battery"
 		capability "Tamper Alert"
-		//capability "Refresh"
+		capability "Refresh"
 
 		//command "paramCommands", [[name:"Select Command*", type: "ENUM", constraints: ["Refresh"] ]]
 
@@ -86,6 +94,18 @@ metadata {
 				}
 			}
 		}
+
+		input "tempOffset", "decimal",
+			title: "Temperature Offset [-25.0 to 25.0]:",
+			defaultValue: 0, range: "-25..25", required: false
+
+		input "humidityOffset", "decimal",
+			title: "Humidity Offset [-25.0 to 25.0]:",
+			defaultValue: 0, range: "-25..25", required: false
+
+		input "lightOffset", "decimal",
+			title: "Light % Offset [-25.0 to 25.0]:",
+			defaultValue: 0, range: "-25..25", required: false
 
 		// input "assocDNI2", "string",
 		// 	title: "Device Associations - Group 2:",
@@ -157,7 +177,8 @@ void debugShowVars() {
 	group1Report: [ num:8, 
 		title: "Group 1 (Hub) Reporting", 
 		size: 1, defaultVal: (-1), 
-		options: [0:"Notification Reports Only", (-1):"Notification AND Basic Reports"]
+		options: [0:"Notification Reports Only", (-1):"Notification AND Basic Reports"],
+		firmVer: 32.00
 	],
 ]
 
@@ -198,24 +219,29 @@ void installed() {
 	log.warn "installed..."
 }
 
-void initialize() {
+List<String> initialize() {
 	log.warn "initialize..."
-	executeRefreshCmds()
-	runIn(1, executeConfigureCmds)
+
+	List<String> cmds = []
+	cmds << getRefreshCmds()
+	cmds << getConfigureCmds()
+	cmds = delayBetween(cmds, 800)
+	return cmds ?: []
 }
 
-void configure() {
+List<String> configure() {
 	log.warn "configure..."
 	if (debugEnable) runIn(1800, debugLogsOff)
 
 	if (!pendingChanges || state.resyncAll == null) {
-		logDebug "Enabling Full Re-Sync"
+		logForceWakeupMessage "Enabling Full Re-Sync to be run the next time the device wakes up."
 		state.resyncAll = true
+	} else {
+		logForceWakeupMessage "Pending configuration changes will be updated the next time the device wakes up."
 	}
 
 	updateSyncingStatus(1)
-	//runIn(2, executeRefreshCmds)
-	//runIn(6, executeConfigureCmds)
+	return []
 }
 
 List<String> updated() {
@@ -225,14 +251,19 @@ List<String> updated() {
 
 	if (debugEnable) runIn(1800, debugLogsOff)
 
-	//runIn(1, executeConfigureCmds)
+	if (pendingChanges) {
+		logForceWakeupMessage "Pending configuration changes will be updated the next time the device wakes up."
+	}
+
 	updateSyncingStatus(1)
 	return []
 }
 
-def refresh() {
+List<String> refresh() {
 	logDebug "refresh..."
-	//executeRefreshCmds()
+	state.pendingRefresh = true
+	logForceWakeupMessage "Sensor info will be refreshed the next time the device wakes up."
+	return []
 }
 
 void paramCommands(String str) {
@@ -255,7 +286,7 @@ void paramsRefresh() {
 		cmds << configGetCmd(param)
 	}
 
-	if (cmds) sendCommands(cmds)
+	if (cmds) sendCommands(cmds, 800)
 }
 
 /*******************************************************************
@@ -263,9 +294,9 @@ void paramsRefresh() {
 ********************************************************************/
 void parse(String description) {
 	hubitat.zwave.Command cmd = zwave.parse(description, commandClassVersions)
-	logTrace "parse: ${description} --PARSED-- ${cmd}"
-
+	
 	if (cmd) {
+		logTrace "parse: ${description} --PARSED-- ${cmd}"
 		zwaveEvent(cmd)
 	} else {
 		log.warn "Unable to parse: $description"
@@ -419,15 +450,22 @@ void zwaveEvent(hubitat.zwave.commands.batteryv1.BatteryReport cmd, ep=0) {
 void zwaveEvent(hubitat.zwave.commands.wakeupv2.WakeUpNotification cmd, ep=0) {
 	logTrace "${cmd} (ep ${ep})"
 	logDebug "WakeUpNotification"
-	
-	//List<String> cmds = getPendingConfigureAndRefreshCommands()
-	//cmds << zwave.wakeUpV2.wakeUpNoMoreInformation().format()  
-	// state.pendingConfigure = false
-	// state.initialized = true
 
-	//DEBUGGING
-	executeRefreshCmds()
-	runIn(1, executeConfigureCmds)
+	List<String> cmds = []
+	//Refresh all or just battery
+	if (state.pendingRefresh) {
+		cmds += getRefreshCmds()
+	} else {
+		cmds << batteryGetCmd()
+	}
+
+	//Any configuration needed
+	cmds += getConfigureCmds()
+
+	//This needs a longer delay
+	cmds << "delay 2000" << wakeUpNoMoreInfoCmd()
+	
+	sendCommands(cmds, 800)
 }
 
 void zwaveEvent(hubitat.zwave.commands.basicv1.BasicSet cmd, ep=0) {
@@ -439,14 +477,23 @@ void zwaveEvent(hubitat.zwave.commands.sensormultilevelv11.SensorMultilevelRepor
 	logTrace "${cmd} (ep ${ep})"	
 	switch (cmd.sensorType) {
 		case sensorTemp:
-			def temp = convertTemperatureIfNeeded(cmd.scaledSensorValue, (cmd.scale ? "F" : "C"), cmd.precision)			
-			sendEventIfNew("temperature", temp, true, "", temperatureScale)
+			def temp = convertTemperatureIfNeeded(cmd.scaledSensorValue, (cmd.scale ? "F" : "C"), cmd.precision)
+			def offset = safeToDec(settings?.tempOffset, 0)
+			def tempOS = safeToDec(temp,0) + offset
+			logDebug "Temperature Offset by ${offset} from ${temp} to ${tempOS}"
+			sendEventIfNew("temperature", tempOS.doubleValue().round(1), true, "", "°${temperatureScale}")
 			break
 		case sensorIlum:
-			sendEventIfNew("illuminance", cmd.scaledSensorValue, true, "", "%")
+			def offset = safeToDec(settings?.lightOffset, 0)
+			def lightOS = safeToDec(cmd.scaledSensorValue,0) + offset
+			logDebug "Light % Offset by ${offset} from ${cmd.scaledSensorValue} to ${lightOS}"
+			sendEventIfNew("illuminance", Math.round(lightOS), true, "", "%")
 			break
 		case sensorHumid:
-			sendEventIfNew("humidity", cmd.scaledSensorValue, true, "", "%")
+			def offset = safeToDec(settings?.humidityOffset, 0)
+			def humiOS = safeToDec(cmd.scaledSensorValue,0) + offset
+			logDebug "Humidity Offset by ${offset} from ${cmd.scaledSensorValue} to ${humiOS}"
+			sendEventIfNew("humidity", humiOS.doubleValue().round(1), true, "", "%")
 			break
 		default:
 			logDebug "Unhandled sensorType: ${cmd}"
@@ -505,6 +552,18 @@ String associationGetCmd(Integer group) {
 
 String versionGetCmd() {
 	return secureCmd(zwave.versionV3.versionGet())
+}
+
+String wakeUpIntervalGetCmd() {
+	return secureCmd(zwave.wakeUpV2.wakeUpIntervalGet())
+}
+
+String wakeUpIntervalSetCmd(val) {
+	return secureCmd(zwave.wakeUpV2.wakeUpIntervalSet(seconds:val, nodeid:zwaveHubNodeId))
+}
+
+String wakeUpNoMoreInfoCmd() {
+	return secureCmd(zwave.wakeUpV2.wakeUpNoMoreInformation())
 }
 
 String batteryGetCmd() {
@@ -641,8 +700,8 @@ void supervisionCheck(Integer num) {
 /*******************************************************************
  ***** Execute / Build Commands
 ********************************************************************/
-void executeConfigureCmds() {
-	logDebug "executeConfigureCmds..."
+List<String> getConfigureCmds() {
+	logDebug "getConfigureCmds..."
 
 	List<String> cmds = []
 
@@ -666,13 +725,12 @@ void executeConfigureCmds() {
 
 	state.resyncAll = false
 
-	if (cmds) {
-		updateSyncingStatus(6)
-		sendCommands(cmds)
-	}
+	if (cmds) updateSyncingStatus(6)
+
+	return cmds ?: []
 }
 
-void executeRefreshCmds() {
+List<String> getRefreshCmds() {
 	List<String> cmds = []
 	cmds << versionGetCmd()
 	cmds << batteryGetCmd()
@@ -684,10 +742,9 @@ void executeRefreshCmds() {
 	//cmds << notificationGetCmd(notiHomeSecurity, eventTamper)
 	//cmds << notificationGetCmd(notiHomeSecurity, eventMotion)
 
-	//Seems like this needs a longer delay
-	//cmds << secureCmd(zwave.wakeUpV2.wakeUpNoMoreInformation())
+	state.pendingRefresh = false
 
-	sendCommands(cmds)
+	return cmds ?: []
 }
 
 void clearVariables() {
@@ -774,7 +831,6 @@ Integer getPendingChanges() {
 		((paramVal != null) && (paramVal != getParamStoredValue(param.num)))
 	}
 	Integer pendingAssocs = Math.ceil(getConfigureAssocsCmds()?.size()/2) ?: 0
-	//Integer group1Assoc = (state.group1Assoc != true) ? 1 : 0
 	return (configChanges + pendingAssocs)
 }
 
@@ -866,7 +922,7 @@ void updateParamsList() {
 	Short modelNum = deviceModelShort
 	Short modelSeries = Math.floor(modelNum/10)
 	BigDecimal firmware = firmwareVersion
-	log.debug "${devModel} | ${modelNum} | ${modelSeries}"
+	//log.debug "${devModel} | ${modelNum} | ${modelSeries}"
 
 	List<Map> tmpList = []
 	paramsMap.each { name, pMap ->
@@ -1031,8 +1087,13 @@ Integer validateRange(val, Integer defaultVal, Integer lowVal, Integer highVal) 
 	}
 }
 
-Integer safeToInt(val, Integer defaultVal=0) {
+private safeToInt(val, defaultVal=0) {
 	return "${val}"?.isInteger() ? "${val}".toInteger() : defaultVal
+}
+
+private safeToDec(val, defaultVal=0) {
+	def decVal = "${val}"?.isBigDecimal() ? "${val}".toBigDecimal() : defaultVal
+	return "${val}"?.isBigDecimal() ? "${val}".toBigDecimal() : defaultVal
 }
 
 boolean isDuplicateCommand(lastExecuted, allowedMil) {
@@ -1043,6 +1104,11 @@ boolean isDuplicateCommand(lastExecuted, allowedMil) {
 /*******************************************************************
  ***** Logging Functions
 ********************************************************************/
+private logForceWakeupMessage(msg) {
+	log.warn "${msg}  You can force a wake up by using a paper clip to push the ZWave button on the device."
+}
+
+void logsOff(){}
 void debugLogsOff(){
 	log.warn "${device.displayName}: debug logging disabled..."
 	device.updateSetting("debugEnable",[value:"false",type:"bool"])
