@@ -2,10 +2,10 @@
   "packageName": "Zooz Sensors Advanced Drivers",
   "author": "jtp10181",
   "minimumHEVersion": "2.2.8",
-  "dateReleased": "2022-01-17",
+  "dateReleased": "2022-01-23",
   "documentationLink": "https://github.com/jtp10181/Hubitat/tree/main/Drivers/zooz",
   "communityLink": "https://community.hubitat.com/t/beta-zooz-zse40-4-in-1-multi-sensor-driver/81074",
-  "releaseNotes": "Version [0.2.0 BETA] - 2022-01-17 (@jtp10181)\n Check community post for full details.",
+  "releaseNotes": "Version [0.3.0 BETA] - 2022-01-23 (@jtp10181)\n Check community post for full details.",
   "drivers": [
     {
       "id": "cbe3bb01-e8cd-416e-9af6-cc18fd451444",
@@ -13,7 +13,7 @@
       "namespace": "jtp10181",
       "location": "https://raw.githubusercontent.com/jtp10181/Hubitat/main/Drivers/zooz/zooz-zse40-multisensor.groovy",
       "required": false,
-      "version": "0.2.0"
+      "version": "0.3.0"
     }
   ]
 }

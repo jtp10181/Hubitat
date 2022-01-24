@@ -4,7 +4,13 @@
  *
  *  Changelog:
 
-## [0.2.0] - 2022-01-01 (@jtp10181)
+## [0.3.0] - 2022-01-23 (@jtp10181)
+  ### Added
+  - Basic WakeUpInterval support (configure will force it to 12 hours)
+  ### Fixed
+  - Removed Initialize function, was causing issues with pairing
+
+## [0.2.0] - 2022-01-17 (@jtp10181)
   ### Added
   - Temperature, Humidity, and Light offsets
   - Refresh command to force full refresh next wakeup
@@ -41,7 +47,7 @@ NOTICE: This file has been created by *Jeff Page* with some code used
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "0.2.0" 
+@Field static final String VERSION = "0.3.0" 
 @Field static final Map deviceModelNames = ["2021:2101":"ZSE40"]
 
 metadata {
@@ -219,16 +225,6 @@ void installed() {
 	log.warn "installed..."
 }
 
-List<String> initialize() {
-	log.warn "initialize..."
-
-	List<String> cmds = []
-	cmds << getRefreshCmds()
-	cmds << getConfigureCmds()
-	cmds = delayBetween(cmds, 800)
-	return cmds ?: []
-}
-
 List<String> configure() {
 	log.warn "configure..."
 	if (debugEnable) runIn(1800, debugLogsOff)
@@ -362,6 +358,7 @@ void zwaveEvent(hubitat.zwave.commands.supervisionv1.SupervisionReport cmd, ep=0
 
 void zwaveEvent(hubitat.zwave.commands.versionv3.VersionReport cmd) {
 	logTrace "${cmd}"
+	state.pendingRefresh = false
 
 	String subVersion = String.format("%02d", cmd.firmware0SubVersion)
 	String fullVersion = "${cmd.firmware0Version}.${subVersion}"
@@ -447,16 +444,21 @@ void zwaveEvent(hubitat.zwave.commands.batteryv1.BatteryReport cmd, ep=0) {
 	sendEvent(name:"battery", value: lvl, unit:"%", descriptionText: descText, isStateChange: true)
 }
 
+void zwaveEvent(hubitat.zwave.commands.wakeupv2.WakeUpIntervalReport cmd) {
+   logDebug "WakeUpIntervalReport: $cmd"
+   device.updateDataValue("zwWakeupInterval", "${cmd.seconds}")
+}
+
 void zwaveEvent(hubitat.zwave.commands.wakeupv2.WakeUpNotification cmd, ep=0) {
 	logTrace "${cmd} (ep ${ep})"
 	logDebug "WakeUpNotification"
 
 	List<String> cmds = []
-	//Refresh all or just battery
+	cmds << batteryGetCmd()
+
+	//Refresh all if requested
 	if (state.pendingRefresh) {
 		cmds += getRefreshCmds()
-	} else {
-		cmds << batteryGetCmd()
 	}
 
 	//Any configuration needed
@@ -707,6 +709,8 @@ List<String> getConfigureCmds() {
 
 	if (state.resyncAll || !firmwareVersion || !state.deviceModel) {
 		cmds << versionGetCmd()
+		cmds << wakeUpIntervalSetCmd(43200)
+		cmds << wakeUpIntervalGetCmd()
 	}
 
 	cmds += getConfigureAssocsCmds()
@@ -733,7 +737,6 @@ List<String> getConfigureCmds() {
 List<String> getRefreshCmds() {
 	List<String> cmds = []
 	cmds << versionGetCmd()
-	cmds << batteryGetCmd()
 	cmds << sensorMultilevelGetCmd(sensorTemp)
 	cmds << sensorMultilevelGetCmd(sensorIlum)
 	cmds << sensorMultilevelGetCmd(sensorHumid)
@@ -741,8 +744,6 @@ List<String> getRefreshCmds() {
 	//These dont work
 	//cmds << notificationGetCmd(notiHomeSecurity, eventTamper)
 	//cmds << notificationGetCmd(notiHomeSecurity, eventMotion)
-
-	state.pendingRefresh = false
 
 	return cmds ?: []
 }
