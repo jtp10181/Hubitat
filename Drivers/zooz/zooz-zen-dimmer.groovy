@@ -6,6 +6,15 @@
  *
  *  Changelog:
 
+## [1.5.1] - 2022-03-22 (@jtp10181)
+  ### Changed
+  - Description text loging enabled by default
+  ### Fixed
+  - Added inClusters to fingerprint so it will be selected by default
+  - threeWaySwitchType options corrected between switches and dimmers
+  - Parameter #7 removed from ZEN71/72 which do not ave that option
+  - Global (Field static) Maps defined explicitly as a ConcurrentHashMap
+
 ## [1.5.0] - 2021-11-24 (@jtp10181)
   ### Added
   - ChangeLevel capability support so level can be adjusted from button holds (Dimmers Only)
@@ -26,7 +35,7 @@
 
 ## [1.4.3] - 2021-04-21 (@jtp10181)
   ### Added
-  - ZEN30 Uses new custom child driver by default, falls back to hubitat generic
+  - ZEN30 Uses new custom child driver by default, falls back to Hubitat generic
   - Command to change indicator on/off settings
   - Support for ZEN73 and ZEN74
   - Support for Push, Hold, and Release commands
@@ -212,12 +221,12 @@ metadata {
 		attribute "assocDNI3", "string"
 		attribute "syncStatus", "string"
 
-		fingerprint mfr:"027A", prod:"B112", deviceId:"1F1C", deviceJoinName:"Zooz ZEN22 Dimmer"
-		fingerprint mfr:"027A", prod:"B112", deviceId:"261C", deviceJoinName:"Zooz ZEN24 Dimmer"
-		fingerprint mfr:"027A", prod:"A000", deviceId:"A002", deviceJoinName:"Zooz ZEN27 S2 Dimmer"
-		fingerprint mfr:"027A", prod:"7000", deviceId:"A002", deviceJoinName:"Zooz ZEN72 Dimmer"
-		fingerprint mfr:"027A", prod:"7000", deviceId:"A004", deviceJoinName:"Zooz ZEN74 Dimmer"
-		fingerprint mfr:"027A", prod:"7000", deviceId:"A007", deviceJoinName:"Zooz ZEN77 S2 Dimmer"
+		fingerprint mfr:"027A", prod:"B112", deviceId:"1F1C", inClusters:"0x5E,0x6C,0x55,0x9F", deviceJoinName:"Zooz ZEN22 Dimmer"
+		fingerprint mfr:"027A", prod:"B112", deviceId:"261C", inClusters:"0x5E,0x6C,0x55,0x9F", deviceJoinName:"Zooz ZEN24 Dimmer"
+		fingerprint mfr:"027A", prod:"A000", deviceId:"A002", inClusters:"0x5E,0x6C,0x55,0x9F", deviceJoinName:"Zooz ZEN27 S2 Dimmer"
+		fingerprint mfr:"027A", prod:"7000", deviceId:"A002", inClusters:"0x5E,0x55,0x9F,0x6C", deviceJoinName:"Zooz ZEN72 Dimmer"
+		fingerprint mfr:"027A", prod:"7000", deviceId:"A004", inClusters:"0x5E,0x55,0x9F,0x6C", deviceJoinName:"Zooz ZEN74 Dimmer"
+		fingerprint mfr:"027A", prod:"7000", deviceId:"A007", inClusters:"0x5E,0x55,0x9F,0x6C", deviceJoinName:"Zooz ZEN77 S2 Dimmer"
 	}
 
 	preferences {
@@ -258,7 +267,7 @@ metadata {
 			defaultValue: true
 
 		//Logging options similar to other Hubitat drivers
-		input name: "txtEnable", type: "bool", title: "Enable Description Text Logging?", defaultValue: false
+		input name: "txtEnable", type: "bool", title: "Enable Description Text Logging?", defaultValue: true
 		input name: "debugEnable", type: "bool", title: "Enable Debug Logging?", defaultValue: true
 	}
 }
@@ -403,13 +412,11 @@ void debugShowVars() {
 		options: [0:"Report Each Brightness Level", 1:"Report Only Final Brightness Level"],
 	],
 	//threeWaySwitchType - ZEN21/22/23/24/71/72 Only
-	threeWaySwitchType: [num: null, // (12/19)
+	threeWaySwitchType: [num: null, // (19)
 		title: "3-Way Switch Type",
 		size: 1, defaultVal: 0, 
-		options: [0:"Toggle On/Off Switch", 1:"Momentary Switch"],
-		changes: [21:[num: 12],23:[num: 12],71:[num: 12], 22:[num: 19],24:[num: 19],72:[num: 19],
-			'7X':[options: [0:"Toggle On/Off Switch", 1:"Toggle On/Off with 2x/3x Shortcuts", 2:"Momentary Switch", 3:"Momentary with 2x/3x Shortcuts"]]
-		],
+		options: [0:"Toggle On/Off Switch", 1:"Toggle On/Off with 2x/3x Shortcuts", 2:"Momentary Switch", 3:"Momentary with 2x/Hold Shortcuts"],
+		changes: [22:[num: 19],24:[num: 19],72:[num: 19]]
 	],
 	paddleProgramming: [ num: null,
 		title: "Programming from the Paddle",
@@ -431,6 +438,7 @@ void debugShowVars() {
 			13:"Physical Tap On ZEN / Z-Wave Command / Timer", 14:"Physical Tap On ZEN / 3-Way Switch / Z-Wave Command / Timer",
 			15:"All Of The Above" 
 		],
+		changes: [71:[num:null], 72:[num:null]]
 	],
 	sceneMapping: [ num: null,
 		title: "Central Scene Mapping", 
@@ -960,8 +968,8 @@ String multiChannelEncap(hubitat.zwave.Command cmd, ep) {
 }
 
 //====== Supervision Encapsulate START ======\\
-@Field static Map<String, Map<Short, String>> supervisedPackets = [:]
-@Field static Map<String, Short> sessionIDs = [:]
+@Field static Map<String, Map<Short, String>> supervisedPackets = new java.util.concurrent.ConcurrentHashMap()
+@Field static Map<String, Short> sessionIDs = new java.util.concurrent.ConcurrentHashMap()
 
 String supervisionEncap(hubitat.zwave.Command cmd, ep=0) {
 	//logTrace "supervisionEncap: ${cmd} (ep ${ep})"
@@ -997,7 +1005,7 @@ void zwaveEvent(hubitat.zwave.commands.supervisionv1.SupervisionReport cmd, ep=0
 	if (supervisedPackets["${device.id}"] == null) { supervisedPackets["${device.id}"] = [:] }
 
 	switch (cmd.status as Integer) {
-		case 0x00: // "No Support" 
+		case 0x00: // "No Support"
 		case 0x01: // "Working"
 		case 0x02: // "Failed"
 			log.warn "Supervision NOT Successful - SessionID: ${cmd.sessionID}, Status: ${cmd.status}"
@@ -1044,9 +1052,9 @@ void supervisionCheck(Integer num) {
 
 def parse(String description) {
 	def cmd = zwave.parse(description, commandClassVersions)
-	logTrace "parse: ${description} --PARSED-- ${cmd}"
 
 	if (cmd) {
+		logTrace "parse: ${description} --PARSED-- ${cmd}"
 		zwaveEvent(cmd)
 	} else {
 		log.warn "Unable to parse: $description"
@@ -1364,7 +1372,7 @@ Map getParamStoredMap() {
 //This will rebuild the list for the current model and firmware only as needed
 //paramsList Structure: MODEL:[FIRMWARE:PARAM_MAPS]
 //PARAM_MAPS [num, name, title, description, size, defaultVal, options, firmVer]
-@Field static Map<String, Map<String, List>> paramsList = [:]
+@Field static Map<String, Map<String, List>> paramsList = new java.util.concurrent.ConcurrentHashMap()
 void updateParamsList() {
 	logDebug "Update Params List"
 	String devModel = state.deviceModel
