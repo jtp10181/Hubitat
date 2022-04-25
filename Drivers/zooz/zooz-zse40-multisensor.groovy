@@ -4,6 +4,19 @@
  *
  *  Changelog:
 
+## [1.0.0] - 2022-04-25 (@jtp10181)
+  ### Added
+  - More robust checking for missing firmware/model data to help new users
+  - INFO state message about anything pending that needs the device to wake up, more visible than logging
+  ### Changed
+  - Renamed Configure and Refresh commands since they do not work instantly like a mains device
+  - Downgraded some command class versions to hopefully better support older devices
+  - Removed some unused code carried over from copying another driver
+  ### Fixed
+  - Added inClusters to fingerprint so it will be selected by default
+  - Global (Field static) Maps defined explicitly as a ConcurrentHashMap
+  - Corrected upper limit of Motion Clear delay (thanks @conrad4 for finding it
+
 ## [0.3.0] - 2022-01-23 (@jtp10181)
   ### Added
   - Basic WakeUpInterval support (configure will force it to 12 hours)
@@ -47,7 +60,7 @@ NOTICE: This file has been created by *Jeff Page* with some code used
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "0.3.0" 
+@Field static final String VERSION = "1.0.0" 
 @Field static final Map deviceModelNames = ["2021:2101":"ZSE40"]
 
 metadata {
@@ -57,16 +70,15 @@ metadata {
 		author: "Jeff Page (@jtp10181)",
 	) {
 		capability "Sensor"
-		capability "Configuration"
 		capability "Motion Sensor"
 		capability "Illuminance Measurement"
 		capability "Relative Humidity Measurement"
 		capability "Temperature Measurement"
 		capability "Battery"
 		capability "Tamper Alert"
-		capability "Refresh"
 
-		//command "paramCommands", [[name:"Select Command*", type: "ENUM", constraints: ["Refresh"] ]]
+		command "fullConfigure"
+		command "forceRefresh"
 
 		//DEBUGGING
 		//command "debugShowVars"
@@ -75,7 +87,9 @@ metadata {
 		//attribute "assocDNI3", "string"
 		attribute "syncStatus", "string"
 
-		fingerprint mfr:"027A", prod:"2021", deviceId:"2101", deviceJoinName:"Zooz ZSE40 4-in-1 Multisensor"
+		fingerprint mfr:"027A", prod:"2021", deviceId:"2101", inClusters:"0x5E,0x22,0x98,0x55", deviceJoinName:"Zooz ZSE40 4-in-1 Multisensor"
+		fingerprint mfr:"027A", prod:"2021", deviceId:"2101", inClusters:"0x5E,0x86,0x72,0x5A,0x85,0x59,0x73,0x80,0x71,0x31,0x70,0x84,0x7A", deviceJoinName:"Zooz ZSE40 4-in-1 Multisensor"
+		fingerprint mfr:"027A", prod:"2021", deviceId:"2101", inClusters:"0x5E,0x22,0x98,0x9F,0x6C,0x55", deviceJoinName:"Zooz ZSE40-700 4-in-1 Multisensor"
 	}
 
 	preferences {
@@ -124,8 +138,8 @@ metadata {
 		// 	required: false
 
 		// input "supervisionGetEncap", "bool",
-		// 	title: "Supervision Encapsulation Support (BETA):",
-		// 	description: "This can increase reliability when the device is paired with security if implemented correctly on the device.",
+		// 	title: "Supervision Encapsulation (Experimental):",
+		// 	description: "This can increase reliability when the device is paired with security, but may not work correctly on all models.",
 		// 	defaultValue: false
 
 		//Logging options similar to other Hubitat drivers
@@ -139,8 +153,8 @@ void debugShowVars() {
 	log.warn "paramsMap ${paramsMap.hashCode()} ${paramsMap}"
 }
 
-@Field static final int maxAssocGroups = 5
-@Field static final int maxAssocNodes = 5
+// @Field static final int maxAssocGroups = 5
+// @Field static final int maxAssocNodes = 5
 
 @Field static Map<String, Map> paramsMap =
 [
@@ -150,26 +164,26 @@ void debugShowVars() {
 		options: [0:"Celsius (°C)", 1:"Fahrenheit (°F)"]
 	],
 	tempTrigger: [ num:2, 
-		title: "Temperature Change Trigger (1 = 0.1° / 10 = 1°)", 
+		title: "Temperature Change Report Trigger (1 = 0.1° / 10 = 1°)", 
 		size: 1, defaultVal: 10, 
 		range: "1..50"
 	],
 	humidityTrigger: [ num:3, 
-		title: "Humidity Change Trigger (%)", 
+		title: "Humidity Change Report Trigger (%)", 
 		size: 1, defaultVal: 10, 
 		range: "1..50"
 	],
 	lightTrigger: [ num:4, 
-		title: "Light Change Trigger (%)", 
+		title: "Light Change Report Trigger (%)", 
 		size: 1, defaultVal: 10, 
 		range: "5..50"
 	],
 	motionClear: [ num:5, 
 		title: "Motion Clear Delay / Timeout (seconds)", 
 		size: 1, defaultVal: 15, 
-		range: "15..255"
+		range: "15..126"
 	],
-	motionSesnitivity: [ num:6, 
+	motionSensitivity: [ num:6, 
 		title: "Motion Sensitivity", 
 		size: 1, defaultVal: 3, 
 		options: [1:"1 - Most Sensitive", 2:"2", 3:"3", 4:"4", 5:"5", 6:"6", 7:"7 - Least Sensitive"]
@@ -190,19 +204,20 @@ void debugShowVars() {
 
 @Field static final Map commandClassVersions = [
 	0x20: 1,	// Basic (basicv1)
-	0x31: 11,	// Sensor Multilevel (sensormultilevelv11) ************
+	0x31: 5,	// Sensor Multilevel (sensormultilevelv5)
 	0x59: 1,	// Association Grp Info (associationgrpinfov1)
 	0x5A: 1,	// Device Reset Locally	(deviceresetlocallyv1)
 	0x5E: 2,	// ZWave Plus Info (zwaveplusinfov2)
-	0x70: 2,	// Configuration (configurationv2) ******************
-	0x71: 8,	// Notification (notificationv8) (8) ****************
+	0x6C: 1,	// Supervision (supervisionv1)
+	0x70: 2,	// Configuration (configurationv2)
+	0x71: 3,	// Notification (notificationv3) (8)
 	0x72: 2,	// Manufacturer Specific (manufacturerspecificv2)
 	0x73: 1,	// Power Level (powerlevelv1)
 	0x7A: 2,	// Firmware Update Md (firmwareupdatemdv2)
 	0x80: 1,	// Battery (batteryv1)
-	0x84: 2,	// Wakeup *****************
-	0x85: 2,	// **** Association (associationv3) *****************
-	0x86: 3,	// Version (versionv3) ******************
+	0x84: 2,	// Wakeup (wakeupv2)
+	0x85: 2,	// Association (associationv2) (3)
+	0x86: 2,	// Version (versionv2) (3)
 	0x98: 1,	// Security (securityv1)
 	0x9F: 1     // Security 2
 ]
@@ -225,15 +240,15 @@ void installed() {
 	log.warn "installed..."
 }
 
-List<String> configure() {
+List<String> fullConfigure() {
 	log.warn "configure..."
 	if (debugEnable) runIn(1800, debugLogsOff)
 
 	if (!pendingChanges || state.resyncAll == null) {
-		logForceWakeupMessage "Enabling Full Re-Sync to be run the next time the device wakes up."
+		logForceWakeupMessage "Full Re-Configure"
 		state.resyncAll = true
 	} else {
-		logForceWakeupMessage "Pending configuration changes will be updated the next time the device wakes up."
+		logForceWakeupMessage "Pending Configuration Changes"
 	}
 
 	updateSyncingStatus(1)
@@ -247,42 +262,29 @@ List<String> updated() {
 
 	if (debugEnable) runIn(1800, debugLogsOff)
 
+	if (!firmwareVersion || !state.deviceModel) {
+		state.resyncAll = true
+		state.pendingRefresh = true
+		setDevModel(firmwareVersion)
+		logForceWakeupMessage "Full Re-Configure and Refresh"
+	}
+
 	if (pendingChanges) {
-		logForceWakeupMessage "Pending configuration changes will be updated the next time the device wakes up."
+		logForceWakeupMessage "Pending Configuration Changes"
+	}
+	else if (!state.resyncAll && !state.pendingRefresh) {
+		state.remove("INFO")
 	}
 
 	updateSyncingStatus(1)
 	return []
 }
 
-List<String> refresh() {
+List<String> forceRefresh() {
 	logDebug "refresh..."
 	state.pendingRefresh = true
-	logForceWakeupMessage "Sensor info will be refreshed the next time the device wakes up."
+	logForceWakeupMessage "Sensor Info Refresh"
 	return []
-}
-
-void paramCommands(String str) {
-	switch (str) {
-		case "Refresh":
-			paramsRefresh()
-			break
-		default:
-			log.warn "paramCommands invalid input: ${str}"
-	}
-}
-
-void paramsRefresh() {
-	List<String> cmds = []
-	for (int i = 1; i <= maxAssocGroups; i++) {
-		cmds << associationGetCmd(i)
-	}
-	
-	configParams.each { param ->
-		cmds << configGetCmd(param)
-	}
-
-	if (cmds) sendCommands(cmds, 800)
 }
 
 /*******************************************************************
@@ -295,7 +297,7 @@ void parse(String description) {
 		logTrace "parse: ${description} --PARSED-- ${cmd}"
 		zwaveEvent(cmd)
 	} else {
-		log.warn "Unable to parse: $description"
+		log.warn "Unable to parse: ${description}"
 	}
 
 	updateLastCheckIn()
@@ -356,31 +358,15 @@ void zwaveEvent(hubitat.zwave.commands.supervisionv1.SupervisionReport cmd, ep=0
 	}
 }
 
-void zwaveEvent(hubitat.zwave.commands.versionv3.VersionReport cmd) {
+void zwaveEvent(hubitat.zwave.commands.versionv2.VersionReport cmd) {
 	logTrace "${cmd}"
-	state.pendingRefresh = false
 
 	String subVersion = String.format("%02d", cmd.firmware0SubVersion)
 	String fullVersion = "${cmd.firmware0Version}.${subVersion}"
 	device.updateDataValue("firmwareVersion", fullVersion)
 
-	//Stash the model in a state variable
-	def devTypeId = convertIntListToHexList([safeToInt(device.getDataValue("deviceType")),safeToInt(device.getDataValue("deviceId"))]).collect{ it.padLeft(4,'0') }
-	def devModel = deviceModelNames[devTypeId.join(":")] ?: "UNK00"
-
-	//Extra check for ZSE40 (700 Series)
-	if (devModel == "ZSE40" && (new BigDecimal(fullVersion)) >= 32.32 && getDataValue("inClusters").contains("0x9F")) {
-		devModel = "ZSE40-700"
-	}
-
-	logDebug "Received Version Report - Model: ${devModel} | Firmware: ${fullVersion}"
-	state.deviceModel = devModel
-
-	if (devModel == "UNK00") {
-		log.warn "Unsupported Device USE AT YOUR OWN RISK: ${devTypeId}"
-		state.WARNING = "Unsupported Device Model - USE AT YOUR OWN RISK!"
-	}
-	else state.remove("WARNING")
+	logDebug "Received Version Report - Firmware: ${fullVersion}"
+	setDevModel(new BigDecimal(fullVersion))
 }
 
 void zwaveEvent(hubitat.zwave.commands.configurationv2.ConfigurationReport cmd) {
@@ -410,19 +396,19 @@ void zwaveEvent(hubitat.zwave.commands.associationv2.AssociationReport cmd) {
 		logDebug "Lifeline Association: ${cmd.nodeId}"
 		state.group1Assoc = (cmd.nodeId == [zwaveHubNodeId]) ? true : false
 	}
-	else if (grp > 1 && grp <= maxAssocGroups) {
-		logDebug "Group $grp Association: ${cmd.nodeId}"
-
-		if (cmd.nodeId.size() > 0) {
-			state["assocNodes$grp"] = cmd.nodeId
-		} else {
-			state.remove("assocNodes$grp".toString())
-		}
-
-		String dnis = convertIntListToHexList(cmd.nodeId)?.join(", ")
-		//sendEventIfNew("assocDNI$grp", dnis ?: "none", false)
-		device.updateSetting("assocDNI$grp", [value:"${dnis}", type:"string"])
-	}
+	// else if (grp > 1 && grp <= maxAssocGroups) {
+	// 	logDebug "Group $grp Association: ${cmd.nodeId}"
+	//
+	// 	if (cmd.nodeId.size() > 0) {
+	// 		state["assocNodes$grp"] = cmd.nodeId
+	// 	} else {
+	// 		state.remove("assocNodes$grp".toString())
+	// 	}
+	//
+	// 	String dnis = convertIntListToHexList(cmd.nodeId)?.join(", ")
+	// 	//sendEventIfNew("assocDNI$grp", dnis ?: "none", false)
+	// 	device.updateSetting("assocDNI$grp", [value:"${dnis}", type:"string"])
+	// }
 	else {
 		logDebug "Unhandled Group: $cmd"
 	}
@@ -466,6 +452,11 @@ void zwaveEvent(hubitat.zwave.commands.wakeupv2.WakeUpNotification cmd, ep=0) {
 
 	//This needs a longer delay
 	cmds << "delay 2000" << wakeUpNoMoreInfoCmd()
+
+	//Clear pending status
+	state.resyncAll = false
+	state.pendingRefresh = false
+	state.remove("INFO")
 	
 	sendCommands(cmds, 800)
 }
@@ -475,7 +466,7 @@ void zwaveEvent(hubitat.zwave.commands.basicv1.BasicSet cmd, ep=0) {
 	sendEventIfNew("motion", cmd.value ? "active":"inactive")
 }
 
-void zwaveEvent(hubitat.zwave.commands.sensormultilevelv11.SensorMultilevelReport cmd, ep=0) {
+void zwaveEvent(hubitat.zwave.commands.sensormultilevelv5.SensorMultilevelReport cmd, ep=0) {
 	logTrace "${cmd} (ep ${ep})"	
 	switch (cmd.sensorType) {
 		case sensorTemp:
@@ -498,18 +489,18 @@ void zwaveEvent(hubitat.zwave.commands.sensormultilevelv11.SensorMultilevelRepor
 			sendEventIfNew("humidity", humiOS.doubleValue().round(1), true, "", "%")
 			break
 		default:
-			logDebug "Unhandled sensorType: ${cmd}"
+			logDebug "Unhandled SensorMultilevelReport sensorType: ${cmd}"
 	}
 }
 
-void zwaveEvent(hubitat.zwave.commands.notificationv8.NotificationReport cmd, ep=0) {
+void zwaveEvent(hubitat.zwave.commands.notificationv3.NotificationReport cmd, ep=0) {
 	logTrace "${cmd} (ep ${ep})"
 	switch (cmd.notificationType) {
 		case notiHomeSecurity:
 			sendSecurityEvent(cmd.event, cmd.eventParameter[0])
 			break
 		default:
-			logDebug "Unhandled notificationType: ${cmd}"
+			logDebug "Unhandled NotificationReport notificationType: ${cmd}"
 	}
 }
 
@@ -553,7 +544,7 @@ String associationGetCmd(Integer group) {
 }
 
 String versionGetCmd() {
-	return secureCmd(zwave.versionV3.versionGet())
+	return secureCmd(zwave.versionV2.versionGet())
 }
 
 String wakeUpIntervalGetCmd() {
@@ -590,11 +581,11 @@ String switchBinaryGetCmd() {
 
 String sensorMultilevelGetCmd(sensorType) {
 	int scale = 0x00
-	return secureCmd(zwave.sensorMultilevelV11.sensorMultilevelGet(scale: scale, sensorType: sensorType))
+	return secureCmd(zwave.sensorMultilevelV5.sensorMultilevelGet(scale: scale, sensorType: sensorType))
 }
 
 String notificationGetCmd(notificationType, eventType) {
-	return secureCmd(zwave.notificationV8.notificationGet(notificationType: notificationType, v1AlarmType:0, event: eventType))
+	return secureCmd(zwave.notificationV3.notificationGet(notificationType: notificationType, v1AlarmType:0, event: eventType))
 }
 
 String configSetCmd(Map param, Integer value) {
@@ -635,8 +626,8 @@ String multiChannelEncap(hubitat.zwave.Command cmd, ep) {
 }
 
 //====== Supervision Encapsulate START ======\\
-@Field static Map<String, Map<Short, String>> supervisedPackets = [:]
-@Field static Map<String, Short> sessionIDs = [:]
+@Field static Map<String, Map<Short, String>> supervisedPackets = new java.util.concurrent.ConcurrentHashMap()
+@Field static Map<String, Short> sessionIDs = new java.util.concurrent.ConcurrentHashMap()
 
 String supervisionEncap(hubitat.zwave.Command cmd, ep=0) {
 	//logTrace "supervisionEncap: ${cmd} (ep ${ep})"
@@ -726,7 +717,6 @@ List<String> getConfigureCmds() {
 	}
 
 	if (state.resyncAll) clearVariables()
-
 	state.resyncAll = false
 
 	if (cmds) updateSyncingStatus(6)
@@ -737,11 +727,12 @@ List<String> getConfigureCmds() {
 List<String> getRefreshCmds() {
 	List<String> cmds = []
 	cmds << versionGetCmd()
+	cmds << wakeUpIntervalGetCmd()
 	cmds << sensorMultilevelGetCmd(sensorTemp)
 	cmds << sensorMultilevelGetCmd(sensorIlum)
 	cmds << sensorMultilevelGetCmd(sensorHumid)
 
-	//These dont work
+	//These don't work
 	//cmds << notificationGetCmd(notiHomeSecurity, eventTamper)
 	//cmds << notificationGetCmd(notiHomeSecurity, eventMotion)
 
@@ -759,7 +750,6 @@ void clearVariables() {
 
 	//Clear Data from other Drivers
 	device.removeDataValue("configVals")
-	device.removeDataValue("firmwareVersion")
 	device.removeDataValue("protocolVersion")
 	device.removeDataValue("hardwareVersion")
 	device.removeDataValue("serialNumber")
@@ -782,49 +772,49 @@ List getConfigureAssocsCmds() {
 		cmds << associationGetCmd(1)
 	}
 
-	for (int i = 2; i <= maxAssocGroups; i++) {
-		if (!device.currentValue("assocDNI$i")) {
-			//sendEventIfNew("assocDNI$i", "none", false)
-		}
-
-		List<String> cmdsEach = []
-		List settingNodeIds = getAssocDNIsSettingNodeIds(i)
-
-		//Need to remove first then add in case we are at limit
-		List oldNodeIds = state."assocNodes$i"?.findAll { !(it in settingNodeIds) }
-		if (oldNodeIds) {
-			logDebug "Removing Nodes: Group $i - $oldNodeIds"
-			cmdsEach << associationRemoveCmd(i, oldNodeIds)
-		}
-
-		List newNodeIds = settingNodeIds.findAll { !(it in state."assocNodes$i") }
-		if (newNodeIds) {
-			logDebug "Adding Nodes: Group $i - $newNodeIds"
-			cmdsEach << associationSetCmd(i, newNodeIds)
-		}
-
-		if (cmdsEach || state.resyncAll) {
-			cmdsEach << associationGetCmd(i)
-			cmds += cmdsEach
-		}
-	}
+	// for (int i = 2; i <= maxAssocGroups; i++) {
+	// 	if (!device.currentValue("assocDNI$i")) {
+	// 		//sendEventIfNew("assocDNI$i", "none", false)
+	// 	}
+	//
+	// 	List<String> cmdsEach = []
+	// 	List settingNodeIds = getAssocDNIsSettingNodeIds(i)
+	//
+	// 	//Need to remove first then add in case we are at limit
+	// 	List oldNodeIds = state."assocNodes$i"?.findAll { !(it in settingNodeIds) }
+	// 	if (oldNodeIds) {
+	// 		logDebug "Removing Nodes: Group $i - $oldNodeIds"
+	// 		cmdsEach << associationRemoveCmd(i, oldNodeIds)
+	// 	}
+	//
+	// 	List newNodeIds = settingNodeIds.findAll { !(it in state."assocNodes$i") }
+	// 	if (newNodeIds) {
+	// 		logDebug "Adding Nodes: Group $i - $newNodeIds"
+	// 		cmdsEach << associationSetCmd(i, newNodeIds)
+	// 	}
+	//
+	// 	if (cmdsEach || state.resyncAll) {
+	// 		cmdsEach << associationGetCmd(i)
+	// 		cmds += cmdsEach
+	// 	}
+	// }
 
 	return cmds
 }
 
-List getAssocDNIsSettingNodeIds(grp) {
-	String dni = getAssocDNIsSetting(grp)
-	List nodeIds = convertHexListToIntList(dni.split(","))
-
-	if (dni && !nodeIds) {
-		log.warn "'${dni}' is not a valid value for the 'Device Associations - Group ${grp}' setting.  All z-wave devices have a 2 character Device Network ID and if you're entering more than 1, use commas to separate them."
-	}
-	else if (nodeIds.size() > maxAssocNodes) {
-		log.warn "The 'Device Associations - Group ${grp}' setting contains more than ${maxAssocNodes} IDs so some (or all) may not get associated."
-	}
-
-	return nodeIds
-}
+// List getAssocDNIsSettingNodeIds(grp) {
+// 	String dni = getAssocDNIsSetting(grp)
+// 	List nodeIds = convertHexListToIntList(dni.split(","))
+//
+// 	if (dni && !nodeIds) {
+// 		log.warn "'${dni}' is not a valid value for the 'Device Associations - Group ${grp}' setting.  All z-wave devices have a 2 character Device Network ID and if you're entering more than 1, use commas to separate them."
+// 	}
+// 	else if (nodeIds.size() > maxAssocNodes) {
+// 		log.warn "The 'Device Associations - Group ${grp}' setting contains more than ${maxAssocNodes} IDs so some (or all) may not get associated."
+// 	}
+//
+// 	return nodeIds
+// }
 
 Integer getPendingChanges() {
 	Integer configChanges = configParams.count { param ->
@@ -832,7 +822,7 @@ Integer getPendingChanges() {
 		((paramVal != null) && (paramVal != getParamStoredValue(param.num)))
 	}
 	Integer pendingAssocs = Math.ceil(getConfigureAssocsCmds()?.size()/2) ?: 0
-	return (configChanges + pendingAssocs)
+	return (!state.resyncAll ? (configChanges + pendingAssocs) : configChanges)
 }
 
 
@@ -916,7 +906,7 @@ Map getParamStoredMap() {
 //This will rebuild the list for the current model and firmware only as needed
 //paramsList Structure: MODEL:[FIRMWARE:PARAM_MAPS]
 //PARAM_MAPS [num, name, title, description, size, defaultVal, options, firmVer]
-@Field static Map<String, Map<String, List>> paramsList = [:]
+@Field static Map<String, Map<String, List>> paramsList = new java.util.concurrent.ConcurrentHashMap()
 void updateParamsList() {
 	logDebug "Update Params List"
 	String devModel = state.deviceModel
@@ -1036,6 +1026,28 @@ String getAssocDNIsSetting(grp) {
 	return ((val && (val.trim() != "0")) ? val : "") 
 }
 
+String setDevModel(BigDecimal firmware) {
+	//Stash the model in a state variable
+	def devTypeId = convertIntListToHexList([safeToInt(device.getDataValue("deviceType")),safeToInt(device.getDataValue("deviceId"))]).collect{ it.padLeft(4,'0') }
+	String devModel = deviceModelNames[devTypeId.join(":")] ?: "UNK00"
+
+	//Extra check for ZSE40 (700 Series)
+	if (devModel == "ZSE40" && firmware >= 32.32 && getDataValue("inClusters").contains("0x9F")) {
+		devModel = "ZSE40-700"
+	}
+
+	logDebug "Set Device Info - Model: ${devModel} | Firmware: ${firmware}"
+	state.deviceModel = devModel
+
+	if (devModel == "UNK00") {
+		log.warn "Unsupported Device USE AT YOUR OWN RISK: ${devTypeId}"
+		state.WARNING = "Unsupported Device Model - USE AT YOUR OWN RISK!"
+	}
+	else state.remove("WARNING")
+
+	return devModel
+}
+
 Integer getDeviceModelShort() {
 	return safeToInt(state.deviceModel?.drop(3))
 }
@@ -1106,7 +1118,9 @@ boolean isDuplicateCommand(lastExecuted, allowedMil) {
  ***** Logging Functions
 ********************************************************************/
 private logForceWakeupMessage(msg) {
-	log.warn "${msg}  You can force a wake up by using a paper clip to push the ZWave button on the device."
+	String helpText = "You can force a wake up by using a paper clip to push the Z-Wave button on the device."
+	log.warn "${msg} will execute the next time the device wakes up.  ${helpText}"
+	state.INFO = "*** ${msg} *** Waiting for device to wake up.  ${helpText}"
 }
 
 void logsOff(){}
