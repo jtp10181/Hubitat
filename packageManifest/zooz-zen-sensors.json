@@ -14,6 +14,14 @@
       "location": "https://raw.githubusercontent.com/jtp10181/Hubitat/main/Drivers/zooz/zooz-zse40-multisensor.groovy",
       "required": false,
       "version": "1.0.0"
+    },
+    {
+      "id": "e6498052-92e9-4eb8-bfa4-024c5c1e3f36",
+      "name": "Zooz ZSE44 Temperature Humidity XS Sensor",
+      "namespace": "jtp10181",
+      "location": "https://raw.githubusercontent.com/jtp10181/hubitat/master/Drivers/zooz/zooz-zse44-temp-humidity.groovy",
+      "required": false,
+      "version": "0.1.0"
     }
   ]
 }
