@@ -4,15 +4,32 @@
  *    - Model: ZEN27 - MINIMUM FIRMWARE 2.08
  *    - Model: ZEN72, ZEN74, ZEN77 - All Firmware
  *
+ *  For Support: https://community.hubitat.com/t/zooz-zen-switches/58649
+ *  https://github.com/jtp10181/Hubitat/tree/main/Drivers/zooz
+ *
  *  Changelog:
 
-## [1.5.1] - 2022-03-22 (@jtp10181)
+## [1.5.2] - 2022-07-10 (@jtp10181)
+  ### Added
+  - Support for multiple hardware/firmware major versions
+  - Support for params 27-30 for ZEN72/74/77
+  - Support for Association Group 4 (only works on some models)
+  - Set deviceModel in device data (press refresh)
+  ### Changed
+  - Removed getParam.value and replaced with separate function
+  - Adding HTML styling to the Preferences
+  ### Fixed
+  - Some parameters would get multiple [DEFAULT] tags added
+  ### Deprecated 
+  - Parameter test/hide functions, not needed
+
+## [1.5.1] - 2022-04-25 (@jtp10181)
   ### Changed
   - Description text loging enabled by default
   ### Fixed
   - Added inClusters to fingerprint so it will be selected by default
   - threeWaySwitchType options corrected between switches and dimmers
-  - Parameter #7 removed from ZEN71/72 which do not ave that option
+  - Parameter #7 removed from ZEN71/72 which do not have that option
   - Global (Field static) Maps defined explicitly as a ConcurrentHashMap
 
 ## [1.5.0] - 2021-11-24 (@jtp10181)
@@ -176,10 +193,10 @@ import groovy.transform.Field
 	0x9F: 1		// Security S2
 ]
 
-@Field static final int maxAssocGroups = 3
+@Field static final int maxAssocGroups = 4
 @Field static final int maxAssocNodes = 5
 
-@Field static final String VERSION = "1.5.0" 
+@Field static final String VERSION = "1.5.2" 
 @Field static Map deviceModelNames =
 	["B112:1F1C":"ZEN22", "B112:261C":"ZEN24", "A000:A002":"ZEN27", 
 	"7000:A002":"ZEN72", "7000:A004":"ZEN74", "7000:A007":"ZEN77"]
@@ -208,7 +225,9 @@ metadata {
 		command "startLevelChange", [
 			[name:"Direction*", description:"Direction for level change request", type: "ENUM", constraints: ["up","down"]],
 			[name:"Duration", type:"NUMBER", description:"Transition duration in seconds", constraints:["NUMBER"]] ]
-		command "paramCommands", [[name:"Select Command*", type: "ENUM", constraints: ["Refresh","Test All","Hide Invalid","Clear Hidden"] ]]
+		//Swap these below commands to use depreciated features 
+		command "paramCommands", [[name:"Select Command*", type: "ENUM", constraints: ["Refresh"] ]]
+		//command "paramCommands", [[name:"Select Command*", type: "ENUM", constraints: ["Refresh","Test All","Hide Invalid","Clear Hidden"] ]]
 		command "setLED", [
 			[name:"Select Color*", description:"Works ONLY on ZEN7x Series!", type: "ENUM", constraints: ledColorOptions] ]
 		command "setLEDMode", [
@@ -219,6 +238,7 @@ metadata {
 
 		attribute "assocDNI2", "string"
 		attribute "assocDNI3", "string"
+		attribute "assocDNI4", "string"
 		attribute "syncStatus", "string"
 
 		fingerprint mfr:"027A", prod:"B112", deviceId:"1F1C", inClusters:"0x5E,0x6C,0x55,0x9F", deviceJoinName:"Zooz ZEN22 Dimmer"
@@ -232,44 +252,50 @@ metadata {
 	preferences {
 		configParams.each { param ->
 			if (!param.hidden) {
+				Integer paramVal = getParamValue(param)
 				input "configParam${param.num}", "enum",
-					title: "${param.title} (#${param.num}):",
-					description: param?.description,
-					defaultValue: param.value,
+					title: fmtTitle("${param.title}"),
+					description: fmtDesc("• Parameter #${param.num}, Selected: ${paramVal}" + (param?.description ? "<br>• ${param?.description}" : '')),
+					defaultValue: paramVal,
 					options: param.options,
 					required: false
 			}
 		}
 
-		input "assocDNI2", "string",
-			title: "Device Associations - Group 2:",
-			description: "Associations are an advanced feature, only use if you know what you are doing. Supports up to ${maxAssocNodes} Hex Device IDs separated by commas. (Can save as blank or 0 to clear)",
-			required: false
-
-		input "assocDNI3", "string",
-			title: "Device Associations - Group 3:",
-			description: "Associations are an advanced feature, only use if you know what you are doing. Supports up to ${maxAssocNodes} Hex Device IDs separated by commas. (Can save as blank or 0 to clear)",
-			required: false
+		for(int i in 2..maxAssocGroups) {
+			input "assocDNI$i", "string",
+				title: fmtTitle("Device Associations - Group $i"),
+				description: fmtDesc("Supports up to ${maxAssocNodes} Hex Device IDs separated by commas. Check device documentation for more info. Save as blank or 0 to clear"),
+				required: false
+		}
 
 		input "supervisionGetEncap", "bool",
-			title: "Supervision Encapsulation (Experimental):",
-			description: "This can increase reliability when the device is paired with security, but may not work correctly on all models.",
+			title: fmtTitle("Supervision Encapsulation") + "<em> (Experimental)</em>",
+			description: fmtDesc("This can increase reliability when the device is paired with security, but may not work correctly on all models."),
 			defaultValue: false
 
 		input "levelCorrection", "bool",
-			title: "Brightness Correction:",
-			description: "Brightness level set on dimmer is converted to fall within the min/max range but shown with the full range of 1-100%",
+			title: fmtTitle("Brightness Correction"),
+			description: fmtDesc("Brightness level set on dimmer is converted to fall within the min/max range but shown with the full range of 1-100%"),
 			defaultValue: false
 
 		input "sceneReverse", "bool",
-			title: "Scene Up-Down Reversal:",
-			description: "If the button numbers and up/down descriptions are backwards in the scene button events change this setting to fix it!",
+			title: fmtTitle("Scene Up-Down Reversal"),
+			description: fmtDesc("If the button numbers and up/down descriptions are backwards in the scene button events change this setting to fix it!"),
 			defaultValue: true
 
 		//Logging options similar to other Hubitat drivers
-		input name: "txtEnable", type: "bool", title: "Enable Description Text Logging?", defaultValue: true
-		input name: "debugEnable", type: "bool", title: "Enable Debug Logging?", defaultValue: true
+		input "txtEnable", "bool", title: fmtTitle("Enable Description Text Logging?"), defaultValue: true
+		input "debugEnable", "bool", title: fmtTitle("Enable Debug Logging?"), defaultValue: true
 	}
+}
+
+String fmtDesc(String str) {
+	return "<div style='font-size: 85%; font-style: italic; padding: 1px 0px 4px 2px;'>${str}</div>"
+}
+
+String fmtTitle(String str) {
+	return "<strong>${str}</strong>"
 }
 
 void debugShowVars() {
@@ -294,7 +320,7 @@ void debugShowVars() {
 	ledColor: [ num: 23,
 		title: "LED Indicator Color",
 		size: 1, defaultVal: 1,
-		options: [:], //ledColorOptions,
+		options: [:], //ledColorOptions
 		changes: ['2X':[num:null]]
 	],
 	ledBrightness: [ num: 24,
@@ -313,7 +339,7 @@ void debugShowVars() {
 	autoOffInterval: [ num: 4,
 		title: "Auto Turn-Off Timer", 
 		size: 4, defaultVal: 0, 
-		options: [:], //autoOnOffIntervalOptions,
+		options: [:], //autoOnOffIntervalOptions
 		changes: ['7X':[num:3]]
 	],
 	autoOnEnabled: [ num: 5,
@@ -326,7 +352,7 @@ void debugShowVars() {
 	autoOnInterval: [ num: 6,
 		title: "Auto Turn-On Timer", 
 		size: 4, defaultVal: 0, 
-		options: [:], //autoOnOffIntervalOptions,
+		options: [:], //autoOnOffIntervalOptions
 		changes: ['7X':[num:5]]
 	],
 	powerFailure: [ num: 8,
@@ -335,14 +361,24 @@ void debugShowVars() {
 		options: [2:"Restores Last Status", 0:"Forced to Off", 1:"Forced to On"],
 	],
 	rampRate: [ num: 9,
-		title: "Ramp Rate to Full On/Off",
-		size: 1, defaultVal: 1,
-		options: [0:"Instant On/Off"], //<< rampRateOptions,
+		title: "Ramp Rate to Full ON",
+		description: "If no separate OFF setting is shown this controls both",
+		size: 1, defaultVal: 0,
+		options: [0:"Instant On/Off"], //rampRateOptions
+	],
+	rampRateOff: [ num: 27,
+		title: "Ramp Rate to Full OFF",
+		size: 1, defaultVal: 2,
+		options: [0:"Instant Off"], //rampRateOptions
+		firmVer: 2.0, firmVerM:[10:10],
+		changes: [22:[num: null], 24:[num: null], 27:[num: null],
+			72:[], 74:[], 77:[firmVer:2.10, firmVerM:[10:20]]
+		],
 	],
 	holdRampRate: [ num: 16, 
 		title: "Dimming Speed when Paddle is Held",
 		size: 1, defaultVal: 5,
-		options: [:], //rampRateOptions,
+		options: [:], //rampRateOptions
 	],
 	zwaveRampRate: [ num: 17,
 		title: "Z-Wave Ramp Rate (Dimming Speed)",
@@ -353,12 +389,12 @@ void debugShowVars() {
 	minimumBrightness: [ num: 10,
 		title: "Minimum Brightness",
 		size: 1, defaultVal: 1,
-		options: [:], //brightnessOptions,
+		options: [:], //brightnessOptions
 	],
 	maximumBrightness: [ num: 11,
 		title: "Maximum Brightness", 
 		size: 1, defaultVal: 99, 
-		options: [:], //brightnessOptions,
+		options: [:], //brightnessOptions
 	],
 	doubleTapBrightness: [ num: 12,
 		title: "Double Tap Up Brightness", 
@@ -381,17 +417,17 @@ void debugShowVars() {
 	customBrightness: [ num: 18,
 		title: "Custom Brightness when Turned On", 
 		size: 1, defaultVal: 0,
-		options: [0:"Last Brightness Level"], //<< brightnessOptions,
+		options: [0:"Last Brightness Level"], //brightnessOptions
 	],
 	nightLight: [ num: 22, 
 		title: "Night Light Mode Brightness",
 		size: 1, defaultVal: 20, 
-		options: [0:"Disabled"], //<< brightnessOptions,
+		options: [0:"Disabled"], //brightnessOptions
 	],
 	//sceneControl - Dimmers=13, ZEN26/73/76=10, Other Switches=9
 	sceneControl: [ num: 13,
 		title: "Scene Control Events",
-		description: "Enable to report pushed and multi-tap events",
+		description: "Enable to get push and multi-tap events",
 		size: 1, defaultVal: 0,
 		options: [0:"Disabled", 1:"Enabled"],
 	],
@@ -401,12 +437,12 @@ void debugShowVars() {
 		size: 1, defaultVal: 1,
 		options: [1:"Enable Paddle and Z-Wave", 0:"Disable Paddle Control", 2:"Disable Paddle and Z-Wave Control"],
 	],
-	smartBulbBehavior: [ num: 21, // relayBehaviorParam
+	smartBulbBehavior: [ num: 21, //relayBehaviorParam
 		title: "Smart Bulb - On/Off when Paddle Disabled",
 		size: 1, defaultVal: 0, 
 		options: [0:"Reports Status & Changes LED", 1:"Doesn't Report Status or Change LED"],
 	],
-	smartBulbDimming: [ num: 20, // relayDimmingParam
+	smartBulbDimming: [ num: 20, //relayDimmingParam
 		title: "Smart Bulb - Dimming when Paddle Disabled",
 		size: 1, defaultVal: 0, 
 		options: [0:"Report Each Brightness Level", 1:"Report Only Final Brightness Level"],
@@ -424,25 +460,53 @@ void debugShowVars() {
 		options: [0:"Enabled", 1:"Disabled"],
 		changes: [21:[num: null, firmVer:null], 23:[num: 15, firmVer:4.04], 26:[num: 15, firmVer:3.41],
 			22:[num: 24, firmVer:4.04], 24:[num: 24, firmVer:4.04], 27:[num: 24, firmVer:3.04],
-			71:[num: 17, firmVer:10.0], 73:[num: 17, firmVer:10.0], 76:[num: 17, firmVer:10.0],
-			72:[num: 26, firmVer:10.0], 74:[num: 26, firmVer:10.0], 77:[num: 26, firmVer:10.0]
+			71:[num: 17, firmVer:2.0], 73:[num: 17, firmVer:2.0], 76:[num: 17, firmVer:2.0],
+			72:[num: 26, firmVer:2.0], 74:[num: 26, firmVer:2.0], 77:[num: 26, firmVer:2.0]
+		],
+	],
+	zwaveRampRateOn: [ num: 28,
+		title: "Z-Wave Ramp Rate to Full ON",
+		size: 1, defaultVal: -1,
+		options: [(-1):"Match Physical",0:"Instant On"], //rampRateOptions
+		firmVer: 2.0, firmVerM:[10:10],
+		changes: [22:[num: null], 24:[num: null], 27:[num: null],
+			72:[], 74:[], 77:[firmVer:2.10, firmVerM:[10:20]]
+		],
+	],
+	zwaveRampRateOff: [ num: 29,
+		title: "Z-Wave Ramp Rate to Full OFF",
+		size: 1, defaultVal: -1,
+		options: [(-1):"Match Physical",0:"Instant On"], //rampRateOptions
+		firmVer: 2.0, firmVerM:[10:10],
+		changes: [22:[num: null], 24:[num: null], 27:[num: null],
+			72:[], 74:[], 77:[firmVer:2.10, firmVerM:[10:20]]
+		],
+	],
+	remoteZWaveDim: [ num: 30,
+		title: "Remote Z-Wave Dimming Duration",
+		description: "Set the time it takes to get from 0% to 100% brightness on dimmers and smart bulbs directly associated with your dimmer in Groups 3 and 4 when pressing and holding the paddle on your dimmer.",
+		size: 1, defaultVal: 5,
+		options: [:], //rampRateOptions
+		firmVer: 2.0, firmVerM:[10:10],
+		changes: [22:[num: null], 24:[num: null], 27:[num: null],
+			72:[], 74:[], 77:[firmVer:2.10, firmVerM:[10:20]]
 		],
 	],
 	associationReports: [ num: 7,
-		title: "Send Status Report to Associations on", 
-		size: 1, defaultVal: 15, 
+		title: "Send Status Report to Associations",
+		size: 1, defaultVal: 15,
 		options: [ 0:"None", 1:"Physical Tap On ZEN Only", 2:"Physical Tap On Connected 3-Way Switch Only", 3:"Physical Tap On ZEN / 3-Way Switch",
 			4:"Z-Wave Command From Hub", 5:"Physical Tap On ZEN / Z-Wave Command", 6:"Physical Tap On 3-Way Switch / Z-Wave Command",
 			7:"Physical Tap On ZEN / 3-Way Switch / Z-Wave Command", 8:"Timer Only", 9:"Physical Tap On ZEN / Timer",
 			10:"Physical Tap On 3-Way Switch / Timer", 11:"Physical Tap On ZEN / 3-Way Switch / Timer", 12:"Z-Wave Command From Hub / Timer",
 			13:"Physical Tap On ZEN / Z-Wave Command / Timer", 14:"Physical Tap On ZEN / 3-Way Switch / Z-Wave Command / Timer",
-			15:"All Of The Above" 
+			15:"All Of The Above"
 		],
 		changes: [71:[num:null], 72:[num:null]]
 	],
 	sceneMapping: [ num: null,
-		title: "Central Scene Mapping", 
-		size: 1, defaultVal: 0, 
+		title: "Central Scene Mapping",
+		size: 1, defaultVal: 0,
 		options: [0:"Up is Scene 2, Down is Scene 1", 1:"Up is Scene 1, Down is Scene 2"],
 		hidden: true,
 		changes: [21:[num: null, firmVer:null], 23:[num: 14, firmVer:4.04], 26:[num: 14, firmVer:3.41],
@@ -501,7 +565,7 @@ void paramsTestAll() {
 
 	Map param = getParam(key)
 	Integer val = configsMap.get(key)
-	Integer testVal = param.value ?: 1
+	Integer testVal = getParamValue(param) ?: 1
 	state.tmpLastTest = [key, val, testVal, "T"]
 
 	if (!param) {
@@ -593,6 +657,7 @@ void setLEDMode(String modeName) {
 
 void installed() {
 	log.warn "installed..."
+	initialize()
 }
 
 
@@ -639,7 +704,7 @@ void executeConfigureCmds() {
 	cmds += getConfigureAssocsCmds()
 
 	configParams.each { param ->
-		Integer paramVal = getAdjustedParamValue(param)
+		Integer paramVal = getParamValue(param, true)
 		Integer storedVal = getParamStoredValue(param.num)
 
 		if ((paramVal != null) && (state.resyncAll || (storedVal != paramVal))) {
@@ -666,7 +731,6 @@ void clearVariables() {
 
 	//Clear Data from other Drivers
 	device.removeDataValue("configVals")
-	device.removeDataValue("firmwareVersion")
 	device.removeDataValue("protocolVersion")
 	device.removeDataValue("hardwareVersion")
 	device.removeDataValue("serialNumber")
@@ -678,12 +742,10 @@ void clearVariables() {
 	if (devModel) state.deviceModel = devModel
 }
 
+void logsOff(){}
 void debugLogsOff() {
 	log.warn "debug logging disabled..."
 	device.updateSetting("debugEnable",[value:"false",type:"bool"])
-}
-void logsOff() {
-	//Do nothing, this is commonly scheduled by other drivers and this prevents an error message.
 }
 
 private getBrightnessOptions() {
@@ -694,7 +756,7 @@ private getBrightnessOptions() {
 }
 
 private getRampRateOptions() {
-	return getTimeOptionsRange("Second", 1, [1,2,3,4,5,6,7,8,9,10,15,20,25,30,45,60,75,90])
+	return getTimeOptionsRange("Second", 1, [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,20,25,30,45,60,75,90])
 }
 
 private getAutoOnOffIntervalOptions() {
@@ -710,23 +772,29 @@ private getTimeOptionsRange(String name, Integer multiplier, List range) {
 	return range.collectEntries{ [(it*multiplier): "${it} ${name}${it == 1 ? '' : 's'}"] }
 }
 
-private getAdjustedParamValue(Map param) {
-	//Not needed for ZEN7X models
-	if (state.deviceModel ==~ /ZEN7\d/) return param.value
+private getParamValue(String paramName) {
+	return getParamValue(getParam(paramName))
+}
 
-	Integer paramVal = param.value
+private getParamValue(Map param, Boolean adjust=false) {
+	Integer paramVal = safeToInt(settings."configParam${param.num}", param.defaultVal)
+	if (!adjust) return paramVal
+
+	//Below is not needed for ZEN7X models
+	if (state.deviceModel ==~ /ZEN7\d/) return paramVal
+
 	switch(param.name) {
 		case "autoOffEnabled":
-			paramVal = getParam("autoOffInterval").value == 0 ? 0 : 1
+			paramVal = getParamValue("autoOffInterval") == 0 ? 0 : 1
 			break
 		case "autoOffInterval":
-			paramVal = param.value ?: 60
+			paramVal = paramVal ?: 60
 			break
 		case "autoOnEnabled":
-			paramVal = getParam("autoOnInterval").value == 0 ? 0 : 1
+			paramVal = getParamValue("autoOnInterval") == 0 ? 0 : 1
 			break
 		case "autoOnInterval":
-			paramVal = param.value ?: 60
+			paramVal = paramVal ?: 60
 			break
 	}
 
@@ -824,7 +892,7 @@ String getSetLevelCmds(level, duration=null) {
 	if (level)  level = convertLevel(level, true)
 
 	Integer levelVal = validateRange(level, 99, 0, 99)
-	Integer durationVal = validateRange(duration, getParam("rampRate").value, 0, 99)
+	Integer durationVal = validateRange(duration, getParamValue("rampRate"), 0, 127)
 
 	return switchMultilevelSetCmd(levelVal, durationVal)
 }
@@ -832,7 +900,7 @@ String getSetLevelCmds(level, duration=null) {
 def startLevelChange(direction, duration=null) {
 	Boolean upDown = (direction == "down") ? true : false
 	Map rampRateParam = getParam("rampRate")
-	Integer durationVal = validateRange(duration, getParam("holdRampRate").value, 0, 99)
+	Integer durationVal = validateRange(duration, getParamValue("holdRampRate"), 0, 127)
 	String devModel = state.deviceModel
 	BigDecimal firmware = firmwareVersion
 
@@ -842,10 +910,10 @@ def startLevelChange(direction, duration=null) {
 	cmds += secureCmd(zwave.switchMultilevelV2.switchMultilevelStartLevelChange(dimmingDuration: durationVal, upDown: upDown, ignoreStartLevel:1))
 	
 	//Hack for devices that don't implement the duration correctly
-	if (firmware <= 10.0) {
-		cmds.add( 0, configSetCmd(rampRateParam, durationVal) )
-		cmds.add( configSetCmd(rampRateParam, rampRateParam.value) )
-	}
+	// if (firmware <= 10.0) {
+	// 	cmds.add( 0, configSetCmd(rampRateParam, durationVal) )
+	// 	cmds.add( configSetCmd(rampRateParam, getParamValue(rampRateParam)) )
+	// }
 
 	return delayBetween(cmds, 1000)
 }
@@ -1032,12 +1100,12 @@ void supervisionCheck(Integer num) {
 	if (packetsCount > 0 ) {
 		List<String> cmds = []
 		supervisedPackets["${device.id}"].each { sid, cmd ->
-			log.warn "Re-Sending Supervised Session: ${sid} (Retry #${num})"
+			log.warn "${device.displayName}: Re-Sending Supervised Session: ${sid} (Retry #${num})"
 			cmds << secureCmd(cmd)
 		}
 		sendCommands(cmds)
 
-		if (num >= 2) { //Clear after this many attempts
+		if (num >= 3) { //Clear after this many attempts
 			log.warn "Supervision MAX RETIES (${num}) Reached"
 			supervisedPackets["${device.id}"].clear()
 		}
@@ -1193,9 +1261,11 @@ void zwaveEvent(hubitat.zwave.commands.versionv3.VersionReport cmd) {
 
 	//Stash the model in a state variable
 	def devTypeId = convertIntListToHexList([safeToInt(device.getDataValue("deviceType")),safeToInt(device.getDataValue("deviceId"))],4)
-	def devModel = deviceModelNames[devTypeId.join(":")] ?: "UNK00"
+	String devModel = deviceModelNames[devTypeId.join(":")] ?: "UNK00"
+
 	logDebug "Received Version Report - Model: ${devModel} | Firmware: ${fullVersion}"
 	state.deviceModel = devModel
+	device.updateDataValue("deviceModel", devModel)
 
 	if (devModel == "UNK00") {
 		log.warn "Unsupported Device USE AT YOUR OWN RISK: ${devTypeId}"
@@ -1332,7 +1402,7 @@ void refreshSyncStatus() {
 
 Integer getPendingChanges() {
 	Integer configChanges = configParams.count { param ->
-		Integer paramVal = getAdjustedParamValue(param)
+		Integer paramVal = getParamValue(param, true)
 		((paramVal != null) && (paramVal != getParamStoredValue(param.num)))
 	}
 	Integer pendingAssocs = Math.ceil(getConfigureAssocsCmds()?.size()/2) ?: 0
@@ -1392,6 +1462,7 @@ void updateParamsList() {
 		tmpMap.changes.each { m, changes ->
 			if (m == modelNum || m ==~ /${modelSeries}X/) {
 				tmpMap.putAll(changes)
+				if (changes.options) { tmpMap.options = changes.options.clone() }
 			}
 		}
 		//Don't need this anymore
@@ -1411,6 +1482,11 @@ void updateParamsList() {
 	//Remove invalid or not supported by firmware
 	tmpList.removeAll { it.num == null }
 	tmpList.removeAll { firmware < (it.firmVer ?: 0) }
+	tmpList.removeAll { 
+		if (it.firmVerM) {
+			(firmware-(int)firmware)*100 < it.firmVerM[(int)firmware]
+		}
+	}
 
 	//Remove Hidden Invalid Params
 	String configHide = device.getDataValue("configHide")
@@ -1438,7 +1514,11 @@ void fixParamsMap() {
 	paramsMap.autoOffInterval.options << autoOnOffIntervalOptions
 	paramsMap.autoOnInterval.options << autoOnOffIntervalOptions
 	paramsMap.rampRate.options << rampRateOptions
+	paramsMap.rampRateOff.options << rampRateOptions
 	paramsMap.holdRampRate.options << rampRateOptions
+	paramsMap.zwaveRampRateOn.options << rampRateOptions
+	paramsMap.zwaveRampRateOff.options << rampRateOptions
+	paramsMap.remoteZWaveDim.options << rampRateOptions
 	paramsMap.minimumBrightness.options << brightnessOptions
 	paramsMap.maximumBrightness.options << brightnessOptions
 	paramsMap.customBrightness.options << brightnessOptions
@@ -1454,15 +1534,8 @@ List<Map> getConfigParams() {
 	if (!devModel) return []
 
 	verifyParamsList()
-	List<Map> params = []
-	paramsList[devModel][firmware].each { params << it.clone() }
 
-	//Get current values
-	params.each {
-		it.put("value", safeToInt(settings."configParam${it.num}", it.defaultVal))
-	}
-
-	return params
+	return paramsList[devModel][firmware]
 }
 
 //Get a single param by name or number
@@ -1477,12 +1550,6 @@ Map getParam(def search) {
 		param = paramsList[devModel][firmware].find{ it.name == search }
 	} else {
 		param = paramsList[devModel][firmware].find{ it.num == search }
-	}
-
-	//Update current value
-	if (param && param?.num) {
-		param = param.clone()
-		param.put("value", safeToInt(settings."configParam${param.num}", param.defaultVal))
 	}
 
 	return param
@@ -1539,8 +1606,8 @@ private convertHexListToIntList(String[] hexList) {
 
 Integer convertLevel(level, userLevel=false) {
 	if (levelCorrection) {
-		Integer brightmax = getParam("maximumBrightness").value
-		Integer brightmin = getParam("minimumBrightness").value
+		Integer brightmax = getParamValue("maximumBrightness")
+		Integer brightmin = getParamValue("minimumBrightness")
 		brightmax = (brightmax == 99) ? 100 : brightmax
 		brightmin = (brightmin == 1) ? 0 : brightmin
 
@@ -1589,6 +1656,9 @@ boolean isDuplicateCommand(lastExecuted, allowedMil) {
 }
 
 
+/*******************************************************************
+ ***** Logging Functions
+********************************************************************/
 void logDebug(String msg) {
 	if (debugEnable) log.debug "${device.displayName}: ${msg}"
 }
