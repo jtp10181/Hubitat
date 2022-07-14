@@ -8,6 +8,10 @@
  *  https://github.com/jtp10181/Hubitat/tree/main/Drivers/zooz
  *
  *  Changelog:
+## [1.5.3] - 2022-07-13 (@jtp10181)
+  ### Changed
+  - Extra check to make sure devModel is set
+  - Minor refactoring
 
 ## [1.5.2] - 2022-07-10 (@jtp10181)
   ### Added
@@ -154,7 +158,7 @@ https://github.com/krlaframboise/SmartThings/tree/master/devicetypes/zooz/
 ## 3.0 / 4.0 - 2020-09-16 (@krlaframboise / Zooz)
   - Initial Release (for SmartThings)
 
- *  Copyright 2020-2021 Jeff Page
+ *  Copyright 2020-2022 Jeff Page
  *  Copyright 2020 Zooz
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -173,7 +177,8 @@ https://github.com/krlaframboise/SmartThings/tree/master/devicetypes/zooz/
 
 import groovy.transform.Field
 
-@Field static Map commandClassVersions = [
+@Field static final String VERSION = "1.5.2"
+@Field static final Map commandClassVersions = [
 	0x20: 1,	// Basic (basicv1)
 	0x26: 2,	// Switch Multilevel (switchmultilevelv2) (4)
 	0x55: 1,	// Transport Service (transportservicev1) (2)
@@ -195,14 +200,12 @@ import groovy.transform.Field
 
 @Field static final int maxAssocGroups = 4
 @Field static final int maxAssocNodes = 5
-
-@Field static final String VERSION = "1.5.2" 
-@Field static Map deviceModelNames =
+@Field static final Map deviceModelNames =
 	["B112:1F1C":"ZEN22", "B112:261C":"ZEN24", "A000:A002":"ZEN27", 
 	"7000:A002":"ZEN72", "7000:A004":"ZEN74", "7000:A007":"ZEN77"]
 
-@Field static Map ledModeCmdOptions = [0:"Default", 1:"Reverse", 2:"Off", 3:"On"]
-@Field static Map ledColorOptions = [0:"White", 1:"Blue", 2:"Green", 3:"Red"]
+@Field static final Map ledModeCmdOptions = [0:"Default", 1:"Reverse", 2:"Off", 3:"On"]
+@Field static final Map ledColorOptions = [0:"White", 1:"Blue", 2:"Green", 3:"Red"]
 
 metadata {
 	definition (
@@ -225,7 +228,7 @@ metadata {
 		command "startLevelChange", [
 			[name:"Direction*", description:"Direction for level change request", type: "ENUM", constraints: ["up","down"]],
 			[name:"Duration", type:"NUMBER", description:"Transition duration in seconds", constraints:["NUMBER"]] ]
-		//Swap these below commands to use depreciated features 
+		//Swap these below commands to use depreciated features
 		command "paramCommands", [[name:"Select Command*", type: "ENUM", constraints: ["Refresh"] ]]
 		//command "paramCommands", [[name:"Select Command*", type: "ENUM", constraints: ["Refresh","Test All","Hide Invalid","Clear Hidden"] ]]
 		command "setLED", [
@@ -668,6 +671,8 @@ def updated() {
 
 	if (debugEnable) runIn(1800, debugLogsOff)
 
+	if (!state.deviceModel) { setDevModel(firmwareVersion) }
+
 	runIn(1, executeConfigureCmds)
 }
 
@@ -910,7 +915,7 @@ def startLevelChange(direction, duration=null) {
 	cmds += secureCmd(zwave.switchMultilevelV2.switchMultilevelStartLevelChange(dimmingDuration: durationVal, upDown: upDown, ignoreStartLevel:1))
 	
 	//Hack for devices that don't implement the duration correctly
-	// if (firmware <= 10.0) {
+	// if (firmware <= 2.0) {
 	// 	cmds.add( 0, configSetCmd(rampRateParam, durationVal) )
 	// 	cmds.add( configSetCmd(rampRateParam, getParamValue(rampRateParam)) )
 	// }
@@ -995,6 +1000,10 @@ String switchBinaryGetCmd() {
 }
 
 String switchMultilevelSetCmd(Integer value, Integer duration) {
+	// Duration Encoding:
+	// 0x01..0x7F 1 second (0x01) to 127 seconds (0x7F) in 1 second resolution.
+	// 0x80..0xFE 1 minute (0x80) to 127 minutes (0xFE) in 1 minute resolution.
+	// 0xFF Factory default duration.
 	return supervisionEncap(zwave.switchMultilevelV2.switchMultilevelSet(dimmingDuration: duration, value: value))
 }
 
@@ -1017,6 +1026,10 @@ List configSetGetCmd(Map param, Integer value) {
 	return cmds
 }
 
+
+/*******************************************************************
+ ***** Z-Wave Encapsulation
+********************************************************************/
 //Secure and MultiChannel Encapsulate
 String secureCmd(String cmd) {
 	return zwaveSecureEncap(cmd)
@@ -1259,11 +1272,16 @@ void zwaveEvent(hubitat.zwave.commands.versionv3.VersionReport cmd) {
 	String fullVersion = "${cmd.firmware0Version}.${subVersion}"
 	device.updateDataValue("firmwareVersion", fullVersion)
 
+	logDebug "Received Version Report - Firmware: ${fullVersion}"
+	setDevModel(new BigDecimal(fullVersion))
+}
+
+String setDevModel(BigDecimal firmware) {
 	//Stash the model in a state variable
 	def devTypeId = convertIntListToHexList([safeToInt(device.getDataValue("deviceType")),safeToInt(device.getDataValue("deviceId"))],4)
 	String devModel = deviceModelNames[devTypeId.join(":")] ?: "UNK00"
 
-	logDebug "Received Version Report - Model: ${devModel} | Firmware: ${fullVersion}"
+	logDebug "Set Device Info - Model: ${devModel} | Firmware: ${firmware}"
 	state.deviceModel = devModel
 	device.updateDataValue("deviceModel", devModel)
 
@@ -1290,6 +1308,8 @@ void zwaveEvent(hubitat.zwave.commands.versionv3.VersionReport cmd) {
 			logDebug "Scene Reverse is already on, this is the default setting"
 		}
 	}
+
+	return devModel
 }
 
 
@@ -1563,6 +1583,7 @@ void sendEventIfNew(String name, value, boolean displayed=true, String type=null
 	if (type) evt.type = type
 	if (unit) evt.unit = unit
 
+	//Main Device Events
 	if (name != "syncStatus") {
 		if (device.currentValue(name).toString() != value.toString()) {
 			logTxt(desc)
@@ -1582,7 +1603,7 @@ BigDecimal getFirmwareVersion() {
 }
 
 
-private convertIntListToHexList(intList, pad=2) {
+private List convertIntListToHexList(intList, pad=2) {
 	def hexList = []
 	intList?.each {
 		hexList.add(Integer.toHexString(it).padLeft(pad, "0").toUpperCase())
@@ -1590,7 +1611,7 @@ private convertIntListToHexList(intList, pad=2) {
 	return hexList
 }
 
-private convertHexListToIntList(String[] hexList) {
+private List convertHexListToIntList(String[] hexList) {
 	def intList = []
 
 	hexList?.each {
@@ -1646,7 +1667,7 @@ Integer validateRange(val, Integer defaultVal, Integer lowVal, Integer highVal) 
 	}
 }
 
-Integer safeToInt(val, Integer defaultVal=0) {
+private Integer safeToInt(val, Integer defaultVal=0) {
 	return "${val}"?.isInteger() ? "${val}".toInteger() : defaultVal
 }
 

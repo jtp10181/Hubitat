@@ -7,10 +7,14 @@
     NOTICE: This file has been modified by *Jeff Page*
         from the original work of *Mike Maxwell (Hubitat)*.
 
-    Copyright 2021 Jeff Page
+    Copyright 2021-2022 Jeff Page
     Copyright 2016 -> 2020 Hubitat Inc. All Rights Reserved
 
     Changelog:
+
+## [1.0.1] - 2022-07-13 (@jtp10181)
+  ### Changed
+  - Info Text Logging default to true
 
 ## [1.0.0] - 2021-04-21 (@jtp10181)
   - Initial release
@@ -19,12 +23,14 @@
 
 import groovy.transform.Field
 
+@Field static final String VERSION = "1.0.1"
+
 metadata {
     definition(
         //If name is changed must also be changed in parent driver addChildDevice
-        name: "Child Central Scene Switch", 
-        namespace: "jtp10181", 
-        author: "Jeff Page", 
+        name: "Child Central Scene Switch",
+        namespace: "jtp10181",
+        author: "Jeff Page",
         importUrl: "https://raw.githubusercontent.com/jtp10181/hubitat/master/Drivers/generic/child-central-scene-switch.groovy",
         component: true
     ) {
@@ -37,7 +43,7 @@ metadata {
     }
     preferences {
         //Logging options similar to other Hubitat drivers
-        input name: "txtEnable", type: "bool", title: "Enable Description Text Logging?", defaultValue: false
+        input name: "txtEnable", type: "bool", title: "Enable Description Text Logging?", defaultValue: true
     }
 }
 
