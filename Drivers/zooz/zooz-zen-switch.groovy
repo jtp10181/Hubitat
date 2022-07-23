@@ -1,4 +1,4 @@
-/*
+/*  
  *  Zooz ZEN On/Off Switches Universal
  *    - Model: ZEN21, ZEN23 - MINIMUM FIRMWARE 3.04
  *    - Model: ZEN26 - MINIMUM FIRMWARE 2.03
@@ -8,6 +8,10 @@
  *  https://github.com/jtp10181/Hubitat/tree/main/Drivers/zooz
  *
  *  Changelog:
+## [1.5.4] - 2022-XX-XX (@jtp10181)
+  ### Changed
+  - Major refactor to organize code same as sensor drivers
+
 ## [1.5.3] - 2022-07-13 (@jtp10181)
   ### Changed
   - Extra check to make sure devModel is set
@@ -177,7 +181,7 @@ https://github.com/krlaframboise/SmartThings/tree/master/devicetypes/zooz/
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "1.5.2"
+@Field static final String VERSION = "1.5.4"
 @Field static final Map deviceModelNames =
 	["B111:1E1C":"ZEN21", "B111:251C":"ZEN23", "A000:A001":"ZEN26", 
 	"7000:A001":"ZEN71", "7000:A003":"ZEN73", "7000:A006":"ZEN76"]
@@ -198,9 +202,7 @@ metadata {
 		capability "ReleasableButton"
 		//capability "DoubleTapableButton"
 
-		//Swap these below commands to use depreciated features
-		command "paramCommands", [[name:"Select Command*", type: "ENUM", constraints: ["Refresh"] ]]
-		//command "paramCommands", [[name:"Select Command*", type: "ENUM", constraints: ["Refresh","Test All","Hide Invalid","Clear Hidden"] ]]
+		command "paramRefresh"
 		command "setLED", [
 			[name:"Select Color*", description:"Works ONLY on ZEN7x Series!", type: "ENUM", constraints: ledColorOptions] ]
 		command "setLEDMode", [
@@ -226,12 +228,14 @@ metadata {
 		configParams.each { param ->
 			if (!param.hidden) {
 				Integer paramVal = getParamValue(param)
-				input "configParam${param.num}", "enum",
-					title: fmtTitle("${param.title}"),
-					description: fmtDesc("• Parameter #${param.num}, Selected: ${paramVal}" + (param?.description ? "<br>• ${param?.description}" : '')),
-					defaultValue: paramVal,
-					options: param.options,
-					required: false
+				if (param.options) {
+					input "configParam${param.num}", "enum",
+						title: fmtTitle("${param.title}"),
+						description: fmtDesc("• Parameter #${param.num}, Selected: ${paramVal}" + (param?.description ? "<br>• ${param?.description}" : '')),
+						defaultValue: paramVal,
+						options: param.options,
+						required: false
+				}
 			}
 		}
 
@@ -250,7 +254,7 @@ metadata {
 		input "sceneReverse", "bool",
 			title: fmtTitle("Scene Up-Down Reversal"),
 			description: fmtDesc("If the button numbers and up/down descriptions are backwards in the scene button events change this setting to fix it!"),
-			defaultValue: true
+			defaultValue: false
 
 		//Logging options similar to other Hubitat drivers
 		input "txtEnable", "bool", title: fmtTitle("Enable Description Text Logging?"), defaultValue: true
@@ -258,10 +262,10 @@ metadata {
 	}
 }
 
+//Preference Helpers
 String fmtDesc(String str) {
 	return "<div style='font-size: 85%; font-style: italic; padding: 1px 0px 4px 2px;'>${str}</div>"
 }
-
 String fmtTitle(String str) {
 	return "<strong>${str}</strong>"
 }
@@ -269,11 +273,14 @@ String fmtTitle(String str) {
 void debugShowVars() {
 	log.warn "paramsList ${paramsList.hashCode()} ${paramsList}"
 	log.warn "paramsMap ${paramsMap.hashCode()} ${paramsMap}"
+	log.warn "settings ${settings.hashCode()} ${settings}"
 }
 
+//Association Settings
 @Field static final int maxAssocGroups = 4
 @Field static final int maxAssocNodes = 5
 
+//Main Parameters Listing
 @Field static Map<String, Map> paramsMap =
 [
 	paddleControl: [ num: 1,
@@ -417,6 +424,7 @@ void debugShowVars() {
 	0x9F: 1		// Security S2
 ]
 
+//Static Lists and Settings
 @Field static final Map ledModeCmdOptions = [0:"Default", 1:"Reverse", 2:"Off", 3:"On"]
 @Field static final Map ledColorOptions = [0:"White", 1:"Blue", 2:"Green", 3:"Red"]
 
@@ -448,7 +456,7 @@ void configure() {
 	runIn(6, executeConfigureCmds)
 }
 
-def updated() {
+void updated() {
 	log.info "updated..."
 	log.warn "Debug logging is: ${debugEnable == true}"
 	log.warn "Description logging is: ${txtEnable == true}"
@@ -460,7 +468,7 @@ def updated() {
 	runIn(1, executeConfigureCmds)
 }
 
-def refresh() {
+void refresh() {
 	logDebug "refresh..."
 	executeRefreshCmds()
 }
@@ -470,16 +478,17 @@ def refresh() {
  ***** Driver Commands
 ********************************************************************/
 /*** Capabilities ***/
-def on() {
+String on() {
 	logDebug "on..."
 	return switchBinarySetCmd(0xFF)
 }
 
-def off() {
+String off() {
 	logDebug "off..."
 	return switchBinarySetCmd(0x00)
 }
 
+//Button commands required with capabilities
 void push(buttonId) { sendBasicButtonEvent(buttonId, "pushed") }
 void hold(buttonId) { sendBasicButtonEvent(buttonId, "held") }
 void release(buttonId) { sendBasicButtonEvent(buttonId, "released") }
@@ -512,31 +521,11 @@ void setLEDMode(String modeName) {
 		sendCommands(configSetGetCmd(param, paramVal))
 	}
 	else {
-			log.warn "There is No LED Indicator Parameter Found for this model"
+		log.warn "There is No LED Indicator Parameter Found for this model"
 	}
 }
 
-void paramCommands(String str) {
-	switch (str) {
-		case "Refresh":
-			paramsRefresh()
-			break
-		case "Test All":
-			state.tmpFailedTest = []
-			paramsTestAll()
-			break
-		case "Hide Invalid":
-			paramsHideInvalid()
-			break
-		case "Clear Hidden":
-			paramsClearHidden()
-			break
-		default:
-			log.warn "paramCommands invalid input: ${str}"
-	}
-}
-
-void paramsRefresh() {
+void paramRefresh() {
 	List<String> cmds = []
 	for (int i = 1; i <= maxAssocGroups; i++) {
 		cmds << associationGetCmd(i)
@@ -549,89 +538,18 @@ void paramsRefresh() {
 	if (cmds) sendCommands(cmds)
 }
 
-void paramsTestAll() {
-	Map configsMap = getParamStoredMap()
-	List lastTest = state.tmpLastTest.collect()
-	Integer key = configsMap.find{ !lastTest || it.key > lastTest[0] }?.key
-	if (!key) {
-		logDebug "Finished Testing All Params"
-		runInMillis(1400, paramsHideInvalid)
-		return
-	}
-
-	Map param = getParam(key)
-	Integer val = configsMap.get(key)
-	Integer testVal = getParamValue(param) ?: 1
-	state.tmpLastTest = [key, val, testVal, "T"]
-
-	if (!param) {
-		state.tmpFailedTest << key
-		logDebug "Testing #${key} NOT FOUND in visible Params list"
-		runInMillis(400,paramsTestAll)
-		return
-	}
-	else {
-		logDebug "Testing Param: [num:${key}, currentVal:${val}, testVal:${testVal}]"
-		//Test by setting param and then check response
-		sendCommands(configSetGetCmd(param, testVal))
-	}
-}
-
-void paramsHideInvalid() {
-	List configDisabled = state.tmpFailedTest.collect() ?: []
-	TreeMap configsMap = getParamStoredMap()
-
-	configParams.each { param ->
-		if (!(configsMap.find { it.key.toInteger() == param.num } )) {
-			configDisabled << param.num
-		}
-	}
-
-	if (configDisabled) {
-		configDisabled.unique()
-		configDisabled.sort()
-		logDebug "Disabled Parameters: ${configDisabled}"
-		device.updateDataValue("configHide", configDisabled.inspect())
-
-		//Clean up configVals, remove hidden params
-		configDisabled.each { configsMap.remove(it) }
-		device.updateDataValue("configVals", configsMap.inspect())
-		updateSyncingStatus()
-	}
-	else {
-		logDebug "Disabled Parameters: NONE"
-	}
-
-	state.remove("tmpLastTest")
-	state.remove("tmpFailedTest")
-	updateParamsList()
-
-	sendEvent(name: "WARNING", value: "COMPLETE - RELOAD THE PAGE!", isStateChange: true)
-}
-
-void paramsClearHidden() {
-	logDebug "Clearing Hidden Parameters"
-	state.remove("tmpLastTest")
-	state.remove("tmpFailedTest")
-	device.removeDataValue("configHide")
-	updateSyncingStatus()
-	updateParamsList()
-
-	sendEvent(name: "WARNING", value: "COMPLETE - RELOAD THE PAGE!", isStateChange: true)
-}
-
 
 /*******************************************************************
  ***** Z-Wave Reports
 ********************************************************************/
-def parse(String description) {
-	def cmd = zwave.parse(description, commandClassVersions)
-
+void parse(String description) {
+	hubitat.zwave.Command cmd = zwave.parse(description, commandClassVersions)
+	
 	if (cmd) {
 		logTrace "parse: ${description} --PARSED-- ${cmd}"
 		zwaveEvent(cmd)
 	} else {
-		log.warn "Unable to parse: $description"
+		log.warn "Unable to parse: ${description}"
 	}
 
 	//Update Last Activity
@@ -650,6 +568,7 @@ void zwaveEvent(hubitat.zwave.commands.securityv1.SecurityMessageEncapsulation c
 	}
 }
 
+//Decodes Multichannel Encapsulated Commands
 void zwaveEvent(hubitat.zwave.commands.multichannelv4.MultiChannelCmdEncap cmd) {
 	def encapsulatedCmd = cmd.encapsulatedCommand(commandClassVersions)
 	logTrace "${cmd} --ENCAP-- ${encapsulatedCmd}"
@@ -661,6 +580,7 @@ void zwaveEvent(hubitat.zwave.commands.multichannelv4.MultiChannelCmdEncap cmd) 
 	}
 }
 
+//Decodes Supervision Encapsulated Commands (and replies to device)
 void zwaveEvent(hubitat.zwave.commands.supervisionv1.SupervisionGet cmd, ep=0) {
 	def encapsulatedCmd = cmd.encapsulatedCommand(commandClassVersions)
 	logTrace "${cmd} --ENCAP-- ${encapsulatedCmd}"
@@ -674,6 +594,7 @@ void zwaveEvent(hubitat.zwave.commands.supervisionv1.SupervisionGet cmd, ep=0) {
 	sendCommands(secureCmd(zwave.supervisionV1.supervisionReport(sessionID: cmd.sessionID, reserved: 0, moreStatusUpdates: false, status: 0xFF, duration: 0), ep))
 }
 
+//Handles reports back from Supervision Encapsulated Commands
 void zwaveEvent(hubitat.zwave.commands.supervisionv1.SupervisionReport cmd, ep=0 ) {
 	logDebug "Supervision Report - SessionID: ${cmd.sessionID}, Status: ${cmd.status}"
 	if (supervisedPackets["${device.id}"] == null) { supervisedPackets["${device.id}"] = [:] }
@@ -707,29 +628,9 @@ void zwaveEvent(hubitat.zwave.commands.configurationv1.ConfigurationReport cmd) 
 
 	Map param = getParam(cmd.parameterNumber)
 
-	//When running Param Test
-	List lastTest = state.tmpLastTest
-	if (param && lastTest && lastTest[3] == "T") {
-		if (param.num == lastTest[0] && cmd.scaledConfigurationValue == lastTest[2]) {
-			lastTest[3] = "P"
-			logDebug "Testing #${lastTest[0]} PASSED"
-		}
-		else {
-			lastTest[3] = "F"
-			state.tmpFailedTest << lastTest[0]
-			logDebug "Testing #${lastTest[0]} FAILED - Returned: ${cmd.parameterNumber}:${cmd.scaledConfigurationValue}"
-		}
-		//Set the param back how it was
-		sendCommands(configSetGetCmd(param, lastTest[1]))
-
-		runInMillis(1400, paramsTestAll)
-		return
-	}
-
-	//Handle normal Param changes
-	else if (param) {
+	if (param) {
 		Integer val = cmd.scaledConfigurationValue
-		logDebug "${param.name} (#${param.num}) = ${val}"
+		logDebug "${param.name} (#${param.num}) = ${val.toString()}"
 		setParamStoredValue(param.num, val)
 	}
 	else {
@@ -859,6 +760,7 @@ void sendCommands(List<String> cmds, Long delay=400) {
 	sendHubCommand(new hubitat.device.HubMultiAction(delayBetween(cmds, delay), hubitat.device.Protocol.ZWAVE))
 }
 
+//Single Command
 void sendCommands(String cmd) {
     sendHubCommand(new hubitat.device.HubAction(cmd, hubitat.device.Protocol.ZWAVE))
 }
@@ -1029,7 +931,6 @@ void executeConfigureCmds() {
 	}
 
 	if (state.resyncAll) clearVariables()
-
 	state.resyncAll = false
 
 	if (cmds) sendCommands(cmds)
@@ -1106,7 +1007,7 @@ private getConfigureAssocsCmds() {
 	return cmds
 }
 
-private getAssocDNIsSettingNodeIds(grp) {
+List getAssocDNIsSettingNodeIds(grp) {
 	def dni = getAssocDNIsSetting(grp)
 	def nodeIds = convertHexListToIntList(dni.split(","))
 
@@ -1126,8 +1027,7 @@ Integer getPendingChanges() {
 		((paramVal != null) && (paramVal != getParamStoredValue(param.num)))
 	}
 	Integer pendingAssocs = Math.ceil(getConfigureAssocsCmds()?.size()/2) ?: 0
-	//Integer group1Assoc = (state.group1Assoc != true) ? 1 : 0
-	return (configChanges + pendingAssocs)
+	return (!state.resyncAll ? (configChanges + pendingAssocs) : configChanges)
 }
 
 
@@ -1201,6 +1101,7 @@ Map getParamStoredMap() {
 	return configsMap
 }
 
+//Parameter List Functions
 //This will rebuild the list for the current model and firmware only as needed
 //paramsList Structure: MODEL:[FIRMWARE:PARAM_MAPS]
 //PARAM_MAPS [num, name, title, description, size, defaultVal, options, firmVer]
@@ -1222,7 +1123,7 @@ void updateParamsList() {
 
 		//Apply custom adjustments
 		tmpMap.changes.each { m, changes ->
-			if (m == modelNum || m ==~ /${modelSeries}X/) {
+			if (m == devModel || m == modelNum || m ==~ /${modelSeries}X/) {
 				tmpMap.putAll(changes)
 				if (changes.options) { tmpMap.options = changes.options.clone() }
 			}
@@ -1250,13 +1151,6 @@ void updateParamsList() {
 		}
 	}
 
-	//Remove Hidden Invalid Params
-	String configHide = device.getDataValue("configHide")
-	if (configHide != null) {
-		List configDisabled = evaluate(configHide)
-		tmpList.removeAll { configDisabled.contains(it.num) }
-	}
-
 	//Save it to the static list
 	if (paramsList[devModel] == null) paramsList[devModel] = [:]
 	paramsList[devModel][firmware] = tmpList
@@ -1270,7 +1164,7 @@ void verifyParamsList() {
 	if (paramsList[devModel] == null) updateParamsList()
 	if (paramsList[devModel][firmware] == null) updateParamsList()
 }
-
+//These have to be added in after the fact or groovy complains
 void fixParamsMap() {
 	paramsMap.ledColor.options << ledColorOptions
 	paramsMap.autoOffInterval.options << autoOnOffIntervalOptions
@@ -1283,7 +1177,7 @@ List<Map> getConfigParams() {
 	//logDebug "Get Config Params"
 	String devModel = state.deviceModel
 	BigDecimal firmware = firmwareVersion
-	if (!devModel) return []
+	if (!devModel || devModel == "UNK00") return []
 
 	verifyParamsList()
 
@@ -1307,11 +1201,12 @@ Map getParam(def search) {
 	return param
 }
 
-private getParamValue(String paramName) {
+//Convert Param Value if Needed
+Integer getParamValue(String paramName) {
 	return getParamValue(getParam(paramName))
 }
-private getParamValue(Map param, Boolean adjust=false) {
-	Integer paramVal = safeToInt(settings."configParam${param.num}", param.defaultVal)
+Number getParamValue(Map param, Boolean adjust=false) {
+	Number paramVal = safeToInt(settings."configParam${param.num}", param.defaultVal)
 	if (!adjust) return paramVal
 
 	//Below is not needed for ZEN7X models
@@ -1399,17 +1294,18 @@ String setDevModel(BigDecimal firmware) {
 		{
 			logDebug "Scene Reverse switched off, known Model/Firmware match found."
 			device.updateSetting("sceneReverse", [value:"false",type:"bool"])
-		} else if (settings.sceneReverse == false) {
-			log.warn "Scene Reverse is off, not a known Model/Firmware match but leaving how it is set."
+		} else if ((devModel ==~ /ZEN2\d/)) {
+			logDebug "Scene Reverse switched on, known Model/Firmware match found."
+			device.updateSetting("sceneReverse", [value:"true",type:"bool"])
 		} else {
-			logDebug "Scene Reverse is already on, this is the default setting"
+			log.warn "Scene Reverse unchanged, no known Model/Firmware match."
 		}
 	}
 
 	return devModel
 }
 
-private getDeviceModelShort() {
+Integer getDeviceModelShort() {
 	return safeToInt(state.deviceModel?.drop(3))
 }
 
@@ -1427,7 +1323,7 @@ String convertToLocalTimeString(dt) {
 	}
 }
 
-private List convertIntListToHexList(intList, pad=2) {
+List convertIntListToHexList(intList, pad=2) {
 	def hexList = []
 	intList?.each {
 		hexList.add(Integer.toHexString(it).padLeft(pad, "0").toUpperCase())
@@ -1435,7 +1331,7 @@ private List convertIntListToHexList(intList, pad=2) {
 	return hexList
 }
 
-private List convertHexListToIntList(String[] hexList) {
+List convertHexListToIntList(String[] hexList) {
 	def intList = []
 
 	hexList?.each {
@@ -1452,7 +1348,6 @@ private Integer safeToInt(val, Integer defaultVal=0) {
 	return "${val}"?.isInteger() ? "${val}".toInteger() : defaultVal
 }
 
-
 boolean isDuplicateCommand(lastExecuted, allowedMil) {
 	!lastExecuted ? false : (lastExecuted + allowedMil > new Date().time)
 }
@@ -1461,7 +1356,7 @@ boolean isDuplicateCommand(lastExecuted, allowedMil) {
 /*******************************************************************
  ***** Logging Functions
 ********************************************************************/
-void logsOff(){}
+void logsOff() {}
 void debugLogsOff() {
 	log.warn "debug logging disabled..."
 	device.updateSetting("debugEnable",[value:"false",type:"bool"])
