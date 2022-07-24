@@ -453,15 +453,15 @@ void configure() {
 		state.resyncAll = true
 	}
 
-	updateSyncingStatus(8)
-	runIn(2, executeRefreshCmds)
-	runIn(6, executeConfigureCmds)
+	updateSyncingStatus(6)
+	runIn(1, executeRefreshCmds)
+	runIn(4, executeConfigureCmds)
 }
 
 void updated() {
 	logDebug "updated..."
-	logInfo "Debug logging is: ${debugEnable == true}"
-	logInfo "Description logging is: ${txtEnable == true}"
+	logDebug "Debug logging is: ${debugEnable == true}"
+	logDebug "Description logging is: ${txtEnable == true}"
 
 	if (debugEnable) runIn(1800, debugLogsOff)
 
@@ -1210,6 +1210,13 @@ Number getParamValue(Map param, Boolean adjust=false) {
 	Number paramVal = safeToInt(settings."configParam${param.num}", param.defaultVal)
 	if (!adjust) return paramVal
 
+	//Reset hidden parameters to default
+	if (param.hidden && settings."configParam${param.num}" != null) {
+		logWarn "Resetting hidden parameter ${param.name} (${param.num}) to default ${param.defaultVal}"
+		device.removeSetting("configParam${param.num}")
+		paramVal = param.defaultVal
+	}
+
 	//Below is not needed for ZEN7X models
 	if (state.deviceModel ==~ /ZEN7\d/) return paramVal
 
@@ -1289,10 +1296,9 @@ String setDevModel(BigDecimal firmware) {
 
 	if (state.resyncAll) {
 		//Disable sceneReverse setting for known cases otherwise set to true (most need it reversed)
-		if ((devModel == "ZEN27" && fullVersion == "3.01") ||
-		   (devModel == "ZEN22" && fullVersion == "4.01") ||
-		   (devModel ==~ /ZEN7\d/))
-		{
+		if ((devModel == "ZEN27" && firmware == 3.01) ||
+		  (devModel == "ZEN22" && firmware == 4.01) ||
+		  (devModel ==~ /ZEN7\d/)) {
 			logDebug "Scene Reverse switched off, known Model/Firmware match found."
 			device.updateSetting("sceneReverse", [value:"false",type:"bool"])
 		} else if ((devModel ==~ /ZEN2\d/)) {
