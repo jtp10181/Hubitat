@@ -2,10 +2,10 @@
   "packageName": "Zooz Switches Advanced Drivers",
   "author": "jtp10181",
   "minimumHEVersion": "2.3.0",
-  "dateReleased": "2022-03-22",
+  "dateReleased": "2022-07-24",
   "documentationLink": "https://github.com/jtp10181/Hubitat/tree/main/Drivers/zooz",
   "communityLink": "https://community.hubitat.com/t/release-zooz-zen-switches-advanced-drivers/58649",
-  "releaseNotes": "Version [1.5.3] - 2022-07-13 (@jtp10181)\n Check community post and changelog for full details.",
+  "releaseNotes": "Version [1.6.0] - 2022-07-24 (@jtp10181)\n Check community post and changelog for full details.\n https://github.com/jtp10181/Hubitat/blob/main/Drivers/zooz/CHANGELOG-switch.md",
   "drivers": [
     {
       "id": "2d54004e-e51e-4abf-a4ac-6a73c9e587f4",
@@ -13,7 +13,7 @@
       "namespace": "jtp10181",
       "location": "https://raw.githubusercontent.com/jtp10181/Hubitat/main/Drivers/zooz/zooz-zen-switch.groovy",
       "required": false,
-      "version": "1.5.3"
+      "version": "1.6.0"
     },
     {
       "id": "8aa273a7-8424-4aed-9d40-92aade1c5d73",
@@ -21,7 +21,7 @@
       "namespace": "jtp10181",
       "location": "https://raw.githubusercontent.com/jtp10181/Hubitat/main/Drivers/zooz/zooz-zen-dimmer.groovy",
       "required": false,
-      "version": "1.5.3"
+      "version": "1.6.0"
     },
     {
       "id": "fd30cdaf-f6e6-4d5f-bf27-82d0aed75649",
@@ -29,7 +29,7 @@
       "namespace": "jtp10181",
       "location": "https://raw.githubusercontent.com/jtp10181/Hubitat/main/Drivers/zooz/zooz-zen30-double-switch.groovy",
       "required": false,
-      "version": "1.5.3"
+      "version": "1.6.0"
     },
     {
       "id": "b026a8cb-aae5-46a1-89a4-09441e73916e",
