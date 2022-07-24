@@ -4,6 +4,44 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.4] - 2022-XX-XX (@jtp10181)
+  ### Changed
+  - Major refactor to organize code same as sensor drivers
+  - Cleaned up some logging
+  ### Fixed
+  - sceneReverse was using wrong firmware variable name
+  - Was possible for hidden parameters to get stuck in the wrong setting
+  ### Removed
+  - Parameter test/hide code totally removed
+
+## [1.5.3] - 2022-07-13 (@jtp10181)
+  ### Changed
+  - Extra check to make sure devModel is set
+  - Minor refactoring
+
+## [1.5.2] - 2022-07-10 (@jtp10181)
+  ### Added
+  - Support for multiple hardware/firmware major versions
+  - Support for params 27-30 for ZEN72/74/77
+  - Support for Association Group 4 (only works on some models)
+  - Set deviceModel in device data (press refresh)
+  ### Changed
+  - Removed getParam.value and replaced with separate function
+  - Adding HTML styling to the Preferences
+  ### Fixed
+  - Some parameters would get multiple [DEFAULT] tags added
+  ### Deprecated 
+  - Parameter test/hide functions, not needed
+
+## [1.5.1] - 2022-04-25 (@jtp10181)
+  ### Changed
+  - Description text loging enabled by default
+  ### Fixed
+  - Added inClusters to fingerprint so it will be selected by default
+  - threeWaySwitchType options corrected between switches and dimmers
+  - Parameter #7 removed from ZEN71/72 which do not have that option
+  - Global (Field static) Maps defined explicitly as a ConcurrentHashMap
+
 ## [1.5.0] - 2021-11-24 (@jtp10181)
   ### Added
   - ChangeLevel capability support so level can be adjusted from button holds (Dimmers Only)
@@ -24,7 +62,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.4.3] - 2021-04-21 (@jtp10181)
   ### Added
-  - ZEN30 Uses new custom child driver by default, falls back to hubitat generic
+  - ZEN30 Uses new custom child driver by default, falls back to Hubitat generic
   - Command to change indicator on/off settings
   - Support for ZEN73 and ZEN74
   - Support for Push, Hold, and Release commands
@@ -37,7 +75,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.4.2] - 2021-01-31 (@jtp10181)
   ### Added
   - Command to change indicator color (can be used from Rule Machine!)
-  - New method to test the params and find the ones that dont actually work
+  - New method to test the params and find the ones that don't actually work
   - Command button to remove invalid parameters
   ### Changed
   - More cleanup and adding some comments
@@ -113,7 +151,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Debug and info logging to match Hubitat standards
   - Moved storage of config variables to Data (in a Map)
   ### Fixed
-  - Some default designations to match zooz documentation
+  - Some default designations to match Zooz documentation
   - Up/Down Scene labels which were reporting in reverse
   - Scene events to user proper button numbers per Zooz docs
 
@@ -121,7 +159,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 https://github.com/krlaframboise/SmartThings/tree/master/devicetypes/zooz/
   - Initial Release (for SmartThings)
 
-[Unreleased]: https://github.com/jtp10181/Hubitat/compare/zooz-v1.5.0...HEAD
+[Unreleased]: https://github.com/jtp10181/Hubitat/compare/switch-v1.5.4...HEAD
+[1.5.4]: https://github.com/jtp10181/Hubitat/compare/switch-v1.5.3...switch-v1.5.4
+[1.5.3]: https://github.com/jtp10181/Hubitat/compare/switch-v1.5.2...switch-v1.5.3
+[1.5.2]: https://github.com/jtp10181/Hubitat/compare/switch-v1.5.1...switch-v1.5.2
+[1.5.1]: https://github.com/jtp10181/Hubitat/compare/zooz-v1.5.0...switch-v1.5.1
 [1.5.0]: https://github.com/jtp10181/Hubitat/compare/zooz-v1.4.4...zooz-v1.5.0
 [1.4.4]: https://github.com/jtp10181/Hubitat/compare/zooz-v1.4.3...zooz-v1.4.4
 [1.4.3]: https://github.com/jtp10181/Hubitat/compare/zooz-v1.4.2...zooz-v1.4.3

@@ -7,8 +7,10 @@
  *  For Support: https://community.hubitat.com/t/zooz-zen-switches/58649
  *  https://github.com/jtp10181/Hubitat/tree/main/Drivers/zooz
  *
- *  Changelog:
-## [1.5.4] - 2022-XX-XX (@jtp10181)
+
+Changelog:
+
+## [1.6.0] - 2022-07-24 (@jtp10181)
   ### Changed
   - Major refactor to organize code same as sensor drivers
   - Cleaned up some logging
@@ -168,6 +170,7 @@ https://github.com/krlaframboise/SmartThings/tree/master/devicetypes/zooz/
 ## 3.0 / 4.0 - 2020-09-16 (@krlaframboise / Zooz)
   - Initial Release (for SmartThings)
 
+ *
  *  Copyright 2020-2022 Jeff Page
  *  Copyright 2020 Zooz
  *
@@ -187,7 +190,7 @@ https://github.com/krlaframboise/SmartThings/tree/master/devicetypes/zooz/
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "1.5.4"
+@Field static final String VERSION = "1.6.0"
 @Field static final Map deviceModelNames =
 	["B112:1F1C":"ZEN22", "B112:261C":"ZEN24", "A000:A002":"ZEN27", 
 	"7000:A002":"ZEN72", "7000:A004":"ZEN74", "7000:A007":"ZEN77"]

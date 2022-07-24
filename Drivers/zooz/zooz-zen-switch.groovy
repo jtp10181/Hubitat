@@ -7,10 +7,18 @@
  *  For Support: https://community.hubitat.com/t/zooz-zen-switches/58649
  *  https://github.com/jtp10181/Hubitat/tree/main/Drivers/zooz
  *
- *  Changelog:
-## [1.5.4] - 2022-XX-XX (@jtp10181)
+
+Changelog:
+
+## [1.6.0] - 2022-07-24 (@jtp10181)
   ### Changed
   - Major refactor to organize code same as sensor drivers
+  - Cleaned up some logging
+  ### Fixed
+  - sceneReverse was using wrong firmware variable name
+  - Was possible for hidden parameters to get stuck in the wrong setting
+  ### Removed
+  - Parameter test/hide code totally removed
 
 ## [1.5.3] - 2022-07-13 (@jtp10181)
   ### Changed
@@ -162,6 +170,7 @@ https://github.com/krlaframboise/SmartThings/tree/master/devicetypes/zooz/
 ## 3.0 / 4.0 - 2020-09-16 (@krlaframboise / Zooz)
   - Initial Release (for SmartThings)
 
+ *
  *  Copyright 2020-2022 Jeff Page
  *  Copyright 2020 Zooz
  *
@@ -181,7 +190,7 @@ https://github.com/krlaframboise/SmartThings/tree/master/devicetypes/zooz/
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "1.5.4"
+@Field static final String VERSION = "1.6.0"
 @Field static final Map deviceModelNames =
 	["B111:1E1C":"ZEN21", "B111:251C":"ZEN23", "A000:A001":"ZEN26", 
 	"7000:A001":"ZEN71", "7000:A003":"ZEN73", "7000:A006":"ZEN76"]

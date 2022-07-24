@@ -5,8 +5,10 @@
  *  For Support: https://community.hubitat.com/t/zooz-zen-switches/58649
  *  https://github.com/jtp10181/Hubitat/tree/main/Drivers/zooz
  *
- *  Changelog:
-## [1.5.4] - 2022-XX-XX (@jtp10181)
+
+Changelog:
+
+## [1.6.0] - 2022-07-24 (@jtp10181)
   ### Changed
   - Major refactor to organize code same as sensor drivers
   - Cleaned up some logging
@@ -140,7 +142,7 @@ https://github.com/krlaframboise/SmartThings/blob/master/devicetypes/krlaframboi
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "1.5.4"
+@Field static final String VERSION = "1.6.0"
 @Field static final Map deviceModelNames = ["A000:A008":"ZEN30"]
 
 metadata {
