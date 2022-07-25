@@ -8,6 +8,10 @@
 
 Changelog:
 
+## [1.0.2] - 2022-07-25 (@jtp10181)
+  ### Fixed
+  - Fixed issue handling decimal parameters introduced in 1.0.1
+  
 ## [1.0.1] - 2022-07-25 (@jtp10181)
   ### Added
   - Set deviceModel in device data (press refresh)
@@ -110,7 +114,7 @@ metadata {
 
 		configParams.each { param ->
 			if (!param.hidden) {
-				Integer paramVal = getParamValue(param)
+				BigDecimal paramVal = getParamValue(param)
 				if (param.options) {
 					input "configParam${param.num}", "enum",
 						title: fmtTitle("${param.title}"),
@@ -942,11 +946,11 @@ Map getParam(def search) {
 }
 
 //Convert Param Value if Needed
-Integer getParamValue(String paramName) {
+BigDecimal getParamValue(String paramName) {
 	return getParamValue(getParam(paramName))
 }
-Number getParamValue(Map param, Boolean adjust=false) {
-	Number paramVal = safeToInt(settings."configParam${param.num}", param.defaultVal)
+BigDecimal getParamValue(Map param, Boolean adjust=false) {
+	BigDecimal paramVal = safeToDec(settings."configParam${param.num}", param.defaultVal)
 	if (!adjust) return paramVal
 
 	//Reset hidden parameters to default
