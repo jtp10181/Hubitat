@@ -1,12 +1,20 @@
 /*  
- *  Zooz ZEN17 Universal Relay PARAMETER COMPANION DRIVER
- *    - Model: ZEN17 - MINIMUM FIRMWARE 1.10
+ *  Zooz ZEN17 PARAMETER COMPANION DRIVER
+ *    - Model: ZEN17 - MINIMUM FIRMWARE 1.04
  *
  *  For Support: https://community.hubitat.com/
  *  https://github.com/jtp10181/Hubitat/tree/main/Drivers/zooz
  *
- *  Changelog:
 
+Changelog:
+
+## [1.0.0] - 2021-07-26 (@jtp10181)
+  ### Added
+  - Drop down menus for parameters where feasible
+  - Automatically figure out reverse setting based on trigger
+  ### Fixed
+  - Race condition with configVals (now keeping copy in static var)
+  
 ## [0.1.0] - 2021-07-18 (@jtp10181)
   - Initial Release
 
@@ -31,7 +39,7 @@ NOTICE: This file has been created by *Jeff Page* with some code used
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "0.1.0" 
+@Field static final String VERSION = "1.0.0" 
 @Field static final Map deviceModelNames = ["7000:A00A":"ZEN17"]
 
 metadata {
@@ -39,10 +47,10 @@ metadata {
 		name: "Zooz ZEN17 Companion Driver",
 		namespace: "jtp10181",
 		author: "Jeff Page (@jtp10181)",
-		//importUrl: "https://raw.githubusercontent.com/jtp10181/hubitat/master/Drivers/zooz/"
+		importUrl: "https://raw.githubusercontent.com/jtp10181/Hubitat/main/Drivers/zooz/zooz-zen17-companion-driver.groovy"
 	) {
 		capability "Actuator"
-		capability "Configuration"
+		//capability "Configuration"
 		capability "Refresh"
 
 		command "syncFromDevice"
@@ -90,10 +98,10 @@ metadata {
 	}
 }
 
+//Preference Helpers
 String fmtDesc(String str) {
 	return "<div style='font-size: 85%; font-style: italic; padding: 1px 0px 4px 2px;'>${str}</div>"
 }
-
 String fmtTitle(String str) {
 	return "<strong>${str}</strong>"
 }
@@ -101,110 +109,184 @@ String fmtTitle(String str) {
 void debugShowVars() {
 	log.warn "paramsList ${paramsList.hashCode()} ${paramsList}"
 	log.warn "paramsMap ${paramsMap.hashCode()} ${paramsMap}"
+	log.warn "configsList ${configsList.hashCode()} ${configsList}"
 	log.warn "settings ${settings.hashCode()} ${settings}"
 }
 
 @Field static Map<String, Map> paramsMap =
 [
-	param1: [ num:1,
+	p1: [ num:1,
 		title: "On / Off Status After Power Failure",
 		size: 1, defaultVal: 1,
-		range: "0..4"
+		//range: "0..4"
+		options: [
+			0:"All relays forced OFF",
+			1:"All relays restores last state",
+			2:"All relays forced ON",
+			3:"Relay 1 restores last, Relay 2 forced ON",
+			4:"Relay 2 restores last, Relay 1 forced ON",
+		]
+
 	],
-	param2: [ num:2,
+	p2: [ num:2,
 		title: "Input Type for S1 C terminals",
 		size: 1, defaultVal: 2,
-		range: "0..11"
+		//range: "0..11"
+		options: [
+			0:"Momentary (for lights only)",
+			1:"Toggle Switch On/Off",
+			2:"Toggle Switch State Change",
+			3:"Garage Door Momentary (for Z-Wave control)",
+			4:"Water Sensor",
+			5:"Heat Sensot",
+			6:"Motion Sensor",
+			7:"Contact Sensor",
+			8:"Carbon Monoxide (CO) Sensor",
+			9:"Carbon Dioxide (CO₂) Sensor",
+			10:"Dry Contact Switch/Sensor",
+			11:"Relay- Garage Door / Input- Contact Sensor" 
+		]
 	],
-	param3: [ num:3,
+	p3: [ num:3,
 		title: "Input Type for S2 C terminals",
 		size: 1, defaultVal: 2,
-		range: "0..11"
+		//range: "0..11"
+		options: [
+			0:"Momentary (for lights only)",
+			1:"Toggle Switch On/Off",
+			2:"Toggle Switch State Change",
+			3:"Garage Door Momentary (for Z-Wave control)",
+			4:"Water Sensor",
+			5:"Heat Sensot",
+			6:"Motion Sensor",
+			7:"Contact Sensor",
+			8:"Carbon Monoxide (CO) Sensor",
+			9:"Carbon Dioxide (CO₂) Sensor",
+			10:"Dry Contact Switch/Sensor",
+			11:"Relay- Garage Door / Input- Contact Sensor" 
+		]
 	],
-	param10: [ num:10,
+	p10: [ num:10,
 		title: "Input Trigger for Relay 1",
+		description: "Should relay input automatically trigger the load?",
 		size: 1, defaultVal: 1,
 		options: [0:"Disabled",1:"Enabled"]
 	],
-	param11: [ num:11,
+	p11: [ num:11,
 		title: "Input Trigger for Relay 2",
+		description: "Should relay input automatically trigger the load?",
 		size: 1, defaultVal: 1,
 		options: [0:"Disabled",1:"Enabled"]
 	],
-	param24: [ num:24,
+	p24: [ num:24,
 		title: "DC Motor Mode",
+		description: "Sync R1 and R2 together to prevent them from being activated at the same time",
 		size: 1, defaultVal: 0,
 		options: [0:"Disabled",1:"Enabled"]
 	],
-	param19: [ num:19,
+	p19: [ num:19,
 		title: "Reverse reported values on S1",
+		description: "See online device docs for which triggers allow this",
 		size: 1, defaultVal: 0,
-		range: "0,4..10"
+		//range: "0,4..10",
+		firmVer: 1.10,
+		options: [0:"Disabled",1:"Enabled"],
+		// options: [
+		// 	0:"Disabled (report normally)",
+		// 	4:"Water Sensor",
+		// 	5:"Heat Sensot",
+		// 	6:"Motion Sensor",
+		// 	7:"Contact Sensor",
+		// 	8:"Carbon Monoxide (CO) Sensor",
+		// 	9:"Carbon Dioxide (CO₂) Sensor",
+		// 	10:"Dry Contact Switch/Sensor",
+		// ]
 	],
-	param20: [ num:20,
+	p20: [ num:20,
 		title: "Reverse reported values on S2",
+		description: "See online device docs for which triggers allow this",
 		size: 1, defaultVal: 0,
-		range: "0,4..10"
+		//range: "0,4..10",
+		firmVer: 1.10,
+		options: [0:"Disabled",1:"Enabled"],
+		// options: [
+		// 	0:"Disabled (report normally)",
+		// 	4:"Water Sensor",
+		// 	5:"Heat Sensot",
+		// 	6:"Motion Sensor",
+		// 	7:"Contact Sensor",
+		// 	8:"Carbon Monoxide (CO) Sensor",
+		// 	9:"Carbon Dioxide (CO₂) Sensor",
+		// 	10:"Dry Contact Switch/Sensor",
+		// ]
 	],
-	param5: [ num:5,
+	p5: [ num:5,
 		title: "LED Indicator Control",
 		size: 1, defaultVal: 0,
-		range: "0..11"
+		//range: "0..3"
+		options: [
+			0:"LED on when ALL relays off",
+			1:"LED on when ANY relays on",
+			2:"LED Indicator always off",
+			3:"LED Indicator always on",
+		]
 	],
-	param6: [ num:6,
+	p6: [ num:6,
 		title: "Auto Turn-Off Relay 1: TIME",
 		size: 4, defaultVal: 0,
 		range: "0..65535"
 	],
-	param15: [ num:15,
+	p15: [ num:15,
 		title: "Auto Turn-Off Relay 1: UNITS",
 		size: 1, defaultVal: 0,
 		options: [0:"minutes",1:"seconds",2:"hours"]
 	],
-	param7: [ num:7,
+	p7: [ num:7,
 		title: "Auto Turn-On Relay 1: TIME",
 		size: 4, defaultVal: 0,
 		range: "0..65535"
 	],
-	param16: [ num:16,
+	p16: [ num:16,
 		title: "Auto Turn-On Relay 1: UNITS",
 		size: 1, defaultVal: 0,
 		options: [0:"minutes",1:"seconds",2:"hours"]
 	],
-	param8: [ num:8,
+	p8: [ num:8,
 		title: "Auto Turn-Off Relay 2: TIME",
 		size: 4, defaultVal: 0,
 		range: "0..65535"
 	],
-	param17: [ num:17,
+	p17: [ num:17,
 		title: "Auto Turn-Off Relay 2: UNITS",
 		size: 1, defaultVal: 0,
 		options: [0:"minutes",1:"seconds",2:"hours"]
 	],
-	param9: [ num:9,
+	p9: [ num:9,
 		title: "Auto Turn-On Relay 2: TIME",
 		size: 4, defaultVal: 0,
 		range: "0..65535"
 	],
-	param18: [ num:18,
+	p18: [ num:18,
 		title: "Auto Turn-On Relay 2: UNITS",
 		size: 1, defaultVal: 0,
 		options: [0:"minutes",1:"seconds",2:"hours"]
 	],
 ]
 
+//Command Classes Supported
 @Field static final Map commandClassVersions = [
 	0x6C: 1,	// Supervision (supervisionv1)
-	0x70: 4,	// Configuration (configurationv4) (4)
-	0x84: 2,	// Wakeup (wakeupv2)
+	0x70: 2,	// Configuration (configurationv2) (4)
 	0x86: 2,	// Version (versionv2) (3)
-	0x9F: 1 	// Security 2
+	0x9F: 1		// Security S2
 ]
 
+/*** Static Lists and Settings ***/
 @Field static final Map debugOpts = [0:"Error", 1:"Warn", 2:"Info", 3:"Debug", 4:"Trace"]
 
+
 /*******************************************************************
- ***** Driver Commands
+ ***** Core Functions
 ********************************************************************/
 void installed() {
 	logWarn "installed..."
@@ -233,6 +315,10 @@ List<String> refresh() {
 	return cmds ? delayBetween(cmds,200) : []
 }
 
+
+/*******************************************************************
+ ***** Driver Commands
+********************************************************************/
 void setLogLevel(String selection) {
 	Short level = debugOpts.find{ selection.equalsIgnoreCase(it.value) }.key
 	device.updateSetting("logLevel",[value:"${level}", type:"enum"])
@@ -243,6 +329,7 @@ void syncFromDevice() {
 	sendEvent(name:"syncStatus", value:"About to Sync Settings from Device")
 	state.deviceSync = true
 	device.removeDataValue("configVals")
+	configsList["${device.id}"] = [:]
 
 	List<String> cmds = []
 	configParams.each { param ->
@@ -317,7 +404,7 @@ void zwaveEvent(hubitat.zwave.commands.versionv2.VersionReport cmd) {
 	setDevModel(new BigDecimal(fullVersion))
 }
 
-void zwaveEvent(hubitat.zwave.commands.configurationv4.ConfigurationReport cmd) {
+void zwaveEvent(hubitat.zwave.commands.configurationv2.ConfigurationReport cmd) {
 	logTrace "${cmd}"
 	updateSyncingStatus()
 
@@ -330,7 +417,7 @@ void zwaveEvent(hubitat.zwave.commands.configurationv4.ConfigurationReport cmd) 
 		setParamStoredValue(param.num, val)
 	}
 	else {
-		logDebug "Parameter #${cmd.parameterNumber} = ${val}"
+		logDebug "Parameter #${cmd.parameterNumber} = ${val.toString()}"
 	}
 
 	if (state.deviceSync) {
@@ -344,7 +431,7 @@ void zwaveEvent(hubitat.zwave.Command cmd, ep=0) {
 
 
 /*******************************************************************
- ***** Z-Wave Commands
+ ***** Z-Wave Command Shortcuts
 ********************************************************************/
 //These send commands to the device either a list or a single command
 void sendCommands(List<String> cmds, Long delay=200) {
@@ -423,7 +510,7 @@ List<String> getConfigureCmds() {
 	if (state.resyncAll) clearVariables()
 	state.remove("resyncAll")
 
-	updateSyncingStatus(6)
+	if (cmds) updateSyncingStatus(6)
 
 	return cmds ?: []
 }
@@ -437,6 +524,7 @@ List<String> getRefreshCmds() {
 
 void clearVariables() {
 	device.removeDataValue("configVals")
+	configsList["${device.id}"] = [:]
 }
 
 Integer getPendingChanges() {
@@ -457,7 +545,8 @@ Integer getPendingChanges() {
 /*******************************************************************
  ***** Common Functions
 ********************************************************************/
-//Parameter Store Map Functions
+/*** Parameter Store Map Functions ***/
+@Field static Map<String, Map> configsList = new java.util.concurrent.ConcurrentHashMap()
 Integer getParamStoredValue(Integer paramNum) {
 	//Using Data (Map) instead of State Variables
 	TreeMap configsMap = getParamStoredMap()
@@ -468,21 +557,24 @@ void setParamStoredValue(Integer paramNum, Integer value) {
 	//Using Data (Map) instead of State Variables
 	TreeMap configsMap = getParamStoredMap()
 	configsMap[paramNum] = value
+	configsList[device.id][paramNum] = value
 	device.updateDataValue("configVals", configsMap.inspect())
 }
 
 Map getParamStoredMap() {
-	Map configsMap = [:]
-	String configsStr = device.getDataValue("configVals")
-
-	if (configsStr) {
-		try {
-			configsMap = evaluate(configsStr)
+	Map configsMap = configsList[device.id]
+	if (configsMap == null) {
+		configsMap = [:]
+		if (device.getDataValue("configVals")) {
+			try {
+				configsMap = evaluate(device.getDataValue("configVals"))
+			}
+			catch(Exception e) {
+				logWarn("Clearing Invalid configVals: ${e}")
+				device.removeDataValue("configVals")
+			}
 		}
-		catch(Exception e) {
-			logWarn("Clearing Invalid configVals: ${e}")
-			device.removeDataValue("configVals")
-		}
+		configsList[device.id] = configsMap
 	}
 	return configsMap
 }
@@ -512,6 +604,7 @@ void updateParamsList() {
 		tmpMap.changes.each { m, changes ->
 			if (m == devModel || m == modelNum || m ==~ /${modelSeries}X/) {
 				tmpMap.putAll(changes)
+				if (changes.options) { tmpMap.options = changes.options.clone() }
 			}
 		}
 		//Don't need this anymore
@@ -531,6 +624,11 @@ void updateParamsList() {
 	//Remove invalid or not supported by firmware
 	tmpList.removeAll { it.num == null }
 	tmpList.removeAll { firmware < (it.firmVer ?: 0) }
+	tmpList.removeAll { 
+		if (it.firmVerM) {
+			(firmware-(int)firmware)*100 < it.firmVerM[(int)firmware]
+		}
+	}
 
 	//Save it to the static list
 	if (paramsList[devModel] == null) paramsList[devModel] = [:]
@@ -550,7 +648,7 @@ List<Map> getConfigParams() {
 	//logDebug "Get Config Params"
 	String devModel = state.deviceModel
 	BigDecimal firmware = firmwareVersion
-	if (!devModel) return []
+	if (!devModel || devModel == "UNK00") return []
 
 	verifyParamsList()
 
@@ -561,8 +659,6 @@ List<Map> getConfigParams() {
 //Get a single param by name or number
 Map getParam(def search) {
 	//logDebug "Get Param (${search} | ${search.class})"
-	String devModel = state.deviceModel
-	BigDecimal firmware = firmwareVersion
 	Map param = [:]
 
 	verifyParamsList()
@@ -576,15 +672,34 @@ Map getParam(def search) {
 }
 
 //Convert Param Value if Needed
-private getParamValue(String paramName) {
+Integer getParamValue(String paramName) {
 	return getParamValue(getParam(paramName))
 }
-private getParamValue(Map param, Boolean adjust=false) {
+Integer getParamValue(Map param, Boolean adjust=false) {
 	Integer paramVal = safeToInt(settings."configParam${param.num}", param.defaultVal)
+	if (!adjust) return paramVal
+
+	switch(param.num) {
+		case 19..20: //Reverse Params
+			if (paramVal > 0) {
+				Map trigParam = getParam(param.num-17)
+				Integer trigVal = getParamValue(trigParam)
+				if (trigVal >=4 && trigVal <=10) {
+					paramVal = trigVal
+				}
+				else if (trigVal > 0) { //Cannot Enable
+					logWarn "Cannot Reverse when ${trigParam.title} = ${trigVal}"
+					device.updateSetting("configParam${param.num}", [value:"0",type:"enum"])
+					paramVal = 0
+				}
+			}
+			break
+	}
+
 	return paramVal
 }
 
-//Other Helper Functions
+/*** Other Helper Functions ***/
 void updateSyncingStatus(Integer delay=2) {
 	runIn(delay, refreshSyncStatus)
 	sendEvent(name:"syncStatus", value:"Syncing...")
@@ -601,7 +716,7 @@ void refreshSyncStatus() {
 
 String setDevModel(BigDecimal firmware) {
 	//Stash the model in a state variable
-	def devTypeId = convertIntListToHexList([safeToInt(device.getDataValue("deviceType")),safeToInt(device.getDataValue("deviceId"))]).collect{ it.padLeft(4,'0') }
+	def devTypeId = convertIntListToHexList([safeToInt(device.getDataValue("deviceType")),safeToInt(device.getDataValue("deviceId"))],4)
 	String devModel = deviceModelNames[devTypeId.join(":")] ?: "UNK00"
 
 	logDebug "Set Device Info - Model: ${devModel} | Firmware: ${firmware}"
@@ -609,7 +724,7 @@ String setDevModel(BigDecimal firmware) {
 	device.updateDataValue("deviceModel", devModel)
 
 	if (devModel == "UNK00") {
-		log.warn "Unsupported Device USE AT YOUR OWN RISK: ${devTypeId}"
+		logWarn "Unsupported Device USE AT YOUR OWN RISK: ${devTypeId}"
 		state.WARNING = "Unsupported Device Model - USE AT YOUR OWN RISK!"
 	}
 	else state.remove("WARNING")
@@ -626,10 +741,10 @@ BigDecimal getFirmwareVersion() {
 	return ((version != null) && version.isNumber()) ? version.toBigDecimal() : 0.0
 }
 
-List convertIntListToHexList(intList) {
+List convertIntListToHexList(intList, pad=2) {
 	def hexList = []
 	intList?.each {
-		hexList.add(Integer.toHexString(it).padLeft(2, "0").toUpperCase())
+		hexList.add(Integer.toHexString(it).padLeft(pad, "0").toUpperCase())
 	}
 	return hexList
 }
@@ -651,8 +766,8 @@ private safeToDec(val, defaultVal=0, roundTo=-1) {
 /*******************************************************************
  ***** Logging Functions
 ********************************************************************/
-void logsOff(){
-	// logWarn "${device.displayName}: debug logging disabled..."
+void logsOff() {
+	// logWarn "Debug logging disabled..."
 	// device.updateSetting("debugEnable",[value:"false",type:"bool"])
 }
 
