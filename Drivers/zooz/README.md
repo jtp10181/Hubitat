@@ -1,5 +1,5 @@
 # Hubitat Custom Driver and Apps (jtp10181)  
-[![GitHub tag (latest SemVer)](https://img.shields.io/github/v/tag/jtp10181/Hubitat?sort=semver&logo=github)](https://github.com/jtp10181/Hubitat/tags) - Most Recent
+[![GitHub tag (latest by date)](https://img.shields.io/github/v/tag/jtp10181/Hubitat?label=Most%20Recent%20Tag&logo=github)](https://github.com/jtp10181/Hubitat/tags)
 
 ## Zooz ZEN Switches Advanced Drivers  
 [![zooz-switch-version](https://img.shields.io/badge/dynamic/json?color=blue&label=zooz-switch&prefix=v&query=%24.drivers.0.version&url=https%3A%2F%2Fraw.githubusercontent.com%2Fjtp10181%2FHubitat%2Fmain%2FpackageManifest%2Fzooz-zen-switch-dimmer.json&logo=github)](https://github.com/jtp10181/Hubitat/tags)
