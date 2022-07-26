@@ -4,7 +4,7 @@
   "minimumHEVersion": "2.3.0",
   "dateReleased": "2022-07-26",
   "documentationLink": "https://github.com/jtp10181/Hubitat/tree/main/Drivers/zooz",
-  "communityLink": "",
+  "communityLink": "https://community.hubitat.com/t/zooz-relays-advanced/98194",
   "releaseNotes": "Version [1.0.0] - 2021-07-26 (@jtp10181)\n Check community post and changelog for full details.",
   "drivers": [
     {

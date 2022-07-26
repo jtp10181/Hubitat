@@ -8,7 +8,7 @@
       "name": "Zooz Switches Advanced Drivers",
       "category": "Control",
       "location": "https://raw.githubusercontent.com/jtp10181/Hubitat/main/packageManifest/zooz-zen-switch-dimmer.json",
-      "description": "Zooz Switch Drivers with Advanced Settings and Features",
+      "description": "Supported Switches / Dimmers: ZEN21, ZEN22, ZEN23, ZEN24, ZEN26, ZEN27, ZEN71, ZEN72, ZEN73, ZEN74, ZEN76, ZEN77, ZEN30",
       "tags": [
         "Lights & Switches",
         "ZWave"
@@ -19,11 +19,24 @@
       "name": "Zooz Sensors Advanced Drivers",
       "category": "Utility",
       "location": "https://raw.githubusercontent.com/jtp10181/Hubitat/main/packageManifest/zooz-zen-sensors.json",
-      "description": "Zooz Sensor Drivers with Advanced Settings and Features",
+      "description": "Supported Sensors: ZSE40, ZSE44",
       "tags": [
         "Multi Sensors",
         "Motion Control",
         "Temperature & Humidity",
+        "ZWave"
+      ]
+    },
+    {
+      "id": "2cc22e33-72ed-47bb-b4d5-6efc2c570ca3",
+      "name": "Zooz Relays Advanced Drivers",
+      "category": "Control",
+      "location": "https://raw.githubusercontent.com/jtp10181/Hubitat/main/packageManifest/zooz-zen-relays.json",
+      "description": "Supported Relays: ZEN17",
+      "tags": [
+        "Garage Doors",
+        "Lights & Switches",
+        "Misc. Devices",
         "ZWave"
       ]
     }
