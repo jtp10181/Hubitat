@@ -8,6 +8,12 @@
 
 Changelog:
 
+## [0.1.1] - 2021-07-31 (@jtp10181)
+  ### Added
+  - Support for ZEN05 Outdoor Plug
+  ### Fixed
+  - Wrong default for powerFailure
+
 ## [0.1.0] - 2021-07-28 (@jtp10181)
   - Initial Release, support for ZEN04 Only
 
@@ -29,8 +35,8 @@ Changelog:
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "0.1.0"
-@Field static final Map deviceModelNames = ["7000:B002":"ZEN04"]
+@Field static final String VERSION = "0.1.1"
+@Field static final Map deviceModelNames = ["7000:B002":"ZEN04", "7000:B001":"ZEN05"]
 
 metadata {
 	definition (
@@ -49,7 +55,7 @@ metadata {
 		capability "Configuration"
 		capability "Refresh"
 	
-		command "paramRefresh"
+		command "refreshParams"
 		//command "resetStats"
 		//command "childDevices", [[name:"Select One*", type: "ENUM", constraints: ["Create","Remove"] ]]
 
@@ -58,8 +64,10 @@ metadata {
 
 		attribute "syncStatus", "string"
 
+		fingerprint mfr:"027A", prod:"7000", deviceId:"B002", inClusters:"0x5E,0x55,0x9F,0x6C", deviceJoinName:"Zooz ZEN04 Plug"
+		fingerprint mfr:"027A", prod:"7000", deviceId:"B001", inClusters:"0x5E,0x55,0x9F,0x6C", deviceJoinName:"Zooz ZEN05 Outdoor Plug"
 		fingerprint mfr:"027A", prod:"7000", deviceId:"B002", inClusters:"0x5E,0x25,0x70,0x85,0x8E,0x59,0x32,0x71,0x55,0x86,0x72,0x5A,0x87,0x73,0x9F,0x6C,0x7A", deviceJoinName:"Zooz ZEN04 Plug"
-		fingerprint mfr:"027A", prod:"7000", deviceId:"B002", inClusters:"0x5E,0x55,,0x9F,0x6C", deviceJoinName:"Zooz ZEN04 Plug"
+		fingerprint mfr:"027A", prod:"7000", deviceId:"B001", inClusters:"0x5E,0x25,0x70,0x85,0x8E,0x59,0x55,0x86,0x72,0x5A,0x87,0x73,0x9F,0x6C,0x7A", deviceJoinName:"Zooz ZEN05 Outdoor Plug"
 	}
 	
 	preferences {
@@ -118,6 +126,7 @@ void debugShowVars() {
 		title: "LED Brightness", 
 		size: 1, defaultVal: 2, 
 		options: [2:"Low", 1:"Medium", 0:"High"],
+		changes: [05:[num:7]]
 	],
 	offTimer: [ num: 2,
 		title: "Auto Turn-Off Timer", 
@@ -129,36 +138,48 @@ void debugShowVars() {
 		title: "Auto Turn-On Timer", 
 		size: 4, defaultVal: 0, 
 		description: "Time in minutes, 0 = Disabled",
-		range: 0..65535
+		range: 0..65535,
+		changes: [05:[num:4]]
 	],
 	powerFailure: [ num: 4,
 		title: "Behavior After Power Failure", 
-		size: 1, defaultVal: 20, 
+		size: 1, defaultVal: 0, 
 		options: [0:"Restores Last Status", 1:"Forced to Off", 2:"Forced to On"],
+		changes: [05:[num:6]]
 	],
-	wattsThreshold: [ num: 5,
+	manualControl: [ num: null,
+		title: "Physical Button On/Off Control", 
+		size: 1, defaultVal: 1,
+		options: [1:"Enabled", 0:"Disabled"],
+		changes:[05:[num:8]]
+	],
+	wattsThreshold: [ num: null,
 		title: "Power Wattage (W) Reporting Threshold", 
 		size: 1, defaultVal: 10,
-		description: "If wattage draw changes by this value, the new value will be reported",
-		range: 5..50 
+		description: "Report when changes by this amount",
+		range: 5..50,
+		changes:[04:[num:5]]
 	],
-	wattsFrequency: [ num: 6,
+	wattsFrequency: [ num: null,
 		title: "Power Wattage (W) Reporting Frequency", 
 		size: 4, defaultVal: 60,
 		description: "Minimum number of minutes between wattage reports",
-		range: 1..65535
+		range: 1..65535,
+		changes:[04:[num:6]]
 	],
-	currentThreshold: [ num: 7,
+	currentThreshold: [ num: null,
 		title: "Electrical Current (A) Reporting Threshold", 
 		size: 1, defaultVal: 10,
-		description: "[1 = 0.1A, 10 = 1A] If current draw changes by this amount the new value will be reported",
-		range: 1..10
+		description: "[1 = 0.1A, 10 = 1A]  Report when changes by this amount",
+		range: 1..10,
+		changes:[04:[num:7]]
 	],
-	energyThreshold: [ num: 8,
+	energyThreshold: [ num: null,
 		title: "Energy (kWh) Reporting Threshold", 
 		size: 1, defaultVal: 10,
-		description: "[1 = 0.01 kWh, 100 = 1kWh] If kWh changes by this amount the new value will be reported",
-		range: 1..100 
+		description: "[1 = 0.01 kWh, 100 = 1kWh]  Report when changes by this amount",
+		range: 1..100,
+		changes:[04:[num:8]]
 	],
 ]
 
@@ -267,7 +288,7 @@ String off() {
 }
 
 /*** Custom Commands ***/
-void paramRefresh() {
+void refreshParams() {
 	List<String> cmds = []
 	for (int i = 1; i <= maxAssocGroups; i++) {
 		cmds << associationGetCmd(i)
@@ -380,7 +401,7 @@ void zwaveEvent(hubitat.zwave.commands.switchbinaryv1.SwitchBinaryReport cmd, ep
 void zwaveEvent(hubitat.zwave.commands.meterv3.MeterReport cmd, ep=0) {
 	logTrace "${cmd} (scaledMeterValue: ${cmd.scaledMeterValue}) (ep ${ep})"
 	
-	BigDecimal val = safeToDec(cmd.scaledMeterValue, 0, Math.min(cmd.precision,1))
+	BigDecimal val = safeToDec(cmd.scaledMeterValue, 0, Math.min(cmd.precision,2))
 	
 	switch (cmd.scale) {
 		case meterEnergy.scale:			
@@ -497,7 +518,7 @@ void executeConfigureCmds() {
 
 	List<String> cmds = []
 
-	if (state.resyncAll || !firmwareVersion || !state.deviceModel) {
+	if (!firmwareVersion || !state.deviceModel) {
 		cmds << versionGetCmd()
 	}
 
@@ -522,15 +543,22 @@ void executeConfigureCmds() {
 void executeRefreshCmds() {
 	List<String> cmds = []
 
+	if (state.resyncAll || !firmwareVersion || !state.deviceModel) {
+		cmds << versionGetCmd()
+	}
+
+	//Refresh Switch
 	cmds << switchBinaryGetCmd()
 
 	//Refresh Meters
-	cmds += [
-		meterGetCmd(meterEnergy, endPoint),
-		meterGetCmd(meterPower, endPoint),
-		meterGetCmd(meterVoltage, endPoint),
-		meterGetCmd(meterCurrent, endPoint)
-	]
+	if (state.deviceModel == 'ZEN04') {
+		cmds += [
+			meterGetCmd(meterEnergy, endPoint),
+			meterGetCmd(meterPower, endPoint),
+			meterGetCmd(meterVoltage, endPoint),
+			meterGetCmd(meterCurrent, endPoint)
+		]
+	}
 	
 	sendCommands(cmds,300)
 }
@@ -548,7 +576,6 @@ void clearVariables() {
 	device.removeDataValue("configVals")
 	device.removeDataValue("protocolVersion")
 	device.removeDataValue("hardwareVersion")
-	device.removeDataValue("serialNumber")
 	device.removeDataValue("zwaveAssociationG1")
 	device.removeDataValue("zwaveAssociationG2")
 	device.removeDataValue("zwaveAssociationG3")

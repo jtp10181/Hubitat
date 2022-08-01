@@ -1,0 +1,19 @@
+{
+  "packageName": "Zooz Plugs Advanced Drivers",
+  "author": "jtp10181",
+  "minimumHEVersion": "2.3.0",
+  "dateReleased": "2022-07-31",
+  "documentationLink": "https://github.com/jtp10181/Hubitat/tree/main/Drivers/zooz",
+  "communityLink": "https://community.hubitat.com/t/zooz-smart-plugs-advanced/98333",
+  "releaseNotes": "Version [0.1.1] - 2021-07-31 (@jtp10181)\n Check community post for full details.",
+  "drivers": [
+    {
+      "id": "fd71eac0-0b3e-4ebe-bb23-603d8572c187",
+      "name": "Zooz ZEN Plugs Advanced",
+      "namespace": "jtp10181",
+      "location": "https://raw.githubusercontent.com/jtp10181/Hubitat/main/Drivers/zooz/zooz-zen-plugs.groovy",
+      "required": false,
+      "version": "1.0.2"
+    }
+  ]
+}
