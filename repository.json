@@ -39,6 +39,18 @@
         "Misc. Devices",
         "ZWave"
       ]
+    },
+    {
+      "id": "b6979742-7006-48f2-a1a4-5976510ff524",
+      "name": "Zooz Plugs Advanced Drivers",
+      "category": "Control",
+      "location": "https://raw.githubusercontent.com/jtp10181/Hubitat/main/packageManifest/zooz-zen-plugs.json",
+      "description": "Supported Plugs: ZEN04, ZEN05",
+      "tags": [
+        "Energy Monitoring",
+        "Lights & Switches",
+        "ZWave"
+      ]
     }
   ]
 }
