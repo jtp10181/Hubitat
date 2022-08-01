@@ -14,5 +14,9 @@ Support: https://community.hubitat.com/t/zooz-zse-sensors-advanced/81074
 [![zooz-relay-version](https://img.shields.io/badge/dynamic/json?color=blue&label=zooz-relay&prefix=v&query=%24.drivers.0.version&url=https%3A%2F%2Fraw.githubusercontent.com%2Fjtp10181%2FHubitat%2Fmain%2FpackageManifest%2Fzooz-zen-relays.json)](https://github.com/jtp10181/Hubitat/tags)  
 Support: https://community.hubitat.com/t/zooz-relays-advanced/98194
 
+## Zooz Smart Plugs Advanced Drivers  
+[![zooz-plug-version](https://img.shields.io/badge/dynamic/json?color=blue&label=zooz-plug&prefix=v&query=%24.drivers.0.version&url=https%3A%2F%2Fraw.githubusercontent.com%2Fjtp10181%2FHubitat%2Fmain%2FpackageManifest%2Fzooz-zen-plugs.json)](https://github.com/jtp10181/Hubitat/tags)  
+Support: https://community.hubitat.com/t/zooz-smart-plugs/98333
+
 ## Zooz ZAC36 Titan Advanced Drivers  
 Support: https://community.hubitat.com/t/zooz-zac36-titan-valve-actuator/79426

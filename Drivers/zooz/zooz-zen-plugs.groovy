@@ -1,8 +1,8 @@
 /*  
  *  Zooz ZEN Plugs Universal
- *    - Model: ZEN04 - All Firmware
+ *    - Model: ZEN04, ZEN05 - All Firmware
  *
- *  For Support: https://community.hubitat.com/t/zooz-zen-switches/58649
+ *  For Support: https://community.hubitat.com/t/zooz-smart-plugs/98333
  *  https://github.com/jtp10181/Hubitat/tree/main/Drivers/zooz
  *
 

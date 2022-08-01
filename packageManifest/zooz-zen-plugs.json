@@ -11,9 +11,9 @@
       "id": "fd71eac0-0b3e-4ebe-bb23-603d8572c187",
       "name": "Zooz ZEN Plugs Advanced",
       "namespace": "jtp10181",
-      "location": "https://raw.githubusercontent.com/jtp10181/Hubitat/main/Drivers/zooz/zooz-zen-plugs.groovy",
+      "location": "https://jtp10181.gateway.scarf.sh/zooz-zen-plugs.groovy",
       "required": false,
-      "version": "1.0.2"
+      "version": "0.1.1"
     }
   ]
 }
