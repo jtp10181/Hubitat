@@ -8,6 +8,15 @@
 
 Changelog:
 
+## [0.2.0] - 2021-08-01 (@jtp10181)
+  ### Added
+  - Support for creating and managing child endpoints
+  - Support for ZEN14 Outdoor Double Plug
+  ### Fixed
+  - More robust model checking when switching from another driver
+  - Added switch capability so it shows in rule setup drop downs
+  - Various other minor bugs
+
 ## [0.1.1] - 2021-07-31 (@jtp10181)
   ### Added
   - Support for ZEN05 Outdoor Plug
@@ -35,8 +44,9 @@ Changelog:
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "0.1.1"
-@Field static final Map deviceModelNames = ["7000:B002":"ZEN04", "7000:B001":"ZEN05"]
+@Field static final String VERSION = "0.2.0"
+@Field static final Map deviceModelNames =
+	["7000:B002":"ZEN04", "7000:B001":"ZEN05", "7000:B003":"ZEN14"]
 
 metadata {
 	definition (
@@ -46,7 +56,7 @@ metadata {
 		//importUrl: "https://raw.githubusercontent.com/jtp10181/hubitat/master/Drivers/"
 	) {
 		capability "Actuator"
-		// capability "Switch"
+		capability "Switch"
 		capability "Outlet"
 		capability "PowerMeter"
 		capability "CurrentMeter"
@@ -66,8 +76,10 @@ metadata {
 
 		fingerprint mfr:"027A", prod:"7000", deviceId:"B002", inClusters:"0x5E,0x55,0x9F,0x6C", deviceJoinName:"Zooz ZEN04 Plug"
 		fingerprint mfr:"027A", prod:"7000", deviceId:"B001", inClusters:"0x5E,0x55,0x9F,0x6C", deviceJoinName:"Zooz ZEN05 Outdoor Plug"
+		fingerprint mfr:"027A", prod:"7000", deviceId:"B003", inClusters:"0x5E,0x55,0x9F,0x6C", deviceJoinName:"Zooz ZEN14 Outdoor Double Plug"
 		fingerprint mfr:"027A", prod:"7000", deviceId:"B002", inClusters:"0x5E,0x25,0x70,0x85,0x8E,0x59,0x32,0x71,0x55,0x86,0x72,0x5A,0x87,0x73,0x9F,0x6C,0x7A", deviceJoinName:"Zooz ZEN04 Plug"
 		fingerprint mfr:"027A", prod:"7000", deviceId:"B001", inClusters:"0x5E,0x25,0x70,0x85,0x8E,0x59,0x55,0x86,0x72,0x5A,0x87,0x73,0x9F,0x6C,0x7A", deviceJoinName:"Zooz ZEN05 Outdoor Plug"
+		fingerprint mfr:"027A", prod:"7000", deviceId:"B003", inClusters:"0x5E,0x25,0x85,0x8E,0x59,0x55,0x86,0x72,0x5A,0x87,0x73,0x98,0x9F,0x60,0x6C,0x7A,0x70", deviceJoinName:"Zooz ZEN14 Outdoor Double Plug"
 	}
 	
 	preferences {
@@ -114,6 +126,10 @@ void debugShowVars() {
 	log.warn "settings ${settings.hashCode()} ${settings}"
 }
 
+//Association Settings
+@Field static final int maxAssocGroups = 1
+@Field static final int maxAssocNodes = 1
+
 //Main Parameters Listing
 @Field static Map<String, Map> paramsMap =
 [ 
@@ -122,11 +138,11 @@ void debugShowVars() {
 		size: 1, defaultVal: 0, 
 		options: [0:"LED On When Switch On", 1:"LED On When Switch Off", 2:"LED Always Off", 3:"LED Always On"],
 	],
-	ledBrightness: [ num: 9,
+	ledBrightness: [ num: null,
 		title: "LED Brightness", 
 		size: 1, defaultVal: 2, 
 		options: [2:"Low", 1:"Medium", 0:"High"],
-		changes: [05:[num:7]]
+		changes: [04:[num:9], 05:[num:7], 14:[num:7]]
 	],
 	offTimer: [ num: 2,
 		title: "Auto Turn-Off Timer", 
@@ -134,41 +150,55 @@ void debugShowVars() {
 		description: "Time in minutes, 0 = Disabled",
 		range: 0..65535
 	],
-	onTimer: [ num: 3,
+	offTimer2: [ num: null,
+		title: "Auto Turn-Off Timer (Outlet 2)", 
+		size: 4, defaultVal: 0, 
+		description: "Time in minutes, 0 = Disabled",
+		range: 0..65535,
+		changes: [14:[num:3]]
+	],
+	onTimer: [ num: 4,
 		title: "Auto Turn-On Timer", 
 		size: 4, defaultVal: 0, 
 		description: "Time in minutes, 0 = Disabled",
 		range: 0..65535,
-		changes: [05:[num:4]]
+		changes: [04:[num:3]]
 	],
-	powerFailure: [ num: 4,
+	onTimer2: [ num: null,
+		title: "Auto Turn-On Timer (Outlet 2)", 
+		size: 4, defaultVal: 0, 
+		description: "Time in minutes, 0 = Disabled",
+		range: 0..65535,
+		changes: [14:[num:5]]
+	],
+	powerFailure: [ num: 6,
 		title: "Behavior After Power Failure", 
-		size: 1, defaultVal: 0, 
-		options: [0:"Restores Last Status", 1:"Forced to Off", 2:"Forced to On"],
-		changes: [05:[num:6]]
+		size: 1, defaultVal: 2, 
+		options: [2:"Restores Last Status", 0:"Forced to Off", 1:"Forced to On"],
+		changes: [04:[num:4, defaultVal:0, options:[0:"Restores Last Status", 1:"Forced to Off", 2:"Forced to On"]]]
 	],
 	manualControl: [ num: null,
 		title: "Physical Button On/Off Control", 
 		size: 1, defaultVal: 1,
 		options: [1:"Enabled", 0:"Disabled"],
-		changes:[05:[num:8]]
+		changes:[05:[num:8], 14:[num:8]]
 	],
 	wattsThreshold: [ num: null,
-		title: "Power Wattage (W) Reporting Threshold", 
+		title: "Power (Watts) Reporting Threshold", 
 		size: 1, defaultVal: 10,
 		description: "Report when changes by this amount",
 		range: 5..50,
 		changes:[04:[num:5]]
 	],
 	wattsFrequency: [ num: null,
-		title: "Power Wattage (W) Reporting Frequency", 
+		title: "Power (Watts) Reporting Frequency", 
 		size: 4, defaultVal: 60,
 		description: "Minimum number of minutes between wattage reports",
 		range: 1..65535,
 		changes:[04:[num:6]]
 	],
 	currentThreshold: [ num: null,
-		title: "Electrical Current (A) Reporting Threshold", 
+		title: "Current (Amps) Reporting Threshold", 
 		size: 1, defaultVal: 10,
 		description: "[1 = 0.1A, 10 = 1A]  Report when changes by this amount",
 		range: 1..10,
@@ -177,7 +207,7 @@ void debugShowVars() {
 	energyThreshold: [ num: null,
 		title: "Energy (kWh) Reporting Threshold", 
 		size: 1, defaultVal: 10,
-		description: "[1 = 0.01 kWh, 100 = 1kWh]  Report when changes by this amount",
+		description: "[1 = 0.01kWh, 100 = 1kWh]  Report when changes by this amount",
 		range: 1..100,
 		changes:[04:[num:8]]
 	],
@@ -207,7 +237,7 @@ CommandClassReport - class:0x9F, version:1
 @Field static final Map commandClassVersions = [
 	0x25: 1,	// Switch Binary (switchbinary)
 	0x32: 3,	// Meter
-	//0x60: 3,	// Multi Channel
+	0x60: 3,	// Multi Channel
 	0x6C: 1,	// Supervision
 	0x70: 1,	// Configuration
 	0x71: 8,	// Notification
@@ -225,12 +255,14 @@ CommandClassReport - class:0x9F, version:1
 @Field static final Map meterPower = [name:"power", scale:2, unit:"W", limit:2000]
 @Field static final Map meterVoltage = [name:"voltage", scale:4, unit:"V", limit:150]
 @Field static final Map meterCurrent = [name:"amperage", scale:5, unit:"A", limit:18]
+@Field static final Map multiChan = [ZEN14:[endpoints:1..2]]
 
 /*******************************************************************
  ***** Core Functions
 ********************************************************************/
 void installed() {
 	logWarn "installed..."
+	createChildDevices()
 	initialize()
 }
 
@@ -242,6 +274,8 @@ void initialize() {
 void configure() {
 	logWarn "configure..."
 	if (debugEnable) runIn(1800, debugLogsOff)
+
+	createChildDevices()
 
 	if (!pendingChanges || state.resyncAll == null) {
 		logDebug "Enabling Full Re-Sync"
@@ -259,8 +293,6 @@ void updated() {
 	logDebug "Description logging is: ${txtEnable == true}"
 
 	if (debugEnable) runIn(1800, debugLogsOff)
-
-	if (!state.deviceModel) { setDevModel(firmwareVersion) }
 
 	runIn(1, executeConfigureCmds)
 }
@@ -301,6 +333,23 @@ void refreshParams() {
 	if (cmds) sendCommands(cmds)
 }
 
+/*** Child Capabilities ***/
+def componentOn(cd) {
+	logDebug "componentOn from ${cd.displayName} (${cd.deviceNetworkId})"
+	state.isDigital = true
+	sendCommands(switchBinarySetCmd(0xFF, getChildEP(cd)))
+}
+
+def componentOff(cd) {
+	logDebug "componentOff from ${cd.displayName} (${cd.deviceNetworkId})"
+	state.isDigital = true
+	sendCommands(switchBinarySetCmd(0x00, getChildEP(cd)))
+}
+
+def componentRefresh(cd) {
+	logDebug "componentRefresh from ${cd.displayName} (${cd.deviceNetworkId})"
+	sendCommands(getChildRefreshCmds(getChildEP(cd)))
+}
 
 /*******************************************************************
  ***** Z-Wave Reports
@@ -320,7 +369,7 @@ void parse(String description) {
 }
 
 //Decodes Multichannel Encapsulated Commands
-void zwaveEvent(hubitat.zwave.commands.multichannelv4.MultiChannelCmdEncap cmd) {
+void zwaveEvent(hubitat.zwave.commands.multichannelv3.MultiChannelCmdEncap cmd) {
 	def encapsulatedCmd = cmd.encapsulatedCommand(commandClassVersions)
 	logTrace "${cmd} --ENCAP-- ${encapsulatedCmd}"
 	
@@ -393,8 +442,12 @@ void zwaveEvent(hubitat.zwave.commands.basicv1.BasicReport cmd, ep=0) {
 
 void zwaveEvent(hubitat.zwave.commands.switchbinaryv1.SwitchBinaryReport cmd, ep=0) {
 	logTrace "${cmd} (ep ${ep})"
-	String type = (state.isDigital ? "digital" : "physical")
-	state.remove("isDigital")
+
+	String type
+	if (ep == 0) {
+		type = (state.isDigital ? "digital" : "physical")
+		state.remove("isDigital")
+	}
 	sendSwitchEvents(cmd.value, type, ep)
 }
 
@@ -402,6 +455,7 @@ void zwaveEvent(hubitat.zwave.commands.meterv3.MeterReport cmd, ep=0) {
 	logTrace "${cmd} (scaledMeterValue: ${cmd.scaledMeterValue}) (ep ${ep})"
 	
 	BigDecimal val = safeToDec(cmd.scaledMeterValue, 0, Math.min(cmd.precision,2))
+	logDebug "MeterReport: scale:${cmd.scale}, scaledMeterValue:${cmd.scaledMeterValue} (${val})"
 	
 	switch (cmd.scale) {
 		case meterEnergy.scale:			
@@ -504,7 +558,7 @@ String secureCmd(hubitat.zwave.Command cmd, ep=0) {
 String multiChannelEncap(hubitat.zwave.Command cmd, ep) {
 	//logTrace "multiChannelEncap: ${cmd} (ep ${ep})"
 	if (ep > 0) {
-		cmd = zwave.multiChannelV4.multiChannelCmdEncap(destinationEndPoint:ep).encapsulate(cmd)
+		cmd = zwave.multiChannelV3.multiChannelCmdEncap(destinationEndPoint:ep).encapsulate(cmd)
 	}
 	return cmd.format()
 }
@@ -553,13 +607,18 @@ void executeRefreshCmds() {
 	//Refresh Meters
 	if (state.deviceModel == 'ZEN04') {
 		cmds += [
-			meterGetCmd(meterEnergy, endPoint),
-			meterGetCmd(meterPower, endPoint),
-			meterGetCmd(meterVoltage, endPoint),
-			meterGetCmd(meterCurrent, endPoint)
+			meterGetCmd(meterEnergy),
+			meterGetCmd(meterPower),
+			meterGetCmd(meterVoltage),
+			meterGetCmd(meterCurrent)
 		]
 	}
-	
+
+	//Refresh Childs
+	multiChan[state.deviceModel]?.endpoints.each { endPoint ->
+		cmds += getChildRefreshCmds(endPoint) 
+	}
+
 	sendCommands(cmds,300)
 }
 
@@ -598,6 +657,12 @@ List getConfigureAssocsCmds() {
 	return cmds
 }
 
+List getChildRefreshCmds(endPoint) {
+	List<String> cmds = []
+	cmds << switchBinaryGetCmd(endPoint)
+	return cmds
+}
+
 Integer getPendingChanges() {
 	Integer configChanges = configParams.count { param ->
 		Integer paramVal = getParamValue(param, true)
@@ -613,8 +678,28 @@ Integer getPendingChanges() {
 ********************************************************************/
 //evt = [name, value, type, unit, desc]
 void sendEventLog(Map evt, Integer ep=0) {
-	//Set description is not passed in
-	evt.descriptionText = desc ?: "${evt.name} set to ${evt.value}${evt.unit ?: ''}"
+	//Set description if not passed in
+	evt.descriptionText = evt.desc ?: "${evt.name} set to ${evt.value}${evt.unit ?: ''}"
+
+	//Endpoint Events
+	if (ep) {
+		def childDev = getChildByEP(ep)
+		String logEp = "(Outlet ${ep}) "
+
+		if (childDev) {
+			if (childDev.currentValue(evt.name).toString() != evt.value.toString()) {
+				evt.descriptionText = "${childDev}: ${evt.descriptionText}"
+				childDev.parse([evt])
+			} else {
+				logDebug "${logEp}${evt.descriptionText} [NOT CHANGED]"
+				childDev.sendEvent(evt)
+			}
+		}
+		else {
+			log.error "No device for endpoint (${ep}). Press Configure to create child devices."
+		}
+		return
+	}
 
 	//Main Device Events
 	if (evt.name != "syncStatus") {
@@ -630,7 +715,7 @@ void sendEventLog(Map evt, Integer ep=0) {
 
 void sendSwitchEvents(rawVal, String type, Integer ep=0) {
 	String value = (rawVal ? "on" : "off")
-	String desc = "switch was turned ${value} (${type})"
+	String desc = "switch is turned ${value}" + (type ? " (${type})" : "")
 	sendEventLog(name:"switch", value:value, type:type, desc:desc, ep)
 }
 
@@ -751,11 +836,15 @@ void fixParamsMap() {
 //Gets full list of params
 List<Map> getConfigParams() {
 	//logDebug "Get Config Params"
+	if (!device) return []
 	String devModel = state.deviceModel
 	BigDecimal firmware = firmwareVersion
+	
+	//Try to get device model if not set
+	if (devModel) {	verifyParamsList() }
+	else          { runInMillis(200, setDevModel) }
+	//Bail out if unknown device
 	if (!devModel || devModel == "UNK00") return []
-
-	verifyParamsList()
 
 	return paramsList[devModel][firmware]
 }
@@ -780,6 +869,7 @@ Integer getParamValue(String paramName) {
 	return getParamValue(getParam(paramName))
 }
 Number getParamValue(Map param, Boolean adjust=false) {
+	if (param == null) return
 	Number paramVal = safeToInt(settings."configParam${param.num}", param.defaultVal)
 	if (!adjust) return paramVal
 
@@ -791,6 +881,66 @@ Number getParamValue(Map param, Boolean adjust=false) {
 	}
 
 	return paramVal
+}
+
+
+/*** Child Helper Functions ***/
+void createChildDevices() {
+	multiChan[state.deviceModel]?.endpoints.each { endPoint ->
+		if (!getChildByEP(endPoint)) {
+			addChildOutlet(endPoint)
+		}
+	}
+}
+
+void addChildOutlet(endPoint) {
+	Map deviceType = [namespace:"hubitat", typeName:"Generic Component Switch"]
+	Map deviceTypeBak = [:]
+	String dni = getChildDNI(endPoint)
+	Map properties = [name: "${device.name} (Outlet ${endPoint})", isComponent: false]
+	def childDev
+
+	logDebug "Creating 'Outlet ${endPoint}' Child Device"
+
+	try {
+		childDev = addChildDevice(deviceType.namespace, deviceType.typeName, dni, properties)
+	}
+	catch (e) {
+		logWarn "The '${deviceType}' driver failed"
+		if (deviceTypeBak) {
+			logWarn "Defaulting to '${deviceTypeBak}' instead"
+			childDev = addChildDevice(deviceTypeBak.namespace, deviceTypeBak.typeName, dni, properties)
+		}
+	}
+	if (childDev) childDev.updateDataValue("endPoint","$endPoint")
+}
+
+private getChildByEP(endPoint) {
+	def dni = getChildDNI(endPoint)
+	return getChildByDNI(dni)
+}
+
+private getChildByDNI(dni) {
+	return childDevices?.find { it.deviceNetworkId == dni }
+}
+
+private getChildEP(childDev) {
+	Integer endPoint = safeToInt(childDev.getDataValue("endPoint"))
+	if (!endPoint) {
+		logDebug "Finding endPoint for $childDev"
+		String[] dni = childDev.deviceNetworkId.split('-')
+		endPoint = safeToInt(dni[1])
+		if (endPoint) {
+			childDev.updateDataValue("endPoint","$endPoint")
+		} else {
+			logWarn "Cannot determine endPoint number for $childDev, defaulting to 0"
+		}
+	}
+	return endPoint
+}
+
+String getChildDNI(endPoint) {
+	return "${device.deviceId}-${endPoint}"
 }
 
 
@@ -812,14 +962,16 @@ void updateLastCheckIn() {
 	}
 }
 
+//Stash the model in a state variable
 String setDevModel(BigDecimal firmware) {
-	//Stash the model in a state variable
+	if (!device) return
 	def devTypeId = convertIntListToHexList([safeToInt(device.getDataValue("deviceType")),safeToInt(device.getDataValue("deviceId"))],4)
 	String devModel = deviceModelNames[devTypeId.join(":")] ?: "UNK00"
+	if (!firmware) { firmware = firmwareVersion }
 
-	logDebug "Set Device Info - Model: ${devModel} | Firmware: ${firmware}"
 	state.deviceModel = devModel
 	device.updateDataValue("deviceModel", devModel)
+	logDebug "Set Device Info - Model: ${devModel} | Firmware: ${firmware}"
 
 	if (devModel == "UNK00") {
 		logWarn "Unsupported Device USE AT YOUR OWN RISK: ${devTypeId}"
@@ -861,12 +1013,12 @@ List convertIntListToHexList(intList, pad=2) {
 
 Integer safeToInt(val, defaultVal=0) {
 	if ("${val}"?.isInteger())		{ return "${val}".toInteger() } 
-	else if ("${val}"?.isDouble())	{ return "${val}".toDouble()?.round() }
+	else if ("${val}"?.isNumber())	{ return "${val}".toDouble()?.round() }
 	else { return defaultVal }
 }
 
 BigDecimal safeToDec(val, defaultVal=0, roundTo=-1) {
-	BigDecimal decVal = "${val}"?.isBigDecimal() ? "${val}".toBigDecimal() : defaultVal
+	BigDecimal decVal = "${val}"?.isNumber() ? "${val}".toBigDecimal() : defaultVal
 	if (roundTo == 0)		{ decVal = Math.round(decVal) }
 	else if (roundTo > 0)	{ decVal = decVal.setScale(roundTo, BigDecimal.ROUND_HALF_UP).stripTrailingZeros() }
 	if (decVal.scale()<0)	{ decVal = decVal.setScale(0) }
