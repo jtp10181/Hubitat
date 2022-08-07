@@ -2,10 +2,10 @@
   "packageName": "Zooz Sensors Advanced Drivers",
   "author": "jtp10181",
   "minimumHEVersion": "2.3.0",
-  "dateReleased": "2022-08-02",
+  "dateReleased": "2022-08-06",
   "documentationLink": "https://github.com/jtp10181/Hubitat/tree/main/Drivers/zooz",
   "communityLink": "https://community.hubitat.com/t/driver-zooz-sensors-advanced-zse40-zse44/81074",
-  "releaseNotes": "Version [1.0.4] - 2022-08-02 (@jtp10181)\n Check community post for full details.",
+  "releaseNotes": "Version [1.0.5] - 2022-08-06 (@jtp10181)\n Check community post for full details.",
   "drivers": [
     {
       "id": "cbe3bb01-e8cd-416e-9af6-cc18fd451444",
@@ -13,7 +13,7 @@
       "namespace": "jtp10181",
       "location": "https://jtp10181.gateway.scarf.sh/zooz-zse40-multisensor.groovy",
       "required": false,
-      "version": "1.0.4"
+      "version": "1.0.5"
     },
     {
       "id": "e6498052-92e9-4eb8-bfa4-024c5c1e3f36",
@@ -21,7 +21,7 @@
       "namespace": "jtp10181",
       "location": "https://jtp10181.gateway.scarf.sh/zooz-zse44-temp-humidity.groovy",
       "required": false,
-      "version": "1.0.4"
+      "version": "1.0.5"
     }
   ]
 }

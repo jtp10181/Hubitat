@@ -9,6 +9,10 @@
 
 Changelog:
 
+## [1.0.5] - 2022-08-06 (@jtp10181)
+  ### Fixed
+  - Put in proper scalable signed/unsigned parameter value conversion
+
 ## [1.0.4] - 2022-08-02 (@jtp10181)
   ### Fixed
   - Race condition with configVals (now keeping copy in static var)
@@ -57,7 +61,7 @@ NOTICE: This file has been created by *Jeff Page* with some code used
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "1.0.4" 
+@Field static final String VERSION = "1.0.5" 
 @Field static final Map deviceModelNames = ["7000:E004":"ZSE44"]
 
 metadata {
@@ -321,10 +325,13 @@ void zwaveEvent(hubitat.zwave.commands.configurationv2.ConfigurationReport cmd) 
 	updateSyncingStatus()
 
 	Map param = getParam(cmd.parameterNumber)
-	Integer val = cmd.scaledConfigurationValue
+	Number val = cmd.scaledConfigurationValue
 
 	if (param) {
-		if (val < 0 && param.size == 1) { val += 256 } //Convert scaled signed integer to unsigned
+		//Convert scaled signed integer to unsigned
+		Long sizeFactor = Math.pow(256,param.size).round()
+		if (val < 0) { val += sizeFactor }
+
 		logDebug "${param.name} (#${param.num}) = ${val.toString()}"
 		setParamStoredValue(param.num, val)
 	}
@@ -487,8 +494,11 @@ String notificationGetCmd(notificationType, eventType) {
 	return secureCmd(zwave.notificationV8.notificationGet(notificationType: notificationType, v1AlarmType:0, event: eventType))
 }
 
-String configSetCmd(Map param, Integer value) {
-	if (value > 127 && param.size == 1) { value -= 256 }
+String configSetCmd(Map param, Number value) {
+	//Convert to signed integer for scaledConfigurationValue 
+	Long sizeFactor = Math.pow(256,param.size).round()
+	if (value >= sizeFactor/2) { value -= sizeFactor }
+
 	return secureCmd(zwave.configurationV2.configurationSet(parameterNumber: param.num, size: param.size, scaledConfigurationValue: value))
 }
 

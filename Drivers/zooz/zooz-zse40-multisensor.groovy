@@ -9,6 +9,11 @@
 
 Changelog:
 
+## [1.0.5] - 2022-08-06 (@jtp10181)
+  ### Fixed
+  - Forgot to change param 8 setting from -1 to 255 when I added the signed/unsigned conversion
+  - Put in proper scalable signed/unsigned parameter value conversion
+
 ## [1.0.4] - 2022-08-02 (@jtp10181)
   ### Fixed
   - Race condition with configVals (now keeping copy in static var)
@@ -89,7 +94,7 @@ NOTICE: This file has been created by *Jeff Page* with some code used
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "1.0.4" 
+@Field static final String VERSION = "1.0.5" 
 @Field static final Map deviceModelNames = ["2021:2101":"ZSE40"]
 
 metadata {
@@ -212,8 +217,8 @@ void debugShowVars() {
 	],
 	group1Report: [ num:8, 
 		title: "Group 1 (Hub) Reporting", 
-		size: 1, defaultVal: (-1), 
-		options: [0:"Notification Reports Only", (-1):"Notification AND Basic Reports"],
+		size: 1, defaultVal: 255, 
+		options: [0:"Notification Reports Only", 255:"Notification AND Basic Reports"],
 		changes: ['ZSE40':[firmVer: 32.00]]
 	],
 	tempUnits: [ num:1,
@@ -368,10 +373,13 @@ void zwaveEvent(hubitat.zwave.commands.configurationv2.ConfigurationReport cmd) 
 	updateSyncingStatus()
 
 	Map param = getParam(cmd.parameterNumber)
-	Integer val = cmd.scaledConfigurationValue
+	Number val = cmd.scaledConfigurationValue
 
 	if (param) {
-		if (val < 0 && param.size == 1) { val += 256 } //Convert scaled signed integer to unsigned
+		//Convert scaled signed integer to unsigned
+		Long sizeFactor = Math.pow(256,param.size).round()
+		if (val < 0) { val += sizeFactor }
+
 		logDebug "${param.name} (#${param.num}) = ${val.toString()}"
 		setParamStoredValue(param.num, val)
 	}
@@ -545,8 +553,11 @@ String notificationGetCmd(notificationType, eventType) {
 	return secureCmd(zwave.notificationV3.notificationGet(notificationType: notificationType, v1AlarmType:0, event: eventType))
 }
 
-String configSetCmd(Map param, Integer value) {
-	if (value > 127 && param.size == 1) { value -= 256 }
+String configSetCmd(Map param, Number value) {
+	//Convert from unsigned to signed for scaledConfigurationValue
+	Long sizeFactor = Math.pow(256,param.size).round()
+	if (value >= sizeFactor/2) { value -= sizeFactor }
+
 	return secureCmd(zwave.configurationV2.configurationSet(parameterNumber: param.num, size: param.size, scaledConfigurationValue: value))
 }
 
