@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.2] - 2022-08-11 (@jtp10181)
+  ### Added
+  - Flash capability / command
+  ### Fixed
+  - Race condition with configVals (now keeping copy in static var)
+  - Reworked multi level commands to use last level and device duration instead of overriding it
+  - Various fixes in common functions merged from other drivers
+  - Removed some unnecessary code
+
 ## [1.6.0] - 2022-07-24 (@jtp10181)
   ### Changed
   - Major refactor to organize code same as sensor drivers
@@ -159,8 +168,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 https://github.com/krlaframboise/SmartThings/tree/master/devicetypes/zooz/
   - Initial Release (for SmartThings)
 
-[Unreleased]: https://github.com/jtp10181/Hubitat/compare/switch-v1.5.4...HEAD
-[1.5.4]: https://github.com/jtp10181/Hubitat/compare/switch-v1.5.3...switch-v1.5.4
+[Unreleased]: https://github.com/jtp10181/Hubitat/compare/switch-v1.6.2...HEAD
+[1.6.2]: https://github.com/jtp10181/Hubitat/compare/switch-v1.6.0...switch-v1.6.2
+[1.6.0]: https://github.com/jtp10181/Hubitat/compare/switch-v1.5.3...switch-v1.6.0
 [1.5.3]: https://github.com/jtp10181/Hubitat/compare/switch-v1.5.2...switch-v1.5.3
 [1.5.2]: https://github.com/jtp10181/Hubitat/compare/switch-v1.5.1...switch-v1.5.2
 [1.5.1]: https://github.com/jtp10181/Hubitat/compare/zooz-v1.5.0...switch-v1.5.1

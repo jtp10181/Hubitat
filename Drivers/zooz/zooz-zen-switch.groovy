@@ -1,14 +1,24 @@
-/*  
+/*											    
  *  Zooz ZEN On/Off Switches Universal
  *    - Model: ZEN21, ZEN23 - MINIMUM FIRMWARE 3.04
  *    - Model: ZEN26 - MINIMUM FIRMWARE 2.03
  *    - Model: ZEN71, ZEN73, ZEN76 - All Firmware
  *
- *  For Support: https://community.hubitat.com/t/zooz-zen-switches/58649
+ *  For Support, Information, and Updates:
+ *  https://community.hubitat.com/t/zooz-zen-switches/58649
  *  https://github.com/jtp10181/Hubitat/tree/main/Drivers/zooz
  *
 
 Changelog:
+
+## [1.6.2] - 2022-08-11 (@jtp10181)
+  ### Added
+  - Flash capability / command
+  ### Fixed
+  - Race condition with configVals (now keeping copy in static var)
+  - Reworked multi level commands to use last level and device duration instead of overriding it
+  - Various fixes in common functions merged from other drivers
+  - Removed some unnecessary code
 
 ## [1.6.0] - 2022-07-24 (@jtp10181)
   ### Changed
@@ -36,7 +46,7 @@ Changelog:
   - Adding HTML styling to the Preferences
   ### Fixed
   - Some parameters would get multiple [DEFAULT] tags added
-  ### Deprecated 
+  ### Deprecated
   - Parameter test/hide functions, not needed
 
 ## [1.5.1] - 2022-04-25 (@jtp10181)
@@ -190,9 +200,9 @@ https://github.com/krlaframboise/SmartThings/tree/master/devicetypes/zooz/
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "1.6.0"
+@Field static final String VERSION = "1.6.2"
 @Field static final Map deviceModelNames =
-	["B111:1E1C":"ZEN21", "B111:251C":"ZEN23", "A000:A001":"ZEN26", 
+	["B111:1E1C":"ZEN21", "B111:251C":"ZEN23", "A000:A001":"ZEN26",
 	"7000:A001":"ZEN71", "7000:A003":"ZEN73", "7000:A006":"ZEN76"]
 
 metadata {
@@ -210,8 +220,9 @@ metadata {
 		capability "HoldableButton"
 		capability "ReleasableButton"
 		//capability "DoubleTapableButton"
+		capability "Flash"
 
-		command "paramRefresh"
+		command "refreshParams"
 		command "setLED", [
 			[name:"Select Color*", description:"Works ONLY on ZEN7x Series!", type: "ENUM", constraints: ledColorOptions] ]
 		command "setLEDMode", [
@@ -234,7 +245,6 @@ metadata {
 	}
 
 	preferences {
-
 		configParams.each { param ->
 			if (!param.hidden) {
 				Integer paramVal = getParamValue(param)
@@ -294,13 +304,13 @@ void debugShowVars() {
 @Field static Map<String, Map> paramsMap =
 [
 	paddleControl: [ num: 1,
-		title: "Paddle Orientation", 
-		size: 1, defaultVal: 0, 
+		title: "Paddle Orientation",
+		size: 1, defaultVal: 0,
 		options: [0:"Normal", 1:"Reverse", 2:"Toggle Mode"],
 	],
 	ledMode: [ num: 2,
-		title: "LED Indicator", 
-		size: 1, defaultVal: 0, 
+		title: "LED Indicator",
+		size: 1, defaultVal: 0,
 		options: [0:"LED On When Switch Off", 1:"LED On When Switch On", 2:"LED Always Off", 3:"LED Always On"],
 		changes: [23:[num:null], 24:[num:null], 73:[defaultVal:2], 74:[defaultVal:2]]
 	],
@@ -312,39 +322,39 @@ void debugShowVars() {
 	],
 	ledBrightness: [ num: 15,
 		title: "LED Indicator Brightness",
-		size: 1, defaultVal: 1, 
+		size: 1, defaultVal: 1,
 		options: [0:"Bright (100%)", 1:"Medium (60%)", 2:"Low (30%)"],
 		changes: ['2X':[num:null]]
 	],
 	autoOffEnabled: [ num: 3,
-		title: "Auto Turn-Off Timer Enabled", 
-		size: 1, defaultVal: 0, 
+		title: "Auto Turn-Off Timer Enabled",
+		size: 1, defaultVal: 0,
 		options: [0:"Disabled", 1:"Enabled"],
 		hidden: true,
 		changes: ['7X':[num:null]]
 	],
 	autoOffInterval: [ num: 4,
-		title: "Auto Turn-Off Timer", 
-		size: 4, defaultVal: 0, 
+		title: "Auto Turn-Off Timer",
+		size: 4, defaultVal: 0,
 		options: [:], //autoOnOffIntervalOptions
 		changes: ['7X':[num:3]]
 	],
 	autoOnEnabled: [ num: 5,
-		title: "Auto Turn-On Timer Enabled", 
-		size: 1, defaultVal: 0, 
+		title: "Auto Turn-On Timer Enabled",
+		size: 1, defaultVal: 0,
 		options: [0:"Disabled", 1:"Enabled"],
 		hidden: true,
 		changes: ['7X':[num:null]]
 	],
 	autoOnInterval: [ num: 6,
-		title: "Auto Turn-On Timer", 
-		size: 4, defaultVal: 0, 
+		title: "Auto Turn-On Timer",
+		size: 4, defaultVal: 0,
 		options: [:], //autoOnOffIntervalOptions
 		changes: ['7X':[num:5]]
 	],
 	powerFailure: [ num: 8,
-		title: "Behavior After Power Failure", 
-		size: 1, defaultVal: 2, 
+		title: "Behavior After Power Failure",
+		size: 1, defaultVal: 2,
 		options: [2:"Restores Last Status", 0:"Forced to Off", 1:"Forced to On"],
 	],
 	//sceneControl - Dimmers=13, ZEN26/73/76=10, Other Switches=9
@@ -364,13 +374,13 @@ void debugShowVars() {
 	],
 	smartBulbBehavior: [ num: 13, // relayBehaviorParam
 		title: "Smart Bulb - On/Off when Paddle Disabled",
-		size: 1, defaultVal: 0, 
+		size: 1, defaultVal: 0,
 		options: [0:"Reports Status & Changes LED", 1:"Doesn't Report Status or Change LED"],
 	],
 	//threeWaySwitchType - ZEN21/22/23/24/71/72 Only
 	threeWaySwitchType: [num: null, // (12)
 		title: "3-Way Switch Type",
-		size: 1, defaultVal: 0, 
+		size: 1, defaultVal: 0,
 		options: [0:"Toggle On/Off Switch", 1:"Momentary Switch"],
 		changes: [21:[num: 12],23:[num: 12],71:[num: 12]]
 	],
@@ -406,36 +416,27 @@ void debugShowVars() {
 		],
 	],
 	statusReports: [ num: null,
-		title: "All Reports Use SwitchBinary", 
-		size: 1, defaultVal: 0, 
+		title: "All Reports Use SwitchBinary",
+		size: 1, defaultVal: 0,
 		options: [0:"Disabled", 1:"Enabled"],
 		hidden: true,
 		changes: [71:[num: 16], 73:[num: 16], 76:[num: 16]]
 	],
 ]
 
-//Command Classes Supported
+//Set Command Class Versions
 @Field static final Map commandClassVersions = [
-	0x20: 1,	// Basic (basicv1)
 	0x25: 1,	// Switch Binary (switchbinaryv1)
-	0x55: 1,	// Transport Service (transportservicev1) (2)
-	0x59: 1,	// Association Grp Info (associationgrpinfov1)
-	0x5A: 1,	// Device Reset Locally	(deviceresetlocallyv1)
 	0x5B: 3,	// CentralScene (centralscenev3)
-	0x5E: 2,	// ZWave Plus Info (zwaveplusinfov2)
 	0x6C: 1,	// Supervision (supervisionv1)
 	0x70: 1,	// Configuration (configurationv1)
-	0x7A: 4,	// Firmware Update Md (firmwareupdatemdv4)
 	0x72: 2,	// Manufacturer Specific (manufacturerspecificv2)
-	0x73: 1,	// Power Level (powerlevelv1)
 	0x85: 2,	// Association (associationv2)
-	0x86: 3,	// Version (versionv3)
-	0x87: 3,	// Indicator (indicatorv3)
+	0x86: 2,	// Version (versionv2)
 	0x8E: 3,	// Multi Channel Association (multichannelassociationv3)
-	0x9F: 1		// Security S2
 ]
 
-//Static Lists and Settings
+/*** Static Lists and Settings ***/
 @Field static final Map ledModeCmdOptions = [0:"Default", 1:"Reverse", 2:"Off", 3:"On"]
 @Field static final Map ledColorOptions = [0:"White", 1:"Blue", 2:"Green", 3:"Red"]
 
@@ -474,8 +475,6 @@ void updated() {
 
 	if (debugEnable) runIn(1800, debugLogsOff)
 
-	if (!state.deviceModel) { setDevModel(firmwareVersion) }
-
 	runIn(1, executeConfigureCmds)
 }
 
@@ -491,12 +490,14 @@ void refresh() {
 /*** Capabilities ***/
 String on() {
 	logDebug "on..."
-	return switchBinarySetCmd(0xFF)
+	flashStop()
+	return getOnOffCmds(0xFF)
 }
 
 String off() {
 	logDebug "off..."
-	return switchBinarySetCmd(0x00)
+	flashStop()
+	return getOnOffCmds(0x00)
 }
 
 //Button commands required with capabilities
@@ -504,6 +505,45 @@ void push(buttonId) { sendBasicButtonEvent(buttonId, "pushed") }
 void hold(buttonId) { sendBasicButtonEvent(buttonId, "held") }
 void release(buttonId) { sendBasicButtonEvent(buttonId, "released") }
 void doubleTap(buttonId) { sendBasicButtonEvent(buttonId, "doubleTapped") }
+
+//Flashing Capability
+void flash(Number rateToFlash = 1500) {
+	logInfo "Flashing started with rate of ${rateToFlash}ms"
+
+	//Min rate of 1 sec, max of 30, max run time of 5 minutes
+	rateToFlash = validateRange(rateToFlash, 1500, 1000, 30000)
+	Integer maxRun = validateRange((rateToFlash*30)/1000, 30, 30, 300)
+	state.flashNext = device.currentValue("switch")
+
+	//Start the flashing
+	runIn(maxRun,flashStop,[data:true])
+	flashHandler(rateToFlash)
+}
+
+void flashStop(Boolean turnOn = false) {
+	if (state.flashNext != null) {
+		logInfo "Flashing stopped..."
+		unschedule("flashHandler")
+		state.remove("flashNext")
+		if (turnOn) { runIn(1,on) }
+	}
+}
+
+void flashHandler(Integer rateToFlash) {
+	if (state.flashNext == "on") {
+		logDebug "Flash On"
+		state.flashNext = "off"
+		runInMillis(rateToFlash, flashHandler, [data:rateToFlash])
+		sendCommands(getOnOffCmds(0xFF))
+	}
+	else if (state.flashNext == "off") {
+		logDebug "Flash Off"
+		state.flashNext = "on"
+		runInMillis(rateToFlash, flashHandler, [data:rateToFlash])
+		sendCommands(getOnOffCmds(0x00))
+	}
+}
+
 
 /*** Custom Commands ***/
 void setLED(String colorName) {
@@ -536,12 +576,12 @@ void setLEDMode(String modeName) {
 	}
 }
 
-void paramRefresh() {
+void refreshParams() {
 	List<String> cmds = []
 	for (int i = 1; i <= maxAssocGroups; i++) {
 		cmds << associationGetCmd(i)
 	}
-	
+
 	configParams.each { param ->
 		cmds << configGetCmd(param)
 	}
@@ -555,7 +595,7 @@ void paramRefresh() {
 ********************************************************************/
 void parse(String description) {
 	hubitat.zwave.Command cmd = zwave.parse(description, commandClassVersions)
-	
+
 	if (cmd) {
 		logTrace "parse: ${description} --PARSED-- ${cmd}"
 		zwaveEvent(cmd)
@@ -565,13 +605,13 @@ void parse(String description) {
 
 	//Update Last Activity
 	updateLastCheckIn()
-	sendEvent(name:"numberOfButtons", value:10, displayed:false)
+	sendEvent(name:"numberOfButtons", value:10)
 }
 
 void zwaveEvent(hubitat.zwave.commands.securityv1.SecurityMessageEncapsulation cmd) {
 	def encapsulatedCmd = cmd.encapsulatedCommand(commandClassVersions)
 	logTrace "${cmd} --ENCAP-- ${encapsulatedCmd}"
-	
+
 	if (encapsulatedCmd) {
 		zwaveEvent(encapsulatedCmd)
 	} else {
@@ -580,10 +620,10 @@ void zwaveEvent(hubitat.zwave.commands.securityv1.SecurityMessageEncapsulation c
 }
 
 //Decodes Multichannel Encapsulated Commands
-void zwaveEvent(hubitat.zwave.commands.multichannelv4.MultiChannelCmdEncap cmd) {
+void zwaveEvent(hubitat.zwave.commands.multichannelv3.MultiChannelCmdEncap cmd) {
 	def encapsulatedCmd = cmd.encapsulatedCommand(commandClassVersions)
 	logTrace "${cmd} --ENCAP-- ${encapsulatedCmd}"
-	
+
 	if (encapsulatedCmd) {
 		zwaveEvent(encapsulatedCmd, cmd.sourceEndPoint as Integer)
 	} else {
@@ -595,7 +635,7 @@ void zwaveEvent(hubitat.zwave.commands.multichannelv4.MultiChannelCmdEncap cmd) 
 void zwaveEvent(hubitat.zwave.commands.supervisionv1.SupervisionGet cmd, ep=0) {
 	def encapsulatedCmd = cmd.encapsulatedCommand(commandClassVersions)
 	logTrace "${cmd} --ENCAP-- ${encapsulatedCmd}"
-	
+
 	if (encapsulatedCmd) {
 		zwaveEvent(encapsulatedCmd, ep)
 	} else {
@@ -622,11 +662,10 @@ void zwaveEvent(hubitat.zwave.commands.supervisionv1.SupervisionReport cmd, ep=0
 	}
 }
 
-void zwaveEvent(hubitat.zwave.commands.versionv3.VersionReport cmd) {
+void zwaveEvent(hubitat.zwave.commands.versionv2.VersionReport cmd) {
 	logTrace "${cmd}"
 
-	String subVersion = String.format("%02d", cmd.firmware0SubVersion)
-	String fullVersion = "${cmd.firmware0Version}.${subVersion}"
+	String fullVersion = String.format("%d.%02d",cmd.firmware0Version,cmd.firmware0SubVersion)
 	device.updateDataValue("firmwareVersion", fullVersion)
 
 	logDebug "Received Version Report - Firmware: ${fullVersion}"
@@ -645,7 +684,7 @@ void zwaveEvent(hubitat.zwave.commands.configurationv1.ConfigurationReport cmd) 
 		setParamStoredValue(param.num, val)
 	}
 	else {
-		logDebug "Parameter #${cmd.parameterNumber} = ${val}"
+		logDebug "Parameter #${cmd.parameterNumber} = ${val.toString()}"
 	}
 }
 
@@ -669,7 +708,7 @@ void zwaveEvent(hubitat.zwave.commands.associationv2.AssociationReport cmd) {
 		}
 
 		String dnis = convertIntListToHexList(cmd.nodeId)?.join(", ")
-		sendEventIfNew("assocDNI$grp", dnis ?: "none", false)
+		sendEventLog(name:"assocDNI$grp", value:(dnis ?: "none"))
 		device.updateSetting("assocDNI$grp", [value:"${dnis}", type:"string"])
 	}
 	else {
@@ -679,6 +718,7 @@ void zwaveEvent(hubitat.zwave.commands.associationv2.AssociationReport cmd) {
 
 void zwaveEvent(hubitat.zwave.commands.basicv1.BasicReport cmd, ep=0) {
 	logTrace "${cmd} (ep ${ep})"
+	flashStop() //Stop flashing if its running
 	sendSwitchEvents(cmd.value, "physical", ep)
 }
 
@@ -705,7 +745,7 @@ void zwaveEvent(hubitat.zwave.commands.centralscenev3.CentralSceneNotification c
 			logTrace "Scene Reversed: ${cmd}"
 		}
 
-		Map scene = [name: "pushed", value: cmd.sceneNumber, descriptionText: "", type:"physical", isStateChange:true]
+		Map scene = [name: "pushed", value: cmd.sceneNumber, desc: "", type:"physical", isStateChange:true]
 		String actionType
 		String btnVal
 
@@ -742,9 +782,8 @@ void zwaveEvent(hubitat.zwave.commands.centralscenev3.CentralSceneNotification c
 		}
 
 		if (actionType && btnVal) {
-			scene.descriptionText="button ${scene.value} ${scene.name} [${btnVal}]"
-			logInfo "${scene.descriptionText}"
-			sendEvent(scene)
+			scene.desc = "button ${scene.value} ${scene.name} [${btnVal}]"
+			sendEventLog(scene)
 		}
 	}
 }
@@ -790,27 +829,15 @@ String associationGetCmd(Integer group) {
 }
 
 String versionGetCmd() {
-	return secureCmd(zwave.versionV3.versionGet())
+	return secureCmd(zwave.versionV2.versionGet())
 }
 
-String switchBinarySetCmd(Integer value) {
-	return supervisionEncap(zwave.switchBinaryV1.switchBinarySet(switchValue: value))
+String switchBinarySetCmd(Integer value, Integer ep=0) {
+	return supervisionEncap(zwave.switchBinaryV1.switchBinarySet(switchValue: value), ep)
 }
 
-String switchBinaryGetCmd() {
-	return secureCmd(zwave.switchBinaryV1.switchBinaryGet())
-}
-
-String switchMultilevelSetCmd(Integer value, Integer duration) {
-	// Duration Encoding:
-	// 0x01..0x7F 1 second (0x01) to 127 seconds (0x7F) in 1 second resolution.
-	// 0x80..0xFE 1 minute (0x80) to 127 minutes (0xFE) in 1 minute resolution.
-	// 0xFF Factory default duration.
-	return supervisionEncap(zwave.switchMultilevelV2.switchMultilevelSet(dimmingDuration: duration, value: value))
-}
-
-String switchMultilevelGetCmd() {
-	return secureCmd(zwave.switchMultilevelV2.switchMultilevelGet())
+String switchBinaryGetCmd(Integer ep=0) {
+	return secureCmd(zwave.switchBinaryV1.switchBinaryGet(), ep)
 }
 
 String configSetCmd(Map param, Integer value) {
@@ -845,7 +872,7 @@ String secureCmd(hubitat.zwave.Command cmd, ep=0) {
 String multiChannelEncap(hubitat.zwave.Command cmd, ep) {
 	//logTrace "multiChannelEncap: ${cmd} (ep ${ep})"
 	if (ep > 0) {
-		cmd = zwave.multiChannelV4.multiChannelCmdEncap(destinationEndPoint:ep).encapsulate(cmd)
+		cmd = zwave.multiChannelV3.multiChannelCmdEncap(destinationEndPoint:ep).encapsulate(cmd)
 	}
 	return cmd.format()
 }
@@ -925,7 +952,7 @@ void executeConfigureCmds() {
 
 	List<String> cmds = []
 
-	if (state.resyncAll || !firmwareVersion || !state.deviceModel) {
+	if (!firmwareVersion || !state.deviceModel) {
 		cmds << versionGetCmd()
 	}
 
@@ -949,7 +976,11 @@ void executeConfigureCmds() {
 
 void executeRefreshCmds() {
 	List<String> cmds = []
-	cmds << versionGetCmd()
+
+	if (state.resyncAll || !firmwareVersion || !state.deviceModel) {
+		cmds << versionGetCmd()
+	}
+
 	cmds << switchBinaryGetCmd()
 
 	sendCommands(cmds)
@@ -959,17 +990,17 @@ void clearVariables() {
 	logWarn "Clearing state variables and data..."
 
 	//Backup
-	String devModel = state.deviceModel 
+	String devModel = state.deviceModel
 
 	//Clears State Variables
 	state.clear()
 
-	//Clear Data from other Drivers
+	//Clear Config Data
+	configsList["${device.id}"] = [:]
 	device.removeDataValue("configVals")
-	device.removeDataValue("configHide")
+	//Clear Data from other Drivers
 	device.removeDataValue("protocolVersion")
 	device.removeDataValue("hardwareVersion")
-	device.removeDataValue("serialNumber")
 	device.removeDataValue("zwaveAssociationG1")
 	device.removeDataValue("zwaveAssociationG2")
 	device.removeDataValue("zwaveAssociationG3")
@@ -991,7 +1022,7 @@ List getConfigureAssocsCmds() {
 
 	for (int i = 2; i <= maxAssocGroups; i++) {
 		if (!device.currentValue("assocDNI$i")) {
-			sendEventIfNew("assocDNI$i", "none", false)
+			sendEventLog(name:"assocDNI$i", value:"none")
 		}
 
 		List<String> cmdsEach = []
@@ -1042,41 +1073,38 @@ Integer getPendingChanges() {
 	return (!state.resyncAll ? (configChanges + pendingAssocs) : configChanges)
 }
 
+String getOnOffCmds(val, Integer endPoint=0) {
+	return switchBinarySetCmd(val ? 0xFF : 0x00, endPoint)
+}
+
 
 /*******************************************************************
  ***** Event Senders
 ********************************************************************/
-void sendEventIfNew(String name, value, boolean displayed=true, String type=null, String unit="", String desc=null, Integer ep=0) {
-	if (desc == null) desc = "${name} set to ${value}${unit}"
-
-	Map evt = [name: name, value: value, descriptionText: desc, displayed: displayed]
-	if (type) evt.type = type
-	if (unit) evt.unit = unit
+//evt = [name, value, type, unit, desc, isStateChange]
+void sendEventLog(Map evt, Integer ep=0) {
+	//Set description if not passed in
+	evt.descriptionText = evt.desc ?: "${evt.name} set to ${evt.value}${evt.unit ?: ''}"
 
 	//Main Device Events
-	if (name != "syncStatus") {
-		if (device.currentValue(name).toString() != value.toString()) {
-			logInfo(desc)
-		} else {
-			logDebug "${desc} [NOT CHANGED]"
-		}
+	if (device.currentValue(evt.name).toString() != evt.value.toString() || evt.isStateChange) {
+		logInfo "${evt.descriptionText}"
+	} else {
+		logDebug "${evt.descriptionText} [NOT CHANGED]"
 	}
-
 	//Always send event to update last activity
 	sendEvent(evt)
 }
 
-void sendSwitchEvents(rawVal, String type, Integer ep) {
+void sendSwitchEvents(rawVal, String type, Integer ep=0) {
 	String value = (rawVal ? "on" : "off")
-	String desc = "switch was turned ${value} (${type})"
-	sendEventIfNew("switch", value, true, type, "", desc, ep)
+	String desc = "switch is turned ${value}" + (type ? " (${type})" : "")
+	sendEventLog(name:"switch", value:value, type:type, desc:desc, ep)
 }
 
-void sendBasicButtonEvent(BigDecimal buttonId, String name) {
-	Map event = [name: name, value: buttonId, type:"digital", isStateChange:true]
-	event.descriptionText="button ${buttonId} ${name}"
-	logInfo "${event.descriptionText} (${event.type})"
-	sendEvent(event)
+void sendBasicButtonEvent(Number buttonId, String name) {
+	String desc = "button ${buttonId} ${name} (digital)"
+	sendEventLog(name:name, value:buttonId, type:"digital", desc:desc, isStateChange:true)
 }
 
 
@@ -1084,6 +1112,7 @@ void sendBasicButtonEvent(BigDecimal buttonId, String name) {
  ***** Common Functions
 ********************************************************************/
 /*** Parameter Store Map Functions ***/
+@Field static Map<String, Map> configsList = new java.util.concurrent.ConcurrentHashMap()
 Integer getParamStoredValue(Integer paramNum) {
 	//Using Data (Map) instead of State Variables
 	TreeMap configsMap = getParamStoredMap()
@@ -1094,21 +1123,24 @@ void setParamStoredValue(Integer paramNum, Integer value) {
 	//Using Data (Map) instead of State Variables
 	TreeMap configsMap = getParamStoredMap()
 	configsMap[paramNum] = value
+	configsList[device.id][paramNum] = value
 	device.updateDataValue("configVals", configsMap.inspect())
 }
 
 Map getParamStoredMap() {
-	Map configsMap = [:]
-	String configsStr = device.getDataValue("configVals")
-
-	if (configsStr) {
-		try {
-			configsMap = evaluate(configsStr)
+	Map configsMap = configsList[device.id]
+	if (configsMap == null) {
+		configsMap = [:]
+		if (device.getDataValue("configVals")) {
+			try {
+				configsMap = evaluate(device.getDataValue("configVals"))
+			}
+			catch(Exception e) {
+				logWarn("Clearing Invalid configVals: ${e}")
+				device.removeDataValue("configVals")
+			}
 		}
-		catch(Exception e) {
-			logWarn("Clearing Invalid configVals: ${e}")
-			device.removeDataValue("configVals")
-		}
+		configsList[device.id] = configsMap
 	}
 	return configsMap
 }
@@ -1157,7 +1189,7 @@ void updateParamsList() {
 	//Remove invalid or not supported by firmware
 	tmpList.removeAll { it.num == null }
 	tmpList.removeAll { firmware < (it.firmVer ?: 0) }
-	tmpList.removeAll { 
+	tmpList.removeAll {
 		if (it.firmVerM) {
 			(firmware-(int)firmware)*100 < it.firmVerM[(int)firmware]
 		}
@@ -1187,11 +1219,15 @@ void fixParamsMap() {
 //Gets full list of params
 List<Map> getConfigParams() {
 	//logDebug "Get Config Params"
+	if (!device) return []
 	String devModel = state.deviceModel
 	BigDecimal firmware = firmwareVersion
-	if (!devModel || devModel == "UNK00") return []
 
-	verifyParamsList()
+	//Try to get device model if not set
+	if (devModel) { verifyParamsList() }
+	else          { runInMillis(200, setDevModel) }
+	//Bail out if unknown device
+	if (!devModel || devModel == "UNK00") return []
 
 	return paramsList[devModel][firmware]
 }
@@ -1216,6 +1252,7 @@ Integer getParamValue(String paramName) {
 	return getParamValue(getParam(paramName))
 }
 Number getParamValue(Map param, Boolean adjust=false) {
+	if (param == null) return
 	Number paramVal = safeToInt(settings."configParam${param.num}", param.defaultVal)
 	if (!adjust) return paramVal
 
@@ -1264,12 +1301,12 @@ private getTimeOptionsRange(String name, Integer multiplier, List range) {
 /*** Other Helper Functions ***/
 void updateSyncingStatus(Integer delay=2) {
 	runIn(delay, refreshSyncStatus)
-	sendEventIfNew("syncStatus", "Syncing...", false)
+	sendEvent(name:"syncStatus", value:"Syncing...")
 }
 
 void refreshSyncStatus() {
 	Integer changes = pendingChanges
-	sendEventIfNew("syncStatus", (changes ?  "${changes} Pending Changes" : "Synced"), false)
+	sendEvent(name:"syncStatus", value:(changes ? "${changes} Pending Changes" : "Synced"))
 }
 
 void updateLastCheckIn() {
@@ -1282,17 +1319,19 @@ void updateLastCheckIn() {
 // iOS app has no way of clearing string input so workaround is to have users enter 0.
 String getAssocDNIsSetting(grp) {
 	def val = settings."assocDNI$grp"
-	return ((val && (val.trim() != "0")) ? val : "") 
+	return ((val && (val.trim() != "0")) ? val : "")
 }
 
+//Stash the model in a state variable
 String setDevModel(BigDecimal firmware) {
-	//Stash the model in a state variable
+	if (!device) return
 	def devTypeId = convertIntListToHexList([safeToInt(device.getDataValue("deviceType")),safeToInt(device.getDataValue("deviceId"))],4)
 	String devModel = deviceModelNames[devTypeId.join(":")] ?: "UNK00"
+	if (!firmware) { firmware = firmwareVersion }
 
-	logDebug "Set Device Info - Model: ${devModel} | Firmware: ${firmware}"
 	state.deviceModel = devModel
 	device.updateDataValue("deviceModel", devModel)
+	logDebug "Set Device Info - Model: ${devModel} | Firmware: ${firmware}"
 
 	if (devModel == "UNK00") {
 		logWarn "Unsupported Device USE AT YOUR OWN RISK: ${devTypeId}"
@@ -1360,9 +1399,20 @@ List convertHexListToIntList(String[] hexList) {
 	return intList
 }
 
-private safeToInt(val, defaultVal=0) {
-	if ("${val}"?.isInteger())		{ return "${val}".toInteger() } 
-	else if ("${val}"?.isDouble())	{ return "${val}".toDouble()?.round() }
+Integer validateRange(val, Integer defaultVal, Integer lowVal, Integer highVal) {
+	Integer intVal = safeToInt(val, defaultVal)
+	if (intVal > highVal) {
+		return highVal
+	} else if (intVal < lowVal) {
+		return lowVal
+	} else {
+		return intVal
+	}
+}
+
+Integer safeToInt(val, defaultVal=0) {
+	if ("${val}"?.isInteger())		{ return "${val}".toInteger() }
+	else if ("${val}"?.isNumber())	{ return "${val}".toDouble()?.round() }
 	else { return defaultVal }
 }
 
