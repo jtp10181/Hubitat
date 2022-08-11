@@ -1,12 +1,17 @@
-/*  
+/*
  *  Zooz ZEN Plugs Universal
- *    - Model: ZEN04, ZEN05 - All Firmware
+ *    - Model: ZEN04, ZEN05, ZEN14 - All Firmware
  *
- *  For Support: https://community.hubitat.com/t/zooz-smart-plugs/98333
+ *  For Support, Information, and Updates:
+ *  https://community.hubitat.com/t/zooz-smart-plugs/98333
  *  https://github.com/jtp10181/Hubitat/tree/main/Drivers/zooz
  *
 
 Changelog:
+
+## [0.2.1] - 2022-08-11 (@jtp10181)
+  ### Added
+  - Flash capability / command
 
 ## [0.2.0] - 2021-08-01 (@jtp10181)
   ### Added
@@ -44,16 +49,16 @@ Changelog:
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "0.2.0"
+@Field static final String VERSION = "0.2.1"
 @Field static final Map deviceModelNames =
 	["7000:B002":"ZEN04", "7000:B001":"ZEN05", "7000:B003":"ZEN14"]
 
 metadata {
 	definition (
-		name: "Zooz ZEN Plugs Advanced", 
+		name: "Zooz ZEN Plugs Advanced",
 		namespace: "jtp10181",
 		author: "Jeff Page (@jtp10181)",
-		//importUrl: "https://raw.githubusercontent.com/jtp10181/hubitat/master/Drivers/"
+		importUrl: "https://raw.githubusercontent.com/jtp10181/Hubitat/main/Drivers/zooz/zooz-zen-plugs.groovy"
 	) {
 		capability "Actuator"
 		capability "Switch"
@@ -64,10 +69,10 @@ metadata {
 		capability "EnergyMeter"
 		capability "Configuration"
 		capability "Refresh"
-	
+		capability "Flash"
+
 		command "refreshParams"
 		//command "resetStats"
-		//command "childDevices", [[name:"Select One*", type: "ENUM", constraints: ["Create","Remove"] ]]
 
 		//DEBUGGING
 		//command "debugShowVars"
@@ -81,9 +86,8 @@ metadata {
 		fingerprint mfr:"027A", prod:"7000", deviceId:"B001", inClusters:"0x5E,0x25,0x70,0x85,0x8E,0x59,0x55,0x86,0x72,0x5A,0x87,0x73,0x9F,0x6C,0x7A", deviceJoinName:"Zooz ZEN05 Outdoor Plug"
 		fingerprint mfr:"027A", prod:"7000", deviceId:"B003", inClusters:"0x5E,0x25,0x85,0x8E,0x59,0x55,0x86,0x72,0x5A,0x87,0x73,0x98,0x9F,0x60,0x6C,0x7A,0x70", deviceJoinName:"Zooz ZEN14 Outdoor Double Plug"
 	}
-	
-	preferences {
 
+	preferences {
 		configParams.each { param ->
 			if (!param.hidden) {
 				Integer paramVal = getParamValue(param)
@@ -105,7 +109,7 @@ metadata {
 				}
 			}
 		}
-	
+
 		//Logging options similar to other Hubitat drivers
 		input "txtEnable", "bool", title: fmtTitle("Enable Description Text Logging?"), defaultValue: true
 		input "debugEnable", "bool", title: fmtTitle("Enable Debug Logging?"), defaultValue: true
@@ -132,80 +136,80 @@ void debugShowVars() {
 
 //Main Parameters Listing
 @Field static Map<String, Map> paramsMap =
-[ 
+[
 	ledIndicator: [ num: 1,
-		title: "LED Indicator", 
-		size: 1, defaultVal: 0, 
+		title: "LED Indicator",
+		size: 1, defaultVal: 0,
 		options: [0:"LED On When Switch On", 1:"LED On When Switch Off", 2:"LED Always Off", 3:"LED Always On"],
 	],
 	ledBrightness: [ num: null,
-		title: "LED Brightness", 
-		size: 1, defaultVal: 2, 
+		title: "LED Brightness",
+		size: 1, defaultVal: 2,
 		options: [2:"Low", 1:"Medium", 0:"High"],
 		changes: [04:[num:9], 05:[num:7], 14:[num:7]]
 	],
 	offTimer: [ num: 2,
-		title: "Auto Turn-Off Timer", 
-		size: 4, defaultVal: 0, 
+		title: "Auto Turn-Off Timer",
+		size: 4, defaultVal: 0,
 		description: "Time in minutes, 0 = Disabled",
 		range: 0..65535
 	],
 	offTimer2: [ num: null,
-		title: "Auto Turn-Off Timer (Outlet 2)", 
-		size: 4, defaultVal: 0, 
+		title: "Auto Turn-Off Timer (Outlet 2)",
+		size: 4, defaultVal: 0,
 		description: "Time in minutes, 0 = Disabled",
 		range: 0..65535,
 		changes: [14:[num:3]]
 	],
 	onTimer: [ num: 4,
-		title: "Auto Turn-On Timer", 
-		size: 4, defaultVal: 0, 
+		title: "Auto Turn-On Timer",
+		size: 4, defaultVal: 0,
 		description: "Time in minutes, 0 = Disabled",
 		range: 0..65535,
 		changes: [04:[num:3]]
 	],
 	onTimer2: [ num: null,
-		title: "Auto Turn-On Timer (Outlet 2)", 
-		size: 4, defaultVal: 0, 
+		title: "Auto Turn-On Timer (Outlet 2)",
+		size: 4, defaultVal: 0,
 		description: "Time in minutes, 0 = Disabled",
 		range: 0..65535,
 		changes: [14:[num:5]]
 	],
 	powerFailure: [ num: 6,
-		title: "Behavior After Power Failure", 
-		size: 1, defaultVal: 2, 
+		title: "Behavior After Power Failure",
+		size: 1, defaultVal: 2,
 		options: [2:"Restores Last Status", 0:"Forced to Off", 1:"Forced to On"],
 		changes: [04:[num:4, defaultVal:0, options:[0:"Restores Last Status", 1:"Forced to Off", 2:"Forced to On"]]]
 	],
 	manualControl: [ num: null,
-		title: "Physical Button On/Off Control", 
+		title: "Physical Button On/Off Control",
 		size: 1, defaultVal: 1,
 		options: [1:"Enabled", 0:"Disabled"],
 		changes:[05:[num:8], 14:[num:8]]
 	],
 	wattsThreshold: [ num: null,
-		title: "Power (Watts) Reporting Threshold", 
+		title: "Power (Watts) Reporting Threshold",
 		size: 1, defaultVal: 10,
 		description: "Report when changes by this amount",
 		range: 5..50,
 		changes:[04:[num:5]]
 	],
 	wattsFrequency: [ num: null,
-		title: "Power (Watts) Reporting Frequency", 
+		title: "Power (Watts) Reporting Frequency",
 		size: 4, defaultVal: 60,
 		description: "Minimum number of minutes between wattage reports",
 		range: 1..65535,
 		changes:[04:[num:6]]
 	],
 	currentThreshold: [ num: null,
-		title: "Current (Amps) Reporting Threshold", 
+		title: "Current (Amps) Reporting Threshold",
 		size: 1, defaultVal: 10,
 		description: "[1 = 0.1A, 10 = 1A]  Report when changes by this amount",
 		range: 1..10,
 		changes:[04:[num:7]]
 	],
 	energyThreshold: [ num: null,
-		title: "Energy (kWh) Reporting Threshold", 
+		title: "Energy (kWh) Reporting Threshold",
 		size: 1, defaultVal: 10,
 		description: "[1 = 0.01kWh, 100 = 1kWh]  Report when changes by this amount",
 		range: 1..100,
@@ -233,24 +237,21 @@ CommandClassReport - class:0x8E, version:4
 CommandClassReport - class:0x9F, version:1
 */
 
-//Command Classes Supported
+//Set Command Class Versions
 @Field static final Map commandClassVersions = [
-	0x25: 1,	// Switch Binary (switchbinary)
+	0x25: 1,	// Switch Binary
 	0x32: 3,	// Meter
 	0x60: 3,	// Multi Channel
 	0x6C: 1,	// Supervision
-	0x70: 1,	// Configuration
+	0x70: 2,	// Configuration
 	0x71: 8,	// Notification
 	0x72: 2,	// ManufacturerSpecific
-	0x73: 1,	// Powerlevel
 	0x85: 2,	// Association
-	0x86: 3,	// Version
+	0x86: 2,	// Version
 	0x8E: 3,	// Multi Channel Association
-	//0x98: 1,	// Security 0
-	0x9F: 1		// Security S2
 ]
 
-//Static Lists and Settings
+/*** Static Lists and Settings ***/
 @Field static final Map meterEnergy = [name:"energy", scale:0, unit:"kWh", limit:null]
 @Field static final Map meterPower = [name:"power", scale:2, unit:"W", limit:2000]
 @Field static final Map meterVoltage = [name:"voltage", scale:4, unit:"V", limit:150]
@@ -309,15 +310,54 @@ void refresh() {
 /*** Capabilities ***/
 String on() {
 	logDebug "on..."
-	state.isDigital = true
-	return switchBinarySetCmd(0xFF)
+	flashStop()
+	return getOnOffCmds(0xFF)
 }
 
 String off() {
 	logDebug "off..."
-	state.isDigital = true
-	return switchBinarySetCmd(0x00)
+	flashStop()
+	return getOnOffCmds(0x00)
 }
+
+//Flashing Capability
+void flash(Number rateToFlash = 1500) {
+	logInfo "Flashing started with rate of ${rateToFlash}ms"
+
+	//Min rate of 1 sec, max of 30, max run time of 5 minutes
+	rateToFlash = validateRange(rateToFlash, 1500, 1000, 30000)
+	Integer maxRun = validateRange((rateToFlash*30)/1000, 30, 30, 300)
+	state.flashNext = device.currentValue("switch")
+
+	//Start the flashing
+	runIn(maxRun,flashStop,[data:true])
+	flashHandler(rateToFlash)
+}
+
+void flashStop(Boolean turnOn = false) {
+	if (state.flashNext != null) {
+		logInfo "Flashing stopped..."
+		unschedule("flashHandler")
+		state.remove("flashNext")
+		if (turnOn) { runIn(1,on) }
+	}
+}
+
+void flashHandler(Integer rateToFlash) {
+	if (state.flashNext == "on") {
+		logDebug "Flash On"
+		state.flashNext = "off"
+		runInMillis(rateToFlash, flashHandler, [data:rateToFlash])
+		sendCommands(getOnOffCmds(0xFF))
+	}
+	else if (state.flashNext == "off") {
+		logDebug "Flash Off"
+		state.flashNext = "on"
+		runInMillis(rateToFlash, flashHandler, [data:rateToFlash])
+		sendCommands(getOnOffCmds(0x00))
+	}
+}
+
 
 /*** Custom Commands ***/
 void refreshParams() {
@@ -325,7 +365,7 @@ void refreshParams() {
 	for (int i = 1; i <= maxAssocGroups; i++) {
 		cmds << associationGetCmd(i)
 	}
-	
+
 	configParams.each { param ->
 		cmds << configGetCmd(param)
 	}
@@ -337,13 +377,13 @@ void refreshParams() {
 def componentOn(cd) {
 	logDebug "componentOn from ${cd.displayName} (${cd.deviceNetworkId})"
 	state.isDigital = true
-	sendCommands(switchBinarySetCmd(0xFF, getChildEP(cd)))
+	sendCommands(getOnOffCmds(0xFF, getChildEP(cd)))
 }
 
 def componentOff(cd) {
 	logDebug "componentOff from ${cd.displayName} (${cd.deviceNetworkId})"
 	state.isDigital = true
-	sendCommands(switchBinarySetCmd(0x00, getChildEP(cd)))
+	sendCommands(getOnOffCmds(0x00, getChildEP(cd)))
 }
 
 def componentRefresh(cd) {
@@ -356,7 +396,7 @@ def componentRefresh(cd) {
 ********************************************************************/
 void parse(String description) {
 	hubitat.zwave.Command cmd = zwave.parse(description, commandClassVersions)
-	
+
 	if (cmd) {
 		logTrace "parse: ${description} --PARSED-- ${cmd}"
 		zwaveEvent(cmd)
@@ -372,7 +412,7 @@ void parse(String description) {
 void zwaveEvent(hubitat.zwave.commands.multichannelv3.MultiChannelCmdEncap cmd) {
 	def encapsulatedCmd = cmd.encapsulatedCommand(commandClassVersions)
 	logTrace "${cmd} --ENCAP-- ${encapsulatedCmd}"
-	
+
 	if (encapsulatedCmd) {
 		zwaveEvent(encapsulatedCmd, cmd.sourceEndPoint as Integer)
 	} else {
@@ -384,7 +424,7 @@ void zwaveEvent(hubitat.zwave.commands.multichannelv3.MultiChannelCmdEncap cmd) 
 void zwaveEvent(hubitat.zwave.commands.supervisionv1.SupervisionGet cmd, ep=0) {
 	def encapsulatedCmd = cmd.encapsulatedCommand(commandClassVersions)
 	logTrace "${cmd} --ENCAP-- ${encapsulatedCmd}"
-	
+
 	if (encapsulatedCmd) {
 		zwaveEvent(encapsulatedCmd, ep)
 	} else {
@@ -394,7 +434,7 @@ void zwaveEvent(hubitat.zwave.commands.supervisionv1.SupervisionGet cmd, ep=0) {
 	sendCommands(secureCmd(zwave.supervisionV1.supervisionReport(sessionID: cmd.sessionID, reserved: 0, moreStatusUpdates: false, status: 0xFF, duration: 0), ep))
 }
 
-void zwaveEvent(hubitat.zwave.commands.versionv3.VersionReport cmd) {
+void zwaveEvent(hubitat.zwave.commands.versionv2.VersionReport cmd) {
 	logTrace "${cmd}"
 
 	String fullVersion = String.format("%d.%02d",cmd.firmware0Version,cmd.firmware0SubVersion)
@@ -404,7 +444,7 @@ void zwaveEvent(hubitat.zwave.commands.versionv3.VersionReport cmd) {
 	setDevModel(new BigDecimal(fullVersion))
 }
 
-void zwaveEvent(hubitat.zwave.commands.configurationv1.ConfigurationReport cmd) {
+void zwaveEvent(hubitat.zwave.commands.configurationv2.ConfigurationReport cmd) {
 	logTrace "${cmd}"
 	updateSyncingStatus()
 
@@ -416,7 +456,7 @@ void zwaveEvent(hubitat.zwave.commands.configurationv1.ConfigurationReport cmd) 
 		setParamStoredValue(param.num, val)
 	}
 	else {
-		logDebug "Parameter #${cmd.parameterNumber} = ${val}"
+		logDebug "Parameter #${cmd.parameterNumber} = ${val.toString()}"
 	}
 }
 
@@ -448,17 +488,19 @@ void zwaveEvent(hubitat.zwave.commands.switchbinaryv1.SwitchBinaryReport cmd, ep
 		type = (state.isDigital ? "digital" : "physical")
 		state.remove("isDigital")
 	}
+	if (type == "physical") flashStop()
+
 	sendSwitchEvents(cmd.value, type, ep)
 }
 
 void zwaveEvent(hubitat.zwave.commands.meterv3.MeterReport cmd, ep=0) {
 	logTrace "${cmd} (scaledMeterValue: ${cmd.scaledMeterValue}) (ep ${ep})"
-	
+
 	BigDecimal val = safeToDec(cmd.scaledMeterValue, 0, Math.min(cmd.precision,2))
 	logDebug "MeterReport: scale:${cmd.scale}, scaledMeterValue:${cmd.scaledMeterValue} (${val})"
-	
+
 	switch (cmd.scale) {
-		case meterEnergy.scale:			
+		case meterEnergy.scale:
 			sendEnergyEvents(val)
 			break
 		case meterPower.scale:
@@ -507,7 +549,7 @@ String associationGetCmd(Integer group) {
 }
 
 String versionGetCmd() {
-	return secureCmd(zwave.versionV3.versionGet())
+	return secureCmd(zwave.versionV2.versionGet())
 }
 
 String switchBinarySetCmd(Integer value, Integer ep=0) {
@@ -527,11 +569,11 @@ String meterResetCmd(Integer ep=0) {
 }
 
 String configSetCmd(Map param, Integer value) {
-	return secureCmd(zwave.configurationV1.configurationSet(parameterNumber: param.num, size: param.size, scaledConfigurationValue: value))
+	return secureCmd(zwave.configurationV2.configurationSet(parameterNumber: param.num, size: param.size, scaledConfigurationValue: value))
 }
 
 String configGetCmd(Map param) {
-	return secureCmd(zwave.configurationV1.configurationGet(parameterNumber: param.num))
+	return secureCmd(zwave.configurationV2.configurationGet(parameterNumber: param.num))
 }
 
 List configSetGetCmd(Map param, Integer value) {
@@ -616,7 +658,7 @@ void executeRefreshCmds() {
 
 	//Refresh Childs
 	multiChan[state.deviceModel]?.endpoints.each { endPoint ->
-		cmds += getChildRefreshCmds(endPoint) 
+		cmds += getChildRefreshCmds(endPoint)
 	}
 
 	sendCommands(cmds,300)
@@ -626,13 +668,15 @@ void clearVariables() {
 	logWarn "Clearing state variables and data..."
 
 	//Backup
-	String devModel = state.deviceModel 
+	String devModel = state.deviceModel
 
 	//Clears State Variables
 	state.clear()
 
-	//Clear Data from other Drivers
+	//Clear Config Data
+	configsList["${device.id}"] = [:]
 	device.removeDataValue("configVals")
+	//Clear Data from other Drivers
 	device.removeDataValue("protocolVersion")
 	device.removeDataValue("hardwareVersion")
 	device.removeDataValue("zwaveAssociationG1")
@@ -657,7 +701,7 @@ List getConfigureAssocsCmds() {
 	return cmds
 }
 
-List getChildRefreshCmds(endPoint) {
+List getChildRefreshCmds(Integer endPoint) {
 	List<String> cmds = []
 	cmds << switchBinaryGetCmd(endPoint)
 	return cmds
@@ -672,11 +716,16 @@ Integer getPendingChanges() {
 	return (!state.resyncAll ? (configChanges + pendingAssocs) : configChanges)
 }
 
+String getOnOffCmds(val, Integer endPoint=0) {
+	state.isDigital = true
+	return switchBinarySetCmd(val ? 0xFF : 0x00, endPoint)
+}
+
 
 /*******************************************************************
  ***** Event Senders
 ********************************************************************/
-//evt = [name, value, type, unit, desc]
+//evt = [name, value, type, unit, desc, isStateChange]
 void sendEventLog(Map evt, Integer ep=0) {
 	//Set description if not passed in
 	evt.descriptionText = evt.desc ?: "${evt.name} set to ${evt.value}${evt.unit ?: ''}"
@@ -687,7 +736,7 @@ void sendEventLog(Map evt, Integer ep=0) {
 		String logEp = "(Outlet ${ep}) "
 
 		if (childDev) {
-			if (childDev.currentValue(evt.name).toString() != evt.value.toString()) {
+			if (childDev.currentValue(evt.name).toString() != evt.value.toString() || evt.isStateChange) {
 				evt.descriptionText = "${childDev}: ${evt.descriptionText}"
 				childDev.parse([evt])
 			} else {
@@ -702,12 +751,10 @@ void sendEventLog(Map evt, Integer ep=0) {
 	}
 
 	//Main Device Events
-	if (evt.name != "syncStatus") {
-		if (device.currentValue(evt.name).toString() != evt.value.toString()) {
-			logInfo "${evt.descriptionText}"
-		} else {
-			logDebug "${evt.descriptionText} [NOT CHANGED]"
-		}
+	if (device.currentValue(evt.name).toString() != evt.value.toString() || evt.isStateChange) {
+		logInfo "${evt.descriptionText}"
+	} else {
+		logDebug "${evt.descriptionText} [NOT CHANGED]"
 	}
 	//Always send event to update last activity
 	sendEvent(evt)
@@ -809,7 +856,7 @@ void updateParamsList() {
 	//Remove invalid or not supported by firmware
 	tmpList.removeAll { it.num == null }
 	tmpList.removeAll { firmware < (it.firmVer ?: 0) }
-	tmpList.removeAll { 
+	tmpList.removeAll {
 		if (it.firmVerM) {
 			(firmware-(int)firmware)*100 < it.firmVerM[(int)firmware]
 		}
@@ -839,9 +886,9 @@ List<Map> getConfigParams() {
 	if (!device) return []
 	String devModel = state.deviceModel
 	BigDecimal firmware = firmwareVersion
-	
+
 	//Try to get device model if not set
-	if (devModel) {	verifyParamsList() }
+	if (devModel) { verifyParamsList() }
 	else          { runInMillis(200, setDevModel) }
 	//Bail out if unknown device
 	if (!devModel || devModel == "UNK00") return []
@@ -947,12 +994,12 @@ String getChildDNI(endPoint) {
 /*** Other Helper Functions ***/
 void updateSyncingStatus(Integer delay=2) {
 	runIn(delay, refreshSyncStatus)
-	sendEventLog(name:"syncStatus", value:"Syncing...")
+	sendEvent(name:"syncStatus", value:"Syncing...")
 }
 
 void refreshSyncStatus() {
 	Integer changes = pendingChanges
-	sendEventLog(name:"syncStatus", value:(changes ? "${changes} Pending Changes" : "Synced"))
+	sendEvent(name:"syncStatus", value:(changes ? "${changes} Pending Changes" : "Synced"))
 }
 
 void updateLastCheckIn() {
@@ -1011,8 +1058,19 @@ List convertIntListToHexList(intList, pad=2) {
 	return hexList
 }
 
+Integer validateRange(val, Integer defaultVal, Integer lowVal, Integer highVal) {
+	Integer intVal = safeToInt(val, defaultVal)
+	if (intVal > highVal) {
+		return highVal
+	} else if (intVal < lowVal) {
+		return lowVal
+	} else {
+		return intVal
+	}
+}
+
 Integer safeToInt(val, defaultVal=0) {
-	if ("${val}"?.isInteger())		{ return "${val}".toInteger() } 
+	if ("${val}"?.isInteger())		{ return "${val}".toInteger() }
 	else if ("${val}"?.isNumber())	{ return "${val}".toDouble()?.round() }
 	else { return defaultVal }
 }
