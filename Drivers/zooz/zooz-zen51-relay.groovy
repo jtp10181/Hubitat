@@ -971,5 +971,5 @@ void logDebug(String msg) {
 //For Extreme Code Debugging - tracing commands
 void logTrace(String msg) {
 	//Uncomment to Enable
-	log.trace "${device.displayName}: ${msg}"
+	//log.trace "${device.displayName}: ${msg}"
 }
