@@ -31,7 +31,7 @@ Changelog:
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "0.1.0"
+@Field static final String VERSION = "0.2.0"
 @Field static final Map deviceModelNames = ["0104:0202":"ZEN52"]
 
 metadata {

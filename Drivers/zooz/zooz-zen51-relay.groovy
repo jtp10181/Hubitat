@@ -9,8 +9,12 @@
 
 Changelog:
 
+## [0.2.0] - 2021-08-22 (@jtp10181)
+  - Initial Release of ZEN52
+  - Minor fixes for ZEN51
+
 ## [0.1.0] - 2021-08-19 (@jtp10181)
-  - Initial Release
+  - Initial Release of ZEN51
 
  *  Copyright 2022 Jeff Page
  *
@@ -30,7 +34,7 @@ Changelog:
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "0.1.0"
+@Field static final String VERSION = "0.2.0"
 @Field static final Map deviceModelNames = ["0104:0201":"ZEN51"]
 
 metadata {
@@ -279,7 +283,7 @@ void flash(Number rateToFlash = 1500) {
 	//Min rate of 1 sec, max of 30, max run time of 5 minutes
 	rateToFlash = validateRange(rateToFlash, 1500, 1000, 30000)
 	Integer maxRun = validateRange((rateToFlash*30)/1000, 30, 30, 300)
-	state.flashNext = device.currentValue("switch")
+	state.flashNext = device.currentValue("switch") ?: "on"
 
 	//Start the flashing
 	runIn(maxRun,flashStop,[data:true])
@@ -425,11 +429,9 @@ void zwaveEvent(hubitat.zwave.commands.basicv1.BasicReport cmd, ep=0) {
 void zwaveEvent(hubitat.zwave.commands.switchbinaryv1.SwitchBinaryReport cmd, ep=0) {
 	logTrace "${cmd} (ep ${ep})"
 
-	String type
-	if (ep == 0) {
-		type = (state.isDigital ? "digital" : "physical")
-		state.remove("isDigital")
-	}
+	String type = (state.isDigital ? "digital" : "physical")
+	state.remove("isDigital")
+
 	if (type == "physical") flashStop()
 
 	sendSwitchEvents(cmd.value, type, ep)
@@ -447,7 +449,7 @@ void zwaveEvent(hubitat.zwave.commands.centralscenev3.CentralSceneNotification c
 
 		switch (cmd.sceneNumber) {
 			case 1:
-				actionType = "button"
+				actionType = "S"
 				break
 			default:
 				logDebug "Unknown sceneNumber: ${cmd}"
@@ -474,12 +476,12 @@ void zwaveEvent(hubitat.zwave.commands.centralscenev3.CentralSceneNotification c
 				btnVal = "${actionType} ${cmd.keyAttributes - 1}x"
 				break
 			default:
-				logDebug "Unknown keyAttributes: ${cmd}"
+				logDebug "Unhandled keyAttributes: ${cmd}"
 		}
 
 		if (actionType && btnVal) {
 			scene.desc = "button ${scene.value} ${scene.name} [${btnVal}]"
-			sendEventLog(scene)
+			sendEventLog(scene, ep)
 		}
 	}
 }

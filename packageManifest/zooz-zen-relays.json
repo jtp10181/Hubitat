@@ -2,10 +2,10 @@
   "packageName": "Zooz Relays Advanced Drivers",
   "author": "jtp10181",
   "minimumHEVersion": "2.3.0",
-  "dateReleased": "2022-08-19",
+  "dateReleased": "2022-08-22",
   "documentationLink": "https://github.com/jtp10181/Hubitat/tree/main/Drivers/zooz",
   "communityLink": "https://community.hubitat.com/t/zooz-relays-advanced/98194",
-  "releaseNotes": "Version ZEN17:[1.0.0], ZEN51:[0.1.0] - 2021-08-19 (@jtp10181)\n Check community post full details.",
+  "releaseNotes": "Version ZEN17:[1.0.0], ZEN51:[0.2.0] - 2021-08-22 (@jtp10181)\n Check community post full details.",
   "drivers": [
     {
       "id": "446b0cae-c749-447f-9655-3e3463e9f01a",
@@ -21,7 +21,15 @@
       "namespace": "jtp10181",
       "location": "https://jtp10181.gateway.scarf.sh/zooz-zen51-relay.groovy",
       "required": false,
-      "version": "0.1.0"
+      "version": "0.2.0"
+    },
+    {
+      "id": "f964795e-e849-412d-904d-91bf14d2c11d",
+      "name": "Zooz ZEN52 Double Relay Advanced",
+      "namespace": "jtp10181",
+      "location": "https://jtp10181.gateway.scarf.sh/zooz-zen52-double-relay.groovy",
+      "required": false,
+      "version": "0.2.0"
     }
   ]
 }
