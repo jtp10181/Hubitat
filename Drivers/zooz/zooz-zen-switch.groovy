@@ -1,4 +1,4 @@
-/*											    
+/*
  *  Zooz ZEN On/Off Switches Universal
  *    - Model: ZEN21, ZEN23 - MINIMUM FIRMWARE 3.04
  *    - Model: ZEN26 - MINIMUM FIRMWARE 2.03
@@ -10,6 +10,13 @@
  *
 
 Changelog:
+
+## [1.6.3] - 2022-11-22 (@jtp10181)
+  ### Changed
+  - Enabled parameter 7 for ZEN72 on new firmware
+  - Set Level Duration supports up to 254s for 2x and 7,620s (127 mins) for 7x
+  ### Fixed
+  - Convert signed parameter values to unsigned
 
 ## [1.6.2] - 2022-08-11 (@jtp10181)
   ### Added
@@ -200,7 +207,7 @@ https://github.com/krlaframboise/SmartThings/tree/master/devicetypes/zooz/
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "1.6.2"
+@Field static final String VERSION = "1.6.3"
 @Field static final Map deviceModelNames =
 	["B111:1E1C":"ZEN21", "B111:251C":"ZEN23", "A000:A001":"ZEN26",
 	"7000:A001":"ZEN71", "7000:A003":"ZEN73", "7000:A006":"ZEN76"]
@@ -262,7 +269,7 @@ metadata {
 		for(int i in 2..maxAssocGroups) {
 			input "assocDNI$i", "string",
 				title: fmtTitle("Device Associations - Group $i"),
-				description: fmtDesc("Supports up to ${maxAssocNodes} Hex Device IDs separated by commas. Check device documentation for more info. Save as blank or 0 to clear"),
+				description: fmtDesc("Supports up to ${maxAssocNodes} Hex Device IDs separated by commas. Check device documentation for more info. Save as blank or 0 to clear."),
 				required: false
 		}
 
@@ -404,7 +411,7 @@ void debugShowVars() {
 			13:"Physical Tap On ZEN / Z-Wave Command / Timer", 14:"Physical Tap On ZEN / 3-Way Switch / Z-Wave Command / Timer",
 			15:"All Of The Above"
 		],
-		changes: [71:[num:null], 72:[num:null]]
+		changes: [71:[num:null], 72:[firmVer:2.10, firmVerM:[10:30]]]
 	],
 	sceneMapping: [ num: null,
 		title: "Central Scene Mapping",
@@ -680,6 +687,10 @@ void zwaveEvent(hubitat.zwave.commands.configurationv1.ConfigurationReport cmd) 
 	Integer val = cmd.scaledConfigurationValue
 
 	if (param) {
+		//Convert scaled signed integer to unsigned
+		Long sizeFactor = Math.pow(256,param.size).round()
+		if (val < 0) { val += sizeFactor }
+
 		logDebug "${param.name} (#${param.num}) = ${val.toString()}"
 		setParamStoredValue(param.num, val)
 	}
@@ -841,6 +852,10 @@ String switchBinaryGetCmd(Integer ep=0) {
 }
 
 String configSetCmd(Map param, Integer value) {
+	//Convert from unsigned to signed for scaledConfigurationValue
+	Long sizeFactor = Math.pow(256,param.size).round()
+	if (value >= sizeFactor/2) { value -= sizeFactor }
+
 	return supervisionEncap(zwave.configurationV1.configurationSet(parameterNumber: param.num, size: param.size, scaledConfigurationValue: value))
 }
 
@@ -1013,11 +1028,11 @@ List getConfigureAssocsCmds() {
 	List<String> cmds = []
 
 	if (!state.group1Assoc || state.resyncAll) {
+		cmds << associationSetCmd(1, [zwaveHubNodeId])
+		cmds << associationGetCmd(1)
 		if (state.group1Assoc == false) {
 			logDebug "Adding missing lifeline association..."
 		}
-		cmds << associationSetCmd(1, [zwaveHubNodeId])
-		cmds << associationGetCmd(1)
 	}
 
 	for (int i = 2; i <= maxAssocGroups; i++) {

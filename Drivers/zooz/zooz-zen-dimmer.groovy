@@ -11,6 +11,13 @@
 
 Changelog:
 
+## [1.6.3] - 2022-11-22 (@jtp10181)
+  ### Changed
+  - Enabled parameter 7 for ZEN72 on new firmware
+  - Set Level Duration supports up to 254s for 2x and 7,620s (127 mins) for 7x
+  ### Fixed
+  - Convert signed parameter values to unsigned
+
 ## [1.6.2] - 2022-08-11 (@jtp10181)
   ### Added
   - Flash capability / command
@@ -19,7 +26,7 @@ Changelog:
   - Reworked multi level commands to use last level and device duration instead of overriding it
   - Various fixes in common functions merged from other drivers
   - Removed some unnecessary code
-  
+
 ## [1.6.0] - 2022-07-24 (@jtp10181)
   ### Changed
   - Major refactor to organize code same as sensor drivers
@@ -200,7 +207,7 @@ https://github.com/krlaframboise/SmartThings/tree/master/devicetypes/zooz/
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "1.6.2"
+@Field static final String VERSION = "1.6.3"
 @Field static final Map deviceModelNames =
 	["B112:1F1C":"ZEN22", "B112:261C":"ZEN24", "A000:A002":"ZEN27",
 	"7000:A002":"ZEN72", "7000:A004":"ZEN74", "7000:A007":"ZEN77"]
@@ -269,7 +276,7 @@ metadata {
 		for(int i in 2..maxAssocGroups) {
 			input "assocDNI$i", "string",
 				title: fmtTitle("Device Associations - Group $i"),
-				description: fmtDesc("Supports up to ${maxAssocNodes} Hex Device IDs separated by commas. Check device documentation for more info. Save as blank or 0 to clear"),
+				description: fmtDesc("Supports up to ${maxAssocNodes} Hex Device IDs separated by commas. Check device documentation for more info. Save as blank or 0 to clear."),
 				required: false
 		}
 
@@ -440,6 +447,16 @@ void debugShowVars() {
 		size: 1, defaultVal: 0,
 		options: [0:"Disabled", 1:"Enabled"],
 	],
+	// sceneControl3w: [ num: null,
+	// 	title: "Scene Control Events From 3-Way",
+	// 	description: "Enable to get push and multi-tap events from a mechanical switch connected in a direct 3-way",
+	// 	size: 1, defaultVal: 0,
+	// 	options: [0:"Disabled", 1:"Enabled"],
+	// 	changes: [
+	// 		72:[num:31, firmVer:2.10, firmVerM:[10:30]],
+	// 		77:[num:31, firmVer:3.10, firmVerM:[10:30, 2:20]]
+	// 	]
+	// ],
 	//loadControlParam - Dimmers=15, ZEN73/76=12, Other Switches=11
 	loadControl: [ num: 15,
 		title: "Smart Bulb Mode - Load Control",
@@ -475,8 +492,8 @@ void debugShowVars() {
 	],
 	zwaveRampRateOn: [ num: 28,
 		title: "Z-Wave Ramp Rate to Full ON",
-		size: 1, defaultVal: -1,
-		options: [(-1):"Match Physical",0:"Instant On"], //rampRateOptions
+		size: 1, defaultVal: 255,
+		options: [255:"Match Physical",0:"Instant On"], //rampRateOptions
 		firmVer: 2.0, firmVerM:[10:10],
 		changes: [22:[num: null], 24:[num: null], 27:[num: null],
 			72:[], 74:[], 77:[firmVer:2.10, firmVerM:[10:20]]
@@ -484,8 +501,8 @@ void debugShowVars() {
 	],
 	zwaveRampRateOff: [ num: 29,
 		title: "Z-Wave Ramp Rate to Full OFF",
-		size: 1, defaultVal: -1,
-		options: [(-1):"Match Physical",0:"Instant On"], //rampRateOptions
+		size: 1, defaultVal: 255,
+		options: [255:"Match Physical",0:"Instant On"], //rampRateOptions
 		firmVer: 2.0, firmVerM:[10:10],
 		changes: [22:[num: null], 24:[num: null], 27:[num: null],
 			72:[], 74:[], 77:[firmVer:2.10, firmVerM:[10:20]]
@@ -493,7 +510,7 @@ void debugShowVars() {
 	],
 	remoteZWaveDim: [ num: 30,
 		title: "Remote Z-Wave Dimming Duration",
-		description: "Set the time it takes to get from 0% to 100% brightness on dimmers and smart bulbs directly associated with your dimmer in Groups 3 and 4 when pressing and holding the paddle on your dimmer.",
+		description: "Dimming Speed for devices directly associated in Groups 3/4",
 		size: 1, defaultVal: 5,
 		options: [:], //rampRateOptions
 		firmVer: 2.0, firmVerM:[10:10],
@@ -511,7 +528,7 @@ void debugShowVars() {
 			13:"Physical Tap On ZEN / Z-Wave Command / Timer", 14:"Physical Tap On ZEN / 3-Way Switch / Z-Wave Command / Timer",
 			15:"All Of The Above"
 		],
-		changes: [71:[num:null], 72:[num:null]]
+		changes: [71:[num:null], 72:[firmVer:2.10, firmVerM:[10:30]]]
 	],
 	sceneMapping: [ num: null,
 		title: "Central Scene Mapping",
@@ -809,6 +826,10 @@ void zwaveEvent(hubitat.zwave.commands.configurationv1.ConfigurationReport cmd) 
 	Integer val = cmd.scaledConfigurationValue
 
 	if (param) {
+		//Convert scaled signed integer to unsigned
+		Long sizeFactor = Math.pow(256,param.size).round()
+		if (val < 0) { val += sizeFactor }
+
 		logDebug "${param.name} (#${param.num}) = ${val.toString()}"
 		setParamStoredValue(param.num, val)
 	}
@@ -987,6 +1008,10 @@ String switchMultilevelStopLvChCmd(Integer ep=0) {
 }
 
 String configSetCmd(Map param, Integer value) {
+	//Convert from unsigned to signed for scaledConfigurationValue
+	Long sizeFactor = Math.pow(256,param.size).round()
+	if (value >= sizeFactor/2) { value -= sizeFactor }
+
 	return supervisionEncap(zwave.configurationV1.configurationSet(parameterNumber: param.num, size: param.size, scaledConfigurationValue: value))
 }
 
@@ -1159,11 +1184,11 @@ List getConfigureAssocsCmds() {
 	List<String> cmds = []
 
 	if (!state.group1Assoc || state.resyncAll) {
+		cmds << associationSetCmd(1, [zwaveHubNodeId])
+		cmds << associationGetCmd(1)
 		if (state.group1Assoc == false) {
 			logDebug "Adding missing lifeline association..."
 		}
-		cmds << associationSetCmd(1, [zwaveHubNodeId])
-		cmds << associationGetCmd(1)
 	}
 
 	for (int i = 2; i <= maxAssocGroups; i++) {
@@ -1224,6 +1249,7 @@ String getOnOffCmds(val, Integer endPoint=0) {
 }
 
 String getSetLevelCmds(Number level, Number duration=null, Integer endPoint=0) {
+	Short modelSeries = Math.floor(deviceModelShort/10)
 	Short levelVal = safeToInt(level, 99)
 	// level 0xFF tells device to use last level, 0x00 is off
 	if (levelVal != 0xFF && levelVal != 0x00) {
@@ -1236,11 +1262,17 @@ String getSetLevelCmds(Number level, Number duration=null, Integer endPoint=0) {
 	// 0x01..0x7F 1 second (0x01) to 127 seconds (0x7F) in 1 second resolution.
 	// 0x80..0xFE 1 minute (0x80) to 127 minutes (0xFE) in 1 minute resolution.
 	// 0xFF Factory default duration.
-	Short modelNum = deviceModelShort
-	Short durationVal = validateRange(duration, -1, -1, 127)
+
+	//Convert seconds to minutes for 7x only
+	if (modelSeries == 7 && duration > 120) {
+		logDebug "getSetLevelCmds converting ${duration}s to ${Math.round(duration/60)}min"
+		duration = (duration / 60) + 127
+	}
+
+	Short durationVal = validateRange(duration, -1, -1, 254)
 	if (duration == null || durationVal == -1) {
 		// For model 2x switches the 0xFF default is 0 seconds, lets override it.
-		if (Math.floor(modelNum/10) == 2) {
+		if (modelSeries == 2) {
 			durationVal = getParamValue("rampRate")
 		} else {
 			durationVal = 0xFF

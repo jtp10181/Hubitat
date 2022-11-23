@@ -9,6 +9,13 @@
 
 Changelog:
 
+## [1.6.3] - 2022-11-22 (@jtp10181)
+  ### Changed
+  - Set Level Duration supports up to 254s
+  ### Fixed
+  - Fixed lifeline association checking on ZEN30
+  - Convert signed parameter values to unsigned
+
 ## [1.6.2] - 2022-08-11 (@jtp10181)
   ### Added
   - Flash capability / command
@@ -152,7 +159,7 @@ https://github.com/krlaframboise/SmartThings/blob/master/devicetypes/krlaframboi
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "1.6.2"
+@Field static final String VERSION = "1.6.3"
 @Field static final Map deviceModelNames = ["A000:A008":"ZEN30"]
 
 metadata {
@@ -217,7 +224,7 @@ metadata {
 		for(int i in 2..maxAssocGroups) {
 			input "assocDNI$i", "string",
 				title: fmtTitle("Device Associations - Group $i"),
-				description: fmtDesc("Supports up to ${maxAssocNodes} Hex Device IDs separated by commas. Check device documentation for more info. Save as blank or 0 to clear"),
+				description: fmtDesc("Supports up to ${maxAssocNodes} Hex Device IDs separated by commas. Check device documentation for more info. Save as blank or 0 to clear."),
 				required: false
 		}
 
@@ -769,6 +776,10 @@ void zwaveEvent(hubitat.zwave.commands.configurationv1.ConfigurationReport cmd) 
 	Integer val = cmd.scaledConfigurationValue
 
 	if (param) {
+		//Convert scaled signed integer to unsigned
+		Long sizeFactor = Math.pow(256,param.size).round()
+		if (val < 0) { val += sizeFactor }
+
 		logDebug "${param.name} (#${param.num}) = ${val.toString()}"
 		setParamStoredValue(param.num, val)
 	}
@@ -799,6 +810,19 @@ void zwaveEvent(hubitat.zwave.commands.associationv2.AssociationReport cmd) {
 		String dnis = convertIntListToHexList(cmd.nodeId)?.join(", ")
 		sendEventLog(name:"assocDNI$grp", value:(dnis ?: "none"))
 		device.updateSetting("assocDNI$grp", [value:"${dnis}", type:"string"])
+	}
+	else {
+		logDebug "Unhandled Group: $cmd"
+	}
+}
+
+void zwaveEvent(hubitat.zwave.commands.multichannelassociationv2.MultiChannelAssociationReport cmd) {
+	logTrace "${cmd}"
+	updateSyncingStatus()
+
+	if (cmd.groupingIdentifier == 1) {
+		logDebug "Lifeline Association (MC): ${cmd.multiChannelNodeIds}"
+		state.group1McAssoc = (cmd.multiChannelNodeIds == [[nodeId:zwaveHubNodeId, bitAddress:0, endPointId:0]] ? true : false)
 	}
 	else {
 		logDebug "Unhandled Group: $cmd"
@@ -925,6 +949,10 @@ String associationGetCmd(Integer group) {
 	return secureCmd(zwave.associationV2.associationGet(groupingIdentifier: group))
 }
 
+String mcAssociationGetCmd(Integer group) {
+	return secureCmd(zwave.multiChannelAssociationV2.multiChannelAssociationGet(groupingIdentifier: group))
+}
+
 String versionGetCmd() {
 	return secureCmd(zwave.versionV2.versionGet())
 }
@@ -955,6 +983,10 @@ String switchMultilevelStopLvChCmd(Integer ep=0) {
 }
 
 String configSetCmd(Map param, Integer value) {
+	//Convert from unsigned to signed for scaledConfigurationValue
+	Long sizeFactor = Math.pow(256,param.size).round()
+	if (value >= sizeFactor/2) { value -= sizeFactor }
+
 	return supervisionEncap(zwave.configurationV1.configurationSet(parameterNumber: param.num, size: param.size, scaledConfigurationValue: value))
 }
 
@@ -1127,13 +1159,14 @@ void clearVariables() {
 List getConfigureAssocsCmds() {
 	List<String> cmds = []
 
-	//This is BROKEN in ZEN30v1 due to factory set MultiChannel Association
-	if ((!state.group1Assoc || state.resyncAll) && firmwareVersion >= 2.00) {
-		if (state.group1Assoc == false) {
-			logDebug "Adding missing lifeline association..."
-		}
+	if ((!state.group1Assoc && !state.group1McAssoc) || state.resyncAll) {
 		cmds << associationSetCmd(1, [zwaveHubNodeId])
 		cmds << associationGetCmd(1)
+		if (state.group1Assoc == false) {
+			logDebug "Adding missing lifeline association..."
+			//Check MultiChannel Association
+			cmds << mcAssociationGetCmd(1)
+		}
 	}
 
 	for (int i = 2; i <= maxAssocGroups; i++) {
@@ -1194,6 +1227,7 @@ String getOnOffCmds(val, Integer endPoint=0) {
 }
 
 String getSetLevelCmds(Number level, Number duration=null, Integer endPoint=0) {
+	Short modelSeries = Math.floor(deviceModelShort/10)
 	Short levelVal = safeToInt(level, 99)
 	// level 0xFF tells device to use last level, 0x00 is off
 	if (levelVal != 0xFF && levelVal != 0x00) {
@@ -1206,8 +1240,8 @@ String getSetLevelCmds(Number level, Number duration=null, Integer endPoint=0) {
 	// 0x01..0x7F 1 second (0x01) to 127 seconds (0x7F) in 1 second resolution.
 	// 0x80..0xFE 1 minute (0x80) to 127 minutes (0xFE) in 1 minute resolution.
 	// 0xFF Factory default duration.
-	Short modelNum = deviceModelShort
-	Short durationVal = validateRange(duration, -1, -1, 127)
+
+	Short durationVal = validateRange(duration, -1, -1, 254)
 	if (duration == null || durationVal == -1) {
 		durationVal = 0xFF
 	}
