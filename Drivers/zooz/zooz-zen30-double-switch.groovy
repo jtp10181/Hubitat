@@ -15,6 +15,7 @@ Changelog:
   ### Fixed
   - Fixed lifeline association checking on ZEN30
   - Convert signed parameter values to unsigned
+  - Fixed error when using buttons from dashboard
 
 ## [1.6.2] - 2022-08-11 (@jtp10181)
   ### Added
@@ -1304,7 +1305,7 @@ void sendSwitchEvents(rawVal, String type, Integer ep=0) {
 	}
 }
 
-void sendBasicButtonEvent(Number buttonId, String name) {
+void sendBasicButtonEvent(buttonId, String name) {
 	String desc = "button ${buttonId} ${name} (digital)"
 	sendEventLog(name:name, value:buttonId, type:"digital", desc:desc, isStateChange:true)
 }

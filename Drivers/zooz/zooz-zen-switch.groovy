@@ -17,6 +17,7 @@ Changelog:
   - Set Level Duration supports up to 254s for 2x and 7,620s (127 mins) for 7x
   ### Fixed
   - Convert signed parameter values to unsigned
+  - Fixed error when using buttons from dashboard
 
 ## [1.6.2] - 2022-08-11 (@jtp10181)
   ### Added
@@ -1117,7 +1118,7 @@ void sendSwitchEvents(rawVal, String type, Integer ep=0) {
 	sendEventLog(name:"switch", value:value, type:type, desc:desc, ep)
 }
 
-void sendBasicButtonEvent(Number buttonId, String name) {
+void sendBasicButtonEvent(buttonId, String name) {
 	String desc = "button ${buttonId} ${name} (digital)"
 	sendEventLog(name:name, value:buttonId, type:"digital", desc:desc, isStateChange:true)
 }

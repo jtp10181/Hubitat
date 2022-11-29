@@ -5,12 +5,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [1.6.3] - 2022-11-22 (@jtp10181)
-### Changed
-- Enabled parameter 7 for ZEN72 on new firmware
-- Set Level Duration supports up to 254s for 2x and 7,620s (127 mins) for 7x
-### Fixed
-- Fixed lifeline association checking on ZEN30
-- Convert signed parameter values to unsigned
+  ### Changed
+  - Enabled parameter 7 for ZEN72 on new firmware
+  - Set Level Duration supports up to 254s for 2x and 7,620s (127 mins) for 7x
+  ### Fixed
+  - Fixed lifeline association checking on ZEN30
+  - Convert signed parameter values to unsigned
+  - Fixed error when using buttons from dashboard
 
 ## [1.6.2] - 2022-08-11 (@jtp10181)
   ### Added
