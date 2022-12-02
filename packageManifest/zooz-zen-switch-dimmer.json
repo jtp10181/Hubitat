@@ -6,6 +6,7 @@
   "documentationLink": "https://github.com/jtp10181/Hubitat/tree/main/Drivers/zooz",
   "communityLink": "https://community.hubitat.com/t/release-zooz-zen-switches-advanced-drivers/58649",
   "releaseNotes": "Version [1.6.3] - 2022-11-22  (@jtp10181)\n Check community post and changelog in driver code for full details.",
+  "version": "1.6.3",
   "drivers": [
     {
       "id": "2d54004e-e51e-4abf-a4ac-6a73c9e587f4",

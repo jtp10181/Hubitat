@@ -8,7 +8,8 @@
       "name": "Zooz Switches Advanced Drivers",
       "category": "Control",
       "location": "https://raw.githubusercontent.com/jtp10181/Hubitat/main/packageManifest/zooz-zen-switch-dimmer.json",
-      "description": "Supported Switches / Dimmers: ZEN21, ZEN22, ZEN23, ZEN24, ZEN26, ZEN27, ZEN71, ZEN72, ZEN73, ZEN74, ZEN76, ZEN77, ZEN30",
+      "description": "Zooz Switch & Dimmer drivers with advanced features and settings: <br>ZEN21, ZEN22, ZEN23, ZEN24, ZEN26, ZEN27, ZEN71, ZEN72, ZEN73, ZEN74, ZEN76, ZEN77, ZEN30",
+      "descriptive": "<p><strong>Features:</strong></p>\n<ul>\n\t<li>Supports all security modes including S2</li>\n\t<li>All configuration variables available with designated defaults per Zooz</li>\n\t<li>All Association Groups are available - check Zooz docs for specifics</li>\n\t<li>Scene Functions matching Zooz docs (10 unique actions) - MUST Enable Scene Control parameter on some models</li>\n\t<li>Brightness Correction - allows you to set min/max brightness but it will display as 1-100% on your dashboard! See this Post: <a href=\"https://community.hubitat.com/t/release-zooz-zen-switches-advanced-drivers/58649/17\">Check HERE for Details</a></li>\n\t<li>Full Supervision Support - for outbound set/remove commands <a href=\"https://community.hubitat.com/t/release-zooz-zen-switches-advanced-drivers/58649/168\">Check HERE for Details</a></li>\n\t<li>Set Level duration up to 127 minutes for 7x models for smooth transitions <a href=\"https://community.hubitat.com/t/driver-zooz-zen-switches-advanced-and-dimmers/58649/351\">Check HERE for Details</a></li>\n</ul>\n<p>For more info on the advanced settings and button mapping check the <a href=\"https://www.support.getzooz.com/kb/section/8/\">Zooz Support Documentation</a>. Select your switch model &gt; Z-Wave Questions &gt; Advanced Settings (bottom right corner)</p>",
       "tags": [
         "Lights & Switches",
         "ZWave"
@@ -19,7 +20,8 @@
       "name": "Zooz Sensors Advanced Drivers",
       "category": "Utility",
       "location": "https://raw.githubusercontent.com/jtp10181/Hubitat/main/packageManifest/zooz-zen-sensors.json",
-      "description": "Supported Sensors: ZSE40, ZSE44",
+      "description": "Zooz Sensor drivers with advanced features and settings: <br>ZSE40, ZSE44",
+      "descriptive": "<p><strong>Supported Models:</strong></p>\n<ul>\n\t<li>ZSE40 Multi-Sensor (v2 500) - Min Firmware 32.02 (known to work)</li>\n\t<li>ZSE40 Multi-Sensor (v2 700) - Original Firmware 32.32</li>\n\t<li>ZSE44 Temp/Humidity Sensor - All Firmware</li>\n</ul>\n<p><strong>NOTE:</strong>&nbsp;The ZSE40 v2 with 500 chip has a final firmware update to 32.12 that can be requested from Zooz. This sends alerts to the hub at the start and end of active motion only. The repeated alerts every 8 seconds was removed. This will greatly cut down on excessive z-wave traffic.&nbsp;For the original ZSE40 (500 series) FW &lt; 32.12 I would HIGHLY recommend changing&nbsp;<strong>Parameter 8</strong>&nbsp;to &quot;Notification Reports Only&quot;. For the ZSE40-700 I am myself leaving it at the default to make sure no motion reports get missed.</p>\n<p><strong>Features:</strong></p>\n<ul>\n\t<li>All configuration variables available with designated defaults per Zooz</li>\n\t<li>Pressing configure will queue up a full reconfigure next wake up.</li>\n\t<li>Pressing Refresh will queue up a full refresh next wake up.</li>\n\t<li>Normally at Wake Up it will just request the battery level to avoid excessive commands.</li>\n\t<li>If you change settings and save it will queue them up to be set at the next wake up. So you can force it to wake up right away or just leave it and let it do it on its own.</li>\n</ul>\n<p>For more info on the advanced settings check the <a href=\"https://www.support.getzooz.com/kb/section/8/\">Zooz Support Documentation</a>. Select your model &gt; Z-Wave Questions &gt; Advanced Settings (bottom right corner)</p>",
       "tags": [
         "Multi Sensors",
         "Motion Control",
@@ -32,7 +34,8 @@
       "name": "Zooz Relays Advanced Drivers",
       "category": "Control",
       "location": "https://raw.githubusercontent.com/jtp10181/Hubitat/main/packageManifest/zooz-zen-relays.json",
-      "description": "Supported Relays: ZEN17",
+      "description": "Zooz Relay drivers with advanced features and settings: <br>ZEN17, ZEN51, ZEN52",
+      "descriptive": "<p><strong>Supported Models:</strong></p>\n<ul>\n\t<li>ZEN17 Companion ONLY - Driver v1.0.0, Min Firmware 1.04</li>\n\t<li>ZEN51 Relay - Driver v0.2.0, Min Firmware 1.40</li>\n\t<li>ZEN52 Double Relay - Driver v0.2.0, Min Firmware 1.40</li>\n</ul>\n<p><strong>NOTE:</strong> See Instructions on Community Post!</p>\n<p><strong>Features:</strong></p>\n<ul>\n\t<li>All configuration variables available with designated defaults per Zooz</li>\n\t<li>ZEN17 Sync from Device to grab existing settings as a starting point</li>\n\t<li>Scene Functions matching Zooz docs (10 unique actions)</li>\n</ul>\n<p>For more info on the advanced settings check the <a href=\"https://www.support.getzooz.com/kb/section/8/\">Zooz Support Documentation</a>. Select your model &gt; Z-Wave Questions &gt; Advanced Settings (bottom right corner)</p>",
       "tags": [
         "Garage Doors",
         "Lights & Switches",
@@ -45,7 +48,8 @@
       "name": "Zooz Plugs Advanced Drivers",
       "category": "Control",
       "location": "https://raw.githubusercontent.com/jtp10181/Hubitat/main/packageManifest/zooz-zen-plugs.json",
-      "description": "Supported Plugs: ZEN04, ZEN05",
+      "description": "Zooz Plug drivers with advanced features and settings: <br>ZEN04, ZEN05, ZEN14",
+      "descriptive": "<p><strong>Supported Models:</strong></p>\n<ul>\n\t<li>ZEN04 Smart Plug - <a href=\"https://www.thesmartesthouse.com/products/zooz-700-series-z-wave-plus-smart-plug-zen04\">[Product Info]</a> <a href=\"https://www.support.getzooz.com/kb/article/1114-zen04-smart-plug-advanced-settings/\">[Settings Docs]</a></li>\n\t<li>ZEN05 Outdoor Plug - <a href=\"https://www.thesmartesthouse.com/products/zooz-700-series-z-wave-plus-outdoor-smart-plug-zen05\">[Product Info]</a> <a href=\"https://www.support.getzooz.com/kb/article/1118-zen05-outdoor-plug-advanced-settings/\">[Settings Docs]</a></li>\n\t<li>ZEN14 Outdoor Double Plug - <a href=\"https://www.thesmartesthouse.com/products/zooz-700-series-z-wave-plus-outdoor-double-plug-zen14\">[Product Info]</a> <a href=\"https://www.support.getzooz.com/kb/article/1122-zen14-double-outdoor-plug-advanced-settings/\">[Settings Docs]</a></li>\n</ul>\n<p><strong>Features:</strong></p>\n<ul>\n\t<li>All configuration variables available with designated defaults per Zooz</li>\n\t<li>Basic energy monitoring from collected metrics (on available models)</li>\n</ul>\n<p>For more info on the advanced settings check the <a href=\"https://www.support.getzooz.com/kb/section/8/\">Zooz Support Documentation</a>. Select your model &gt; Z-Wave Questions &gt; Advanced Settings (bottom right corner)</p>",
       "tags": [
         "Energy Monitoring",
         "Lights & Switches",

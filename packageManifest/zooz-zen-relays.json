@@ -6,6 +6,7 @@
   "documentationLink": "https://github.com/jtp10181/Hubitat/tree/main/Drivers/zooz",
   "communityLink": "https://community.hubitat.com/t/zooz-relays-advanced/98194",
   "releaseNotes": "Version ZEN17:[1.0.0], ZEN51:[0.2.0] - 2021-08-22 (@jtp10181)\n Check community post full details.",
+  "version": "1.0.0",
   "drivers": [
     {
       "id": "446b0cae-c749-447f-9655-3e3463e9f01a",

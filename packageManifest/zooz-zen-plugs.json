@@ -6,6 +6,7 @@
   "documentationLink": "https://github.com/jtp10181/Hubitat/tree/main/Drivers/zooz",
   "communityLink": "https://community.hubitat.com/t/zooz-smart-plugs-advanced/98333",
   "releaseNotes": "Version [0.2.1] - 2022-08-11 (@jtp10181)\n Check community post for full details.",
+  "version": "0.2.1",
   "drivers": [
     {
       "id": "fd71eac0-0b3e-4ebe-bb23-603d8572c187",

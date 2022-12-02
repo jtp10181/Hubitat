@@ -6,6 +6,7 @@
   "documentationLink": "https://github.com/jtp10181/Hubitat/tree/main/Drivers/zooz",
   "communityLink": "https://community.hubitat.com/t/driver-zooz-sensors-advanced-zse40-zse44/81074",
   "releaseNotes": "Version [1.0.5] - 2022-08-06 (@jtp10181)\n Check community post for full details.",
+  "version": "1.0.5",
   "drivers": [
     {
       "id": "cbe3bb01-e8cd-416e-9af6-cc18fd451444",
