@@ -9,6 +9,15 @@
 
 Changelog:
 
+## [1.0.0] - 2022-12-12 (@jtp10181)
+  ### Added
+  - Support to track time for energy reporting and reset it on the device
+  - Command to set any parameter (can be used in RM)
+  - Optional High/Low tracking, must be turned on in Preferences (ZEN04 Only)
+  - Accessory attribute to track connected device state (ZEN04 Only)
+  ### Changed
+  - Increased max precision rounding to 3 decimals
+
 ## [0.2.1] - 2022-08-11 (@jtp10181)
   ### Added
   - Flash capability / command
@@ -49,7 +58,7 @@ Changelog:
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "0.2.1"
+@Field static final String VERSION = "1.0.0"
 @Field static final Map deviceModelNames =
 	["7000:B002":"ZEN04", "7000:B001":"ZEN05", "7000:B003":"ZEN14"]
 
@@ -72,12 +81,23 @@ metadata {
 		capability "Flash"
 
 		command "refreshParams"
-		//command "resetStats"
+		command "resetStats"
+
+		command "setParameter",[[name:"parameterNumber*",type:"NUMBER", description:"Parameter Number", constraints:["NUMBER"]],
+			[name:"value*",type:"NUMBER", description:"Parameter Value", constraints:["NUMBER"]],
+			[name:"size",type:"NUMBER", description:"Parameter Size", constraints:["NUMBER"]]]
 
 		//DEBUGGING
 		//command "debugShowVars"
 
 		attribute "syncStatus", "string"
+		attribute "accessory", "string"
+		attribute "amperageHigh", "number"
+		attribute "amperageLow", "number"
+		attribute "powerHigh", "number"
+		attribute "powerLow", "number"
+		attribute "voltageHigh", "number"
+		attribute "voltageLow", "number"
 
 		fingerprint mfr:"027A", prod:"7000", deviceId:"B002", inClusters:"0x5E,0x55,0x9F,0x6C", deviceJoinName:"Zooz ZEN04 Plug"
 		fingerprint mfr:"027A", prod:"7000", deviceId:"B001", inClusters:"0x5E,0x55,0x9F,0x6C", deviceJoinName:"Zooz ZEN05 Outdoor Plug"
@@ -108,6 +128,18 @@ metadata {
 						required: false
 				}
 			}
+		}
+
+		if (state.deviceModel == 'ZEN04') {
+			input "accThreshold", "number",
+				title: fmtTitle("Accessory State Threshold (Watts)"),
+				description: fmtDesc("• Sets accessory status when power is above threshold.<br>• 0 = Disabled"),
+				defaultValue: 0, range: 0..2000, required: false
+
+			input "highLowEnable", "bool",
+				title: fmtTitle("Enable High/Low Attributes"),
+				description: fmtDesc("• Track high and low values in separate attributes"),
+				defaultValue: false
 		}
 
 		//Logging options similar to other Hubitat drivers
@@ -263,6 +295,7 @@ CommandClassReport - class:0x9F, version:1
 ********************************************************************/
 void installed() {
 	logWarn "installed..."
+	state.energyTime = new Date().time
 	createChildDevices()
 	initialize()
 }
@@ -294,6 +327,14 @@ void updated() {
 	logDebug "Description logging is: ${txtEnable == true}"
 
 	if (debugEnable) runIn(1800, debugLogsOff)
+
+	if (!accThreshold) { 
+		device.deleteCurrentState("accessory") 
+	}
+	if (highLowEnable != state.highLow) {
+		state.highLow = highLowEnable
+		resetStats(false)
+	}
 
 	runIn(1, executeConfigureCmds)
 }
@@ -373,16 +414,46 @@ void refreshParams() {
 	if (cmds) sendCommands(cmds)
 }
 
+void resetStats(fullReset = true) {
+	logDebug "reset..."
+	
+	runIn(5, refresh)
+		
+	device.deleteCurrentState("amperageHigh")
+	device.deleteCurrentState("amperageLow")
+	device.deleteCurrentState("powerHigh")
+	device.deleteCurrentState("powerLow")
+	device.deleteCurrentState("voltageHigh")
+	device.deleteCurrentState("voltageLow")
+
+	if (fullReset) {
+		state.energyTime = new Date().time
+		state.remove("energyDuration")
+		sendCommands(meterResetCmd(0))
+	}
+}
+
+String setParameter(paramNum, value, size = null) {
+	Map param = getParam(paramNum)
+	if (param && !size) { size = param.size	}
+
+	if (paramNum == null || value == null || size == null) {
+		logWarn "Incomplete parameter list supplied..."
+		logWarn "Syntax: setParameter(paramNum, value, size)"
+		return
+	}
+	logDebug "setParameter ( number: $paramNum, value: $value, size: $size )" + (param ? " [${param.name}]" : "")
+	return secureCmd(configSetCmd([num: paramNum, size: size], value as Integer))
+}
+
 /*** Child Capabilities ***/
 def componentOn(cd) {
 	logDebug "componentOn from ${cd.displayName} (${cd.deviceNetworkId})"
-	state.isDigital = true
 	sendCommands(getOnOffCmds(0xFF, getChildEP(cd)))
 }
 
 def componentOff(cd) {
 	logDebug "componentOff from ${cd.displayName} (${cd.deviceNetworkId})"
-	state.isDigital = true
 	sendCommands(getOnOffCmds(0x00, getChildEP(cd)))
 }
 
@@ -496,8 +567,8 @@ void zwaveEvent(hubitat.zwave.commands.switchbinaryv1.SwitchBinaryReport cmd, ep
 void zwaveEvent(hubitat.zwave.commands.meterv3.MeterReport cmd, ep=0) {
 	logTrace "${cmd} (scaledMeterValue: ${cmd.scaledMeterValue}) (ep ${ep})"
 
-	BigDecimal val = safeToDec(cmd.scaledMeterValue, 0, Math.min(cmd.precision,2))
-	logDebug "MeterReport: scale:${cmd.scale}, scaledMeterValue:${cmd.scaledMeterValue} (${val})"
+	BigDecimal val = safeToDec(cmd.scaledMeterValue, 0, Math.min(cmd.precision,3))
+	logDebug "MeterReport: scale:${cmd.scale}, scaledMeterValue:${cmd.scaledMeterValue} (${val}), precision:${cmd.precision}"
 
 	switch (cmd.scale) {
 		case meterEnergy.scale:
@@ -505,6 +576,7 @@ void zwaveEvent(hubitat.zwave.commands.meterv3.MeterReport cmd, ep=0) {
 			break
 		case meterPower.scale:
 			sendMeterEvents(meterPower, val)
+			sendAccessoryEvents(val)
 			break
 		case meterVoltage.scale:
 			sendMeterEvents(meterVoltage, val)
@@ -768,10 +840,40 @@ void sendSwitchEvents(rawVal, String type, Integer ep=0) {
 
 void sendMeterEvents(meter, value, Integer ep=0) {
 	sendEventLog(name:meter.name, value:value, unit:meter.unit, ep)
+
+	if (highLowEnable && value != 0 && ep == 0) {
+		Map low = [name: "${meter.name}Low", value: device.currentValue("${meter.name}Low")]
+		Map high = [name: "${meter.name}High", value: device.currentValue("${meter.name}High")]
+		
+		if (value > high.value) {
+			sendEventLog(name:high.name, value:value, unit:meter.unit, ep)
+		}
+		if (value < low.value || low.value == null) {
+			sendEventLog(name:low.name, value:value, unit:meter.unit, ep)
+		}
+	}
 }
 
 void sendEnergyEvents(value, Integer ep=0) {
 	sendEventLog(name:meterEnergy.name, value:value, unit:meterEnergy.unit, ep)
+
+	//Calculate the energyDuration
+	if (!state.energyTime) { state.energyTime = new Date().time }
+
+	BigDecimal duration = ((new Date().time) - state.energyTime)/60000
+	if (duration >= (24 * 60)) {
+		state.energyDuration = safeToDec(duration/(24*60), 0, 2) + " Days"
+	} else {
+		state.energyDuration = safeToDec(duration/60, 0, 2) + " Hours"
+	}
+}
+
+void sendAccessoryEvents(powerVal, Integer ep=0) {
+	if (accThreshold) {
+		String value = (powerVal > accThreshold) ? "on" : "off"
+		String desc = "accessory is turned ${value}"
+		sendEventLog(name:"accessory", value:value, desc:desc, ep)
+	}
 }
 
 
