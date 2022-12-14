@@ -3,7 +3,7 @@
 
 ## Zooz ZEN Switches Advanced Drivers  
 [![zooz-switch-version](https://img.shields.io/badge/dynamic/json?color=blue&label=zooz-switch&prefix=v&query=%24.drivers.0.version&url=https%3A%2F%2Fraw.githubusercontent.com%2Fjtp10181%2FHubitat%2Fmain%2FpackageManifest%2Fzooz-zen-switch-dimmer.json&logo=github)](https://github.com/jtp10181/Hubitat/tags)
-[![changelog badge](https://img.shields.io/badge/changelog-v1.6.3-important)](CHANGELOG-switch.md)  
+[![changelog badge](https://img.shields.io/badge/changelog-v1.6.4-important)](CHANGELOG-switch.md)  
 Support: https://community.hubitat.com/t/zooz-zen-switches-advanced/58649
 
 ## Zooz ZSE Sensors Advanced Drivers  
