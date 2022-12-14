@@ -11,6 +11,10 @@
 
 Changelog:
 
+## [1.6.4] - 2022-12-13 (@jtp10181)
+  ### Added
+  - Command to set any parameter (can be used in RM)
+
 ## [1.6.3] - 2022-11-22 (@jtp10181)
   ### Changed
   - Enabled parameter 7 for ZEN72 on new firmware
@@ -208,7 +212,7 @@ https://github.com/krlaframboise/SmartThings/tree/master/devicetypes/zooz/
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "1.6.3"
+@Field static final String VERSION = "1.6.4"
 @Field static final Map deviceModelNames =
 	["B112:1F1C":"ZEN22", "B112:261C":"ZEN24", "A000:A002":"ZEN27",
 	"7000:A002":"ZEN72", "7000:A004":"ZEN74", "7000:A007":"ZEN77"]
@@ -242,6 +246,9 @@ metadata {
 			[name:"Select Color*", description:"Works ONLY on ZEN7x Series!", type: "ENUM", constraints: ledColorOptions] ]
 		command "setLEDMode", [
 			[name:"Select Mode*", description:"This Sets Preference (#2)*", type: "ENUM", constraints: ledModeCmdOptions] ]
+		command "setParameter",[[name:"parameterNumber*",type:"NUMBER", description:"Parameter Number", constraints:["NUMBER"]],
+			[name:"value*",type:"NUMBER", description:"Parameter Value", constraints:["NUMBER"]],
+			[name:"size",type:"NUMBER", description:"Parameter Size", constraints:["NUMBER"]]]
 
 		//DEBUGGING
 		//command "debugShowVars"
@@ -503,7 +510,7 @@ void debugShowVars() {
 	zwaveRampRateOff: [ num: 29,
 		title: "Z-Wave Ramp Rate to Full OFF",
 		size: 1, defaultVal: 255,
-		options: [255:"Match Physical",0:"Instant On"], //rampRateOptions
+		options: [255:"Match Physical",0:"Instant Off"], //rampRateOptions
 		firmVer: 2.0, firmVerM:[10:10],
 		changes: [22:[num: null], 24:[num: null], 27:[num: null],
 			72:[], 74:[], 77:[firmVer:2.10, firmVerM:[10:20]]
@@ -734,6 +741,19 @@ void refreshParams() {
 	}
 
 	if (cmds) sendCommands(cmds)
+}
+
+String setParameter(paramNum, value, size = null) {
+	Map param = getParam(paramNum)
+	if (param && !size) { size = param.size	}
+
+	if (paramNum == null || value == null || size == null) {
+		logWarn "Incomplete parameter list supplied..."
+		logWarn "Syntax: setParameter(paramNum, value, size)"
+		return
+	}
+	logDebug "setParameter ( number: $paramNum, value: $value, size: $size )" + (param ? " [${param.name}]" : "")
+	return secureCmd(configSetCmd([num: paramNum, size: size], value as Integer))
 }
 
 

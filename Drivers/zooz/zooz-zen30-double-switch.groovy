@@ -9,6 +9,10 @@
 
 Changelog:
 
+## [1.6.4] - 2022-12-13 (@jtp10181)
+  ### Added
+  - Command to set any parameter (can be used in RM)
+
 ## [1.6.3] - 2022-11-22 (@jtp10181)
   ### Changed
   - Set Level Duration supports up to 254s
@@ -160,7 +164,7 @@ https://github.com/krlaframboise/SmartThings/blob/master/devicetypes/krlaframboi
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "1.6.3"
+@Field static final String VERSION = "1.6.4"
 @Field static final Map deviceModelNames = ["A000:A008":"ZEN30"]
 
 metadata {
@@ -195,6 +199,9 @@ metadata {
 		command "setLEDMode", [
 			[name:"Select LED*", type: "ENUM", constraints: ["Dimmer","Relay"] ],
 			[name:"Select Mode*", description:"This Sets Preference (#2)*", type: "ENUM", constraints: ledModeCmdOptions] ]
+		command "setParameter",[[name:"parameterNumber*",type:"NUMBER", description:"Parameter Number", constraints:["NUMBER"]],
+			[name:"value*",type:"NUMBER", description:"Parameter Value", constraints:["NUMBER"]],
+			[name:"size",type:"NUMBER", description:"Parameter Size", constraints:["NUMBER"]]]
 
 		//DEBUGGING
 		//command "debugShowVars"
@@ -622,6 +629,19 @@ void refreshParams() {
 	}
 
 	if (cmds) sendCommands(cmds)
+}
+
+String setParameter(paramNum, value, size = null) {
+	Map param = getParam(paramNum)
+	if (param && !size) { size = param.size	}
+
+	if (paramNum == null || value == null || size == null) {
+		logWarn "Incomplete parameter list supplied..."
+		logWarn "Syntax: setParameter(paramNum, value, size)"
+		return
+	}
+	logDebug "setParameter ( number: $paramNum, value: $value, size: $size )" + (param ? " [${param.name}]" : "")
+	return secureCmd(configSetCmd([num: paramNum, size: size], value as Integer))
 }
 
 /*** Child Device Methods ***/

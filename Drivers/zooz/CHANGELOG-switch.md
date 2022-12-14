@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.4] - 2022-12-13 (@jtp10181)
+  ### Added
+  - Command to set any parameter (can be used in RM)
+
 ## [1.6.3] - 2022-11-22 (@jtp10181)
   ### Changed
   - Enabled parameter 7 for ZEN72 on new firmware
@@ -177,7 +181,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 https://github.com/krlaframboise/SmartThings/tree/master/devicetypes/zooz/
   - Initial Release (for SmartThings)
 
-[Unreleased]: https://github.com/jtp10181/Hubitat/compare/switch-v1.6.3...HEAD
+[Unreleased]: https://github.com/jtp10181/Hubitat/compare/switch-v1.6.4...HEAD
+[1.6.4]: https://github.com/jtp10181/Hubitat/compare/switch-v1.6.3...switch-v1.6.4
 [1.6.3]: https://github.com/jtp10181/Hubitat/compare/switch-v1.6.2...switch-v1.6.3
 [1.6.2]: https://github.com/jtp10181/Hubitat/compare/switch-v1.6.0...switch-v1.6.2
 [1.6.0]: https://github.com/jtp10181/Hubitat/compare/switch-v1.5.3...switch-v1.6.0
