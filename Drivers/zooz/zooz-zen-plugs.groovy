@@ -1,6 +1,7 @@
 /*
  *  Zooz ZEN Plugs Universal
  *    - Model: ZEN04, ZEN05, ZEN14 - All Firmware
+ *    - Model: ZEN15 - MINIMUM FIRMWARE 1.06
  *
  *  For Support, Information, and Updates:
  *  https://community.hubitat.com/t/zooz-smart-plugs/98333
@@ -8,6 +9,16 @@
  *
 
 Changelog:
+
+## [1.1.0] - 2023-01-08 (@jtp10181)
+  ### Added
+  - Support for ZEN15
+  - energyDuration as an attribute so it can display on dashboard
+  - Over limit checking with Warn log and warnings count attribute
+  ### Changed
+  - Probing device for power metering support instead of hard coded by model
+  - Reworked the meter lists to implement the limits
+  - Reworked switch event handling to catch BasicReport and SwitchBinaryReport
 
 ## [1.0.0] - 2022-12-12 (@jtp10181)
   ### Added
@@ -58,9 +69,9 @@ Changelog:
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "1.0.0"
+@Field static final String VERSION = "1.1.0"
 @Field static final Map deviceModelNames =
-	["7000:B002":"ZEN04", "7000:B001":"ZEN05", "7000:B003":"ZEN14"]
+	["7000:B002":"ZEN04", "7000:B001":"ZEN05", "7000:B003":"ZEN14", "0101:000D":"ZEN15"]
 
 metadata {
 	definition (
@@ -92,12 +103,14 @@ metadata {
 
 		attribute "syncStatus", "string"
 		attribute "accessory", "string"
+		attribute "energyDuration", "string"
 		attribute "amperageHigh", "number"
 		attribute "amperageLow", "number"
 		attribute "powerHigh", "number"
 		attribute "powerLow", "number"
 		attribute "voltageHigh", "number"
 		attribute "voltageLow", "number"
+		attribute "warnings", "number"
 
 		fingerprint mfr:"027A", prod:"7000", deviceId:"B002", inClusters:"0x5E,0x55,0x9F,0x6C", deviceJoinName:"Zooz ZEN04 Plug"
 		fingerprint mfr:"027A", prod:"7000", deviceId:"B001", inClusters:"0x5E,0x55,0x9F,0x6C", deviceJoinName:"Zooz ZEN05 Outdoor Plug"
@@ -105,6 +118,7 @@ metadata {
 		fingerprint mfr:"027A", prod:"7000", deviceId:"B002", inClusters:"0x5E,0x25,0x70,0x85,0x8E,0x59,0x32,0x71,0x55,0x86,0x72,0x5A,0x87,0x73,0x9F,0x6C,0x7A", deviceJoinName:"Zooz ZEN04 Plug"
 		fingerprint mfr:"027A", prod:"7000", deviceId:"B001", inClusters:"0x5E,0x25,0x70,0x85,0x8E,0x59,0x55,0x86,0x72,0x5A,0x87,0x73,0x9F,0x6C,0x7A", deviceJoinName:"Zooz ZEN05 Outdoor Plug"
 		fingerprint mfr:"027A", prod:"7000", deviceId:"B003", inClusters:"0x5E,0x25,0x85,0x8E,0x59,0x55,0x86,0x72,0x5A,0x87,0x73,0x98,0x9F,0x60,0x6C,0x7A,0x70", deviceJoinName:"Zooz ZEN14 Outdoor Double Plug"
+		fingerprint mfr:"027A", prod:"0101", deviceId:"000D", inClusters:"0x5E,0x25,0x32,0x27,0x2C,0x2B,0x70,0x85,0x59,0x72,0x86,0x7A,0x73,0x5A", deviceJoinName: "Zooz ZEN15 Plug"
 	}
 
 	preferences {
@@ -130,7 +144,7 @@ metadata {
 			}
 		}
 
-		if (state.deviceModel == 'ZEN04') {
+		if (state.powerMetering) {
 			input "accThreshold", "number",
 				title: fmtTitle("Accessory State Threshold (Watts)"),
 				description: fmtDesc("• Sets accessory status when power is above threshold.<br>• 0 = Disabled"),
@@ -173,6 +187,7 @@ void debugShowVars() {
 		title: "LED Indicator",
 		size: 1, defaultVal: 0,
 		options: [0:"LED On When Switch On", 1:"LED On When Switch Off", 2:"LED Always Off", 3:"LED Always On"],
+		changes: [15:[num:27, defaultVal:1, options:[0:"LED On When Device Plugged In", 1:"LED On When Device is On", 2:"LED On 5 Seconds at On/Off", 3:"LED Always Off"]]]
 	],
 	ledBrightness: [ num: null,
 		title: "LED Brightness",
@@ -184,7 +199,8 @@ void debugShowVars() {
 		title: "Auto Turn-Off Timer",
 		size: 4, defaultVal: 0,
 		description: "Time in minutes, 0 = Disabled",
-		range: 0..65535
+		range: 0..65535,
+		changes: [15:[num:34, size:1, range:0..99]]
 	],
 	offTimer2: [ num: null,
 		title: "Auto Turn-Off Timer (Outlet 2)",
@@ -198,7 +214,7 @@ void debugShowVars() {
 		size: 4, defaultVal: 0,
 		description: "Time in minutes, 0 = Disabled",
 		range: 0..65535,
-		changes: [04:[num:3]]
+		changes: [04:[num:3], 15:[num:33, size:1, range:0..99]]
 	],
 	onTimer2: [ num: null,
 		title: "Auto Turn-On Timer (Outlet 2)",
@@ -211,42 +227,99 @@ void debugShowVars() {
 		title: "Behavior After Power Failure",
 		size: 1, defaultVal: 2,
 		options: [2:"Restores Last Status", 0:"Forced to Off", 1:"Forced to On"],
-		changes: [04:[num:4, defaultVal:0, options:[0:"Restores Last Status", 1:"Forced to Off", 2:"Forced to On"]]]
+		changes: [04:[num:4, defaultVal:0, options:[0:"Restores Last Status", 1:"Forced to Off", 2:"Forced to On"]],
+			15:[num:21, defaultVal:0, options:[0:"Restores Last Status", 2:"Forced to Off", 1:"Forced to On"]]]
 	],
 	manualControl: [ num: null,
 		title: "Physical Button On/Off Control",
 		size: 1, defaultVal: 1,
 		options: [1:"Enabled", 0:"Disabled"],
-		changes:[05:[num:8], 14:[num:8]]
+		changes: [05:[num:8], 14:[num:8], 15:[num:30]]
 	],
-	wattsThreshold: [ num: null,
+	//Undocumented ZEN15 Setting for Z-Wave On/Off
+	zwaveOnControl: [ num: null,
+		title: "Z-Wave ON Control Allowed",
+		size: 1, defaultVal: 1,
+		options: [1:"Enabled", 0:"Disabled"],
+		changes: [15:[num:31]]
+	],
+	//Undocumented ZEN15 Setting for Z-Wave On/Off
+	zwaveOffControl: [ num: null,
+		title: "Z-Wave OFF Control Allowed",
+		size: 1, defaultVal: 1,
+		options: [1:"Enabled", 0:"Disabled"],
+		changes: [15:[num:32]]
+	],
+	powerThreshold: [ num: null,
 		title: "Power (Watts) Reporting Threshold",
 		size: 1, defaultVal: 10,
-		description: "Report when changes by this amount",
+		description: "Report when changed by this amount",
 		range: 5..50,
-		changes:[04:[num:5]]
+		changes: [04:[num:5], 15:[num:151, size:2, defaultValue:50, range:0..32767]]
 	],
-	wattsFrequency: [ num: null,
+	powerPctThreshold: [ num: null,
+		title: "Power (Watts) Reporting Percentage Threshold",
+		size: 1, defaultVal: 10,
+		description: "Report when changed by this percent from previous value",
+		range: 0..99,
+		changes: [15:[num:152]]
+	],
+	powerFrequency: [ num: null,
 		title: "Power (Watts) Reporting Frequency",
-		size: 4, defaultVal: 60,
+		size: 4, defaultVal: 10,
 		description: "Minimum number of minutes between wattage reports",
 		range: 1..65535,
-		changes:[04:[num:6]]
+		changes: [04:[num:6], 15:[num:171, range:0..44640]]
 	],
 	currentThreshold: [ num: null,
 		title: "Current (Amps) Reporting Threshold",
 		size: 1, defaultVal: 10,
-		description: "[1 = 0.1A, 10 = 1A]  Report when changes by this amount",
+		description: "[1 = 0.1A, 10 = 1A]  Report when changed by this amount",
 		range: 1..10,
-		changes:[04:[num:7]]
+		changes: [04:[num:7]]
+	],
+	currentFrequency: [ num: null,
+		title: "Current (Amps) Reporting Frequency",
+		size: 4, defaultVal: 60,
+		description: "Minimum number of minutes between amperage reports",
+		range: 0..44640,
+		changes: [15:[num:174]]
 	],
 	energyThreshold: [ num: null,
 		title: "Energy (kWh) Reporting Threshold",
 		size: 1, defaultVal: 10,
-		description: "[1 = 0.01kWh, 100 = 1kWh]  Report when changes by this amount",
+		description: "[1 = 0.01kWh, 100 = 1kWh]  Report when changed by this amount",
 		range: 1..100,
-		changes:[04:[num:8]]
+		changes: [04:[num:8]]
 	],
+	energyFrequency: [ num: null,
+		title: "Energy (kWh) Reporting Frequency",
+		size: 4, defaultVal: 60,
+		description: "Minimum number of minutes between energy reports",
+		range: 0..44640,
+		changes: [15:[num:172]]
+	],
+	voltageFrequency: [ num: null,
+		title: "Voltage (V) Reporting Frequency",
+		size: 4, defaultVal: 60,
+		description: "Minimum number of minutes between voltage reports",
+		range: 0..44640,
+		changes: [15:[num:173]]
+	],
+	overloadProtection: [ num: null,
+		title: "Overload Protection *See Docs*",
+		size: 1, defaultVal: 1,
+		description: "Zooz DOES NOT recommend disabling this, as it may result in device damage and malfunction!",
+		options: [1:"Enabled", 0:"Disabled"],
+		changes: [15:[num:20]]
+	],
+	statusNotifications: [ num: null,
+		title: "On/Off Status Change Notifications",
+		size: 1, defaultVal: 1,
+		options: [0:"Disabled", 1:"Enabled Always", 2:"Enabled Only for Physical"],
+		hidden: true,
+		changes: [15:[num:24]]
+	]
 ]
 
 /* ZEN04
@@ -284,10 +357,12 @@ CommandClassReport - class:0x9F, version:1
 ]
 
 /*** Static Lists and Settings ***/
-@Field static final Map meterEnergy = [name:"energy", scale:0, unit:"kWh", limit:null]
-@Field static final Map meterPower = [name:"power", scale:2, unit:"W", limit:2000]
-@Field static final Map meterVoltage = [name:"voltage", scale:4, unit:"V", limit:150]
-@Field static final Map meterCurrent = [name:"amperage", scale:5, unit:"A", limit:18]
+@Field static List metersList = [
+	[name:"energy", scale:0, unit:"kWh", limit:null],
+	[name:"power", scale:2, unit:"W", limit:2400],
+	[name:"voltage", scale:4, unit:"V", limit:140],
+	[name:"amperage", scale:5, unit:"A", limit:18]
+]
 @Field static final Map multiChan = [ZEN14:[endpoints:1..2]]
 
 /*******************************************************************
@@ -429,6 +504,8 @@ void resetStats(fullReset = true) {
 	if (fullReset) {
 		state.energyTime = new Date().time
 		state.remove("energyDuration")
+		sendEventLog(name:"energyDuration", value:0)
+		sendEventLog(name:"warnings", value:0)
 		sendCommands(meterResetCmd(0))
 	}
 }
@@ -548,20 +625,25 @@ void zwaveEvent(hubitat.zwave.commands.associationv2.AssociationReport cmd) {
 
 void zwaveEvent(hubitat.zwave.commands.basicv1.BasicReport cmd, ep=0) {
 	logTrace "${cmd} (ep ${ep})"
-	//Some send SwitchBinaryReport AND BasicReport, ignoring BasicReport
+	sendSwitchEvents(cmd.value, null, ep)
 }
 
 void zwaveEvent(hubitat.zwave.commands.switchbinaryv1.SwitchBinaryReport cmd, ep=0) {
 	logTrace "${cmd} (ep ${ep})"
+	sendSwitchEvents(cmd.value, null, ep)
+}
 
-	String type
-	if (ep == 0) {
-		type = (state.isDigital ? "digital" : "physical")
-		state.remove("isDigital")
+void zwaveEvent(hubitat.zwave.commands.meterv3.MeterSupportedReport cmd, ep=0) {
+	logTrace "${cmd} (ep ${ep})"
+
+	String scales = Integer.toBinaryString(cmd.scaleSupported)
+	logDebug "${cmd}, scaleBinary: ${scales}"
+
+	if (cmd.meterType == 1) {
+		logDebug "Power Metering Support Detected and Enabled"
+		state.powerMetering = true
+		state.highLow = highLowEnable
 	}
-	if (type == "physical") flashStop()
-
-	sendSwitchEvents(cmd.value, type, ep)
 }
 
 void zwaveEvent(hubitat.zwave.commands.meterv3.MeterReport cmd, ep=0) {
@@ -570,19 +652,23 @@ void zwaveEvent(hubitat.zwave.commands.meterv3.MeterReport cmd, ep=0) {
 	BigDecimal val = safeToDec(cmd.scaledMeterValue, 0, Math.min(cmd.precision,3))
 	logDebug "MeterReport: scale:${cmd.scale}, scaledMeterValue:${cmd.scaledMeterValue} (${val}), precision:${cmd.precision}"
 
-	switch (cmd.scale) {
-		case meterEnergy.scale:
-			sendEnergyEvents(val)
+	Map meter = metersList.find{ it.scale == cmd.scale }
+	if (meter?.limit && val > meter.limit) {
+		logWarn "IGNORING OVER LIMIT METER REPORT: ${val}${meter.unit} reported, ${meter.name} limit is ${meter.limit}${meter.unit}"
+		logWarn "${cmd} (scaledMeterValue: ${cmd.scaledMeterValue}) (ep ${ep}) ${cmd.getPayload()}"
+		sendEvent(name:"warnings", value:(device.currentValue("warnings")?:0)+1)
+		return
+	}
+
+	switch (meter?.name) {
+		case "energy":
+			sendEnergyEvents(meter, val)
 			break
-		case meterPower.scale:
-			sendMeterEvents(meterPower, val)
+		case "power":
 			sendAccessoryEvents(val)
-			break
-		case meterVoltage.scale:
-			sendMeterEvents(meterVoltage, val)
-			break
-		case meterCurrent.scale:
-			sendMeterEvents(meterCurrent, val)
+		case "voltage":
+		case "amperage":
+			sendMeterEvents(meter, val)
 			break
 		default:
 			logDebug "Unknown Meter Scale: $cmd"
@@ -705,6 +791,12 @@ void executeConfigureCmds() {
 	if (state.resyncAll) clearVariables()
 	state.resyncAll = false
 
+	if (state.powerMetering == null) {
+		logDebug "Probing for Power Metering Support"
+		cmds.add(0, secureCmd(zwave.meterV3.meterSupportedGet()))
+		state.powerMetering = false
+	}
+
 	if (cmds) sendCommands(cmds)
 }
 
@@ -719,13 +811,10 @@ void executeRefreshCmds() {
 	cmds << switchBinaryGetCmd()
 
 	//Refresh Meters
-	if (state.deviceModel == 'ZEN04') {
-		cmds += [
-			meterGetCmd(meterEnergy),
-			meterGetCmd(meterPower),
-			meterGetCmd(meterVoltage),
-			meterGetCmd(meterCurrent)
-		]
+	if (state.powerMetering) {
+		metersList.each { meter ->
+			cmds << meterGetCmd(meter)
+		}
 	}
 
 	//Refresh Childs
@@ -741,6 +830,7 @@ void clearVariables() {
 
 	//Backup
 	String devModel = state.deviceModel
+	def engTime = state.energyTime
 
 	//Clears State Variables
 	state.clear()
@@ -757,6 +847,7 @@ void clearVariables() {
 
 	//Restore
 	if (devModel) state.deviceModel = devModel
+	if (engTime) state.energyTime = engTime
 }
 
 List getConfigureAssocsCmds() {
@@ -800,7 +891,7 @@ String getOnOffCmds(val, Integer endPoint=0) {
 //evt = [name, value, type, unit, desc, isStateChange]
 void sendEventLog(Map evt, Integer ep=0) {
 	//Set description if not passed in
-	evt.descriptionText = evt.desc ?: "${evt.name} set to ${evt.value}${evt.unit ?: ''}"
+	evt.descriptionText = evt.desc ?: "${evt.name} set to ${evt.value} ${evt.unit ?: ''}".trim()
 
 	//Endpoint Events
 	if (ep) {
@@ -834,8 +925,24 @@ void sendEventLog(Map evt, Integer ep=0) {
 
 void sendSwitchEvents(rawVal, String type, Integer ep=0) {
 	String value = (rawVal ? "on" : "off")
+
+	if (ep == 0 && !type) {
+		if (state.isDigital == true || state.isDigital == value) {
+			logTrace "sendSwitchEvents: isDigital = ${state.isDigital}"
+			type = "digital"
+			state.isDigital = value
+			runInMillis(500, switchDigitalRemove)
+		}
+		else { type = "physical" }
+	}
+	if (type == "physical") flashStop()
+
 	String desc = "switch is turned ${value}" + (type ? " (${type})" : "")
 	sendEventLog(name:"switch", value:value, type:type, desc:desc, ep)
+}
+void switchDigitalRemove() {
+	logTrace "switchDigitalRemove: Removing isDigital ${state.isDigital}"
+	state.remove("isDigital")
 }
 
 void sendMeterEvents(meter, value, Integer ep=0) {
@@ -854,18 +961,22 @@ void sendMeterEvents(meter, value, Integer ep=0) {
 	}
 }
 
-void sendEnergyEvents(value, Integer ep=0) {
-	sendEventLog(name:meterEnergy.name, value:value, unit:meterEnergy.unit, ep)
+void sendEnergyEvents(meter, value, Integer ep=0) {
+	sendEventLog(name:meter.name, value:value, unit:meter.unit, ep)
 
-	//Calculate the energyDuration
+	//Calculate and send the energyDuration
 	if (!state.energyTime) { state.energyTime = new Date().time }
 
 	BigDecimal duration = ((new Date().time) - state.energyTime)/60000
-	if (duration >= (24 * 60)) {
-		state.energyDuration = safeToDec(duration/(24*60), 0, 2) + " Days"
+	BigDecimal enDurDays = safeToDec(duration/(24*60), 0, 2)
+	BigDecimal enDurHours = safeToDec(duration/60, 0, 2)
+
+	if (enDurDays > 1.0) {
+		state.energyDuration = enDurDays + " Days"
 	} else {
-		state.energyDuration = safeToDec(duration/60, 0, 2) + " Hours"
+		state.energyDuration = enDurHours + " Hours"
 	}
+	sendEventLog(name:"energyDuration", value:enDurDays, unit:"days", ep)
 }
 
 void sendAccessoryEvents(powerVal, Integer ep=0) {
@@ -1027,6 +1138,17 @@ Number getParamValue(Map param, Boolean adjust=false) {
 		logWarn "Resetting hidden parameter ${param.name} (${param.num}) to default ${param.defaultVal}"
 		device.removeSetting("configParam${param.num}")
 		paramVal = param.defaultVal
+	}
+
+	//Convert minutes to seconds for ZEN15
+	if (state.deviceModel == "ZEN15") {
+		switch(param.name) {
+			case "powerFrequency":
+			case "currentFrequency":
+			case "energyFrequency":
+			case "voltageFrequency":
+				paramVal = paramVal*60
+		}
 	}
 
 	return paramVal
