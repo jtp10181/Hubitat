@@ -5,7 +5,7 @@
   "dateReleased": "2023-01-08",
   "documentationLink": "https://github.com/jtp10181/Hubitat/tree/main/Drivers/zooz",
   "communityLink": "https://community.hubitat.com/t/zooz-smart-plugs-advanced/98333",
-  "releaseNotes": "Version [1.1.0] - 2023-01-08 (@jtp10181)\n -Added full support for ZEN15\n - Unofficial support for ANY Z-Wave Power Metering Plug\n Check community post for full details.",
+  "releaseNotes": "Version [1.1.0] - 2023-01-08 (@jtp10181)\n - Added full support for ZEN15\n - Support for ANY standard Z-Wave Power Metering Plug\n Check community post for full details.",
   "version": "1.1.0",
   "drivers": [
     {

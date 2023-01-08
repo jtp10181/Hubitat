@@ -103,7 +103,7 @@ metadata {
 
 		attribute "syncStatus", "string"
 		attribute "accessory", "string"
-		attribute "energyDuration", "string"
+		attribute "energyDuration", "number"
 		attribute "amperageHigh", "number"
 		attribute "amperageLow", "number"
 		attribute "powerHigh", "number"
