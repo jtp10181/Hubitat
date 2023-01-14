@@ -10,6 +10,11 @@
 
 Changelog:
 
+## [1.1.2] - 2023-01-14 (@jtp10181)
+  ### Added
+  - Put useful info into the warnings event description
+  - Added lower limits to catch negative reports
+
 ## [1.1.0] - 2023-01-08 (@jtp10181)
   ### Added
   - Support for ZEN15
@@ -358,10 +363,10 @@ CommandClassReport - class:0x9F, version:1
 
 /*** Static Lists and Settings ***/
 @Field static List metersList = [
-	[name:"energy", scale:0, unit:"kWh", limit:null],
-	[name:"power", scale:2, unit:"W", limit:2400],
-	[name:"voltage", scale:4, unit:"V", limit:140],
-	[name:"amperage", scale:5, unit:"A", limit:18]
+	[name:"energy", scale:0, unit:"kWh", limitLo:0, limitHi:null],
+	[name:"power", scale:2, unit:"W", limitLo:0, limitHi:2400],
+	[name:"voltage", scale:4, unit:"V", limitLo:0, limitHi:140],
+	[name:"amperage", scale:5, unit:"A", limitLo:0, limitHi:18]
 ]
 @Field static final Map multiChan = [ZEN14:[endpoints:1..2]]
 
@@ -492,7 +497,7 @@ void refreshParams() {
 void resetStats(fullReset = true) {
 	logDebug "reset..."
 	
-	runIn(5, refresh)
+	runIn(2, refresh)
 		
 	device.deleteCurrentState("amperageHigh")
 	device.deleteCurrentState("amperageLow")
@@ -504,9 +509,12 @@ void resetStats(fullReset = true) {
 	if (fullReset) {
 		state.energyTime = new Date().time
 		state.remove("energyDuration")
-		sendEventLog(name:"energyDuration", value:0)
-		sendEventLog(name:"warnings", value:0)
-		sendCommands(meterResetCmd(0))
+		device.deleteCurrentState("energyDuration")
+		device.deleteCurrentState("warnings")
+		if (state.powerMetering) {
+			sendEventLog(name:"warnings", value:0, desc:"Warnings and Energy Stats Reset")
+			sendCommands(meterResetCmd(0))
+		}
 	}
 }
 
@@ -647,16 +655,16 @@ void zwaveEvent(hubitat.zwave.commands.meterv3.MeterSupportedReport cmd, ep=0) {
 }
 
 void zwaveEvent(hubitat.zwave.commands.meterv3.MeterReport cmd, ep=0) {
-	logTrace "${cmd} (scaledMeterValue: ${cmd.scaledMeterValue}) (ep ${ep})"
+	logTrace "${cmd} (meterValue: ${cmd.scaledMeterValue}, previousMeter: ${cmd.scaledPreviousMeterValue}) (ep ${ep})"
 
 	BigDecimal val = safeToDec(cmd.scaledMeterValue, 0, Math.min(cmd.precision,3))
 	logDebug "MeterReport: scale:${cmd.scale}, scaledMeterValue:${cmd.scaledMeterValue} (${val}), precision:${cmd.precision}"
 
 	Map meter = metersList.find{ it.scale == cmd.scale }
-	if (meter?.limit && val > meter.limit) {
-		logWarn "IGNORING OVER LIMIT METER REPORT: ${val}${meter.unit} reported, ${meter.name} limit is ${meter.limit}${meter.unit}"
-		logWarn "${cmd} (scaledMeterValue: ${cmd.scaledMeterValue}) (ep ${ep}) ${cmd.getPayload()}"
-		sendEvent(name:"warnings", value:(device.currentValue("warnings")?:0)+1)
+	if ((meter?.limitHi && val > meter.limitHi) || (meter?.limitLo && val < meter.limitLo)) {
+		logWarn "IGNORED MeterReport ${meter.name} (precision: ${cmd.precision}, size: ${cmd.size}, meterValue: ${cmd.scaledMeterValue} ${cmd.meterValue}, deltaTime: ${cmd.deltaTime}, previousMeter: ${cmd.scaledPreviousMeterValue} ${cmd.previousMeterValue}) payLoad: ${cmd.getPayload()}"
+		sendEventLog(name:"warnings", value:(device.currentValue("warnings")?:0)+1, isStateChange:true,
+			desc:"IGNORED METER REPORT of ${val}${meter.unit} for ${meter.name} " + (val < meter?.limitLo ? "(below limit of ${meter.limitLo}" : "(over limit of ${meter.limitHi}") + "${meter.unit})", ep)
 		return
 	}
 

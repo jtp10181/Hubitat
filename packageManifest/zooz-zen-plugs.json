@@ -2,11 +2,11 @@
   "packageName": "Zooz Plugs Advanced Drivers",
   "author": "jtp10181",
   "minimumHEVersion": "2.3.0",
-  "dateReleased": "2023-01-08",
+  "dateReleased": "2023-01-14",
   "documentationLink": "https://github.com/jtp10181/Hubitat/tree/main/Drivers/zooz",
   "communityLink": "https://community.hubitat.com/t/zooz-smart-plugs-advanced/98333",
-  "releaseNotes": "Version [1.1.0] - 2023-01-08 (@jtp10181)\n - Added full support for ZEN15\n - Support for ANY standard Z-Wave Power Metering Plug\n Check community post for full details.",
-  "version": "1.1.0",
+  "releaseNotes": "Version [1.1.2] - 2023-01-14 (@jtp10181)\n - Added full support for ZEN15\n - Support for ANY standard Z-Wave Power Metering Plug\n Check community post for full details.",
+  "version": "1.1.2",
   "drivers": [
     {
       "id": "fd71eac0-0b3e-4ebe-bb23-603d8572c187",
@@ -14,7 +14,7 @@
       "namespace": "jtp10181",
       "location": "https://jtp10181.gateway.scarf.sh/zooz-zen-plugs.groovy",
       "required": false,
-      "version": "1.1.0"
+      "version": "1.1.2"
     }
   ]
 }
