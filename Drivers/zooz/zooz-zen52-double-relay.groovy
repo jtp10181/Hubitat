@@ -9,6 +9,11 @@
 
 Changelog:
 
+## [1.0.2] - 2023-02-28 (@jtp10181)
+  - Added Association Group Support
+  - Fixed made some typing more lax to prevent errors
+  - Fixed lifeline association configuration for ZEN52
+
 ## [0.2.0] - 2021-08-22 (@jtp10181)
   - Initial Release of ZEN52
   - Minor fixes for ZEN51
@@ -31,8 +36,8 @@ Changelog:
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "0.2.0"
-@Field static final Map deviceModelNames = ["0104:0202":"ZEN52"]
+@Field static final String VERSION = "1.0.2"
+@Field static final Map deviceModelNames = ["0104:0202":"ZEN52", "0904:0202":"ZEN52"]
 
 metadata {
 	definition (
@@ -60,6 +65,7 @@ metadata {
 
 		fingerprint mfr:"027A", prod:"0104", deviceId:"0202", inClusters:"0x5E,0x55,0x9F,0x6C", deviceJoinName:"Zooz ZEN52 Double Relay"
 		fingerprint mfr:"027A", prod:"0104", deviceId:"0202", inClusters:"0x5E,0x55,0x9F,0x6C,0x25,0x70,0x85,0x59,0x8E,0x86,0x72,0x5A,0x73,0x7A,0x60,0x22,0x5B,0x87", deviceJoinName:"Zooz ZEN52 Double Relay"
+		fingerprint mfr:"027A", prod:"0904", deviceId:"0202", deviceJoinName:"Zooz ZEN52 Double Relay LR"
 	}
 
 	preferences {
@@ -83,6 +89,13 @@ metadata {
 						required: false
 				}
 			}
+		}
+
+		for(int i in 2..maxAssocGroups) {
+			input "assocDNI$i", "string",
+				title: fmtTitle("Device Associations - Group $i"),
+				description: fmtDesc("Supports up to ${maxAssocNodes} Hex Device IDs separated by commas. Check device documentation for more info. Save as blank or 0 to clear."),
+				required: false
 		}
 
 		input "childScene", "bool",
@@ -112,8 +125,8 @@ void debugShowVars() {
 }
 
 //Association Settings
-@Field static final int maxAssocGroups = 1
-@Field static final int maxAssocNodes = 1
+@Field static final int maxAssocGroups = 3
+@Field static final int maxAssocNodes = 5
 
 //Main Parameters Listing
 @Field static Map<String, Map> paramsMap =
@@ -297,22 +310,29 @@ void updated() {
 
 	if (debugEnable) runIn(1800, debugLogsOff)
 
-	//Check to make sure this setting can work
+	//Check to make sure childScene setting can work
 	childDevices.each { child ->
-		if (childScene && !child.hasCapability("PushableButton")) {
-			logWarn "$child is missing PushableButton, turning off 'Scene Events to Child'"
-			childScene = false
-			device.updateSetting("childScene",[value:"false",type:"bool"])
+		if (child.hasCapability("PushableButton")) {
+			child.sendEvent(name:"numberOfButtons", value:(childScene ? 5 : 0))
+		}
+		else {
+			child.deleteCurrentState("numberOfButtons")
+			if (childScene) {
+				logWarn "$child is missing PushableButton, turning off 'Scene Events to Child'"
+				device.updateSetting("childScene",[value:"false",type:"bool"])
+				childScene = false
+			}
 		}
 	}
 
-	//Remove unnecessary attributes
+	//Configure for childScene setting
+	sendEvent(name:"numberOfButtons", value:(childScene ? 0 : 2))
 	if (childScene) {
 		logDebug "Removing unnecessary attributes"
-		device.deleteCurrentState("doubleTapped") 
-		device.deleteCurrentState("held") 
-		device.deleteCurrentState("pushed") 
-		device.deleteCurrentState("released") 
+		device.deleteCurrentState("doubleTapped")
+		device.deleteCurrentState("held")
+		device.deleteCurrentState("pushed")
+		device.deleteCurrentState("released")
 	}
 
 	runIn(1, executeConfigureCmds)
@@ -347,7 +367,7 @@ void release(buttonId) { sendBasicButtonEvent(buttonId, "released") }
 void doubleTap(buttonId) { sendBasicButtonEvent(buttonId, "doubleTapped") }
 
 //Flashing Capability
-void flash(Number rateToFlash = 1500) {
+void flash(rateToFlash = 1500) {
 	logInfo "Flashing started with rate of ${rateToFlash}ms"
 
 	//Min rate of 1 sec, max of 30, max run time of 5 minutes
@@ -388,6 +408,7 @@ void flashHandler(Integer rateToFlash) {
 /*** Custom Commands ***/
 void refreshParams() {
 	List<String> cmds = []
+	cmds << mcAssociationGetCmd(1)
 	for (int i = 1; i <= maxAssocGroups; i++) {
 		cmds << associationGetCmd(i)
 	}
@@ -430,7 +451,7 @@ void parse(String description) {
 
 	//Update Last Activity
 	updateLastCheckIn()
-	sendEvent(name:"numberOfButtons", value:(childScene ? 0: 2))
+	sendEvent(name:"numberOfButtons", value:(childScene ? 0 : 2))
 }
 
 //Decodes Multichannel Encapsulated Commands
@@ -497,7 +518,33 @@ void zwaveEvent(hubitat.zwave.commands.associationv2.AssociationReport cmd) {
 
 	if (grp == 1) {
 		logDebug "Lifeline Association: ${cmd.nodeId}"
-		state.group1Assoc = (cmd.nodeId == [zwaveHubNodeId]) ? true : false
+		//state.group1Assoc = (cmd.nodeId == [zwaveHubNodeId]) ? true : false
+	}
+	else if (grp > 1 && grp <= maxAssocGroups) {
+		logDebug "Group $grp Association: ${cmd.nodeId}"
+
+		if (cmd.nodeId.size() > 0) {
+			state["assocNodes$grp"] = cmd.nodeId
+		} else {
+			state.remove("assocNodes$grp".toString())
+		}
+
+		String dnis = convertIntListToHexList(cmd.nodeId)?.join(", ")
+		//sendEventLog(name:"assocDNI$grp", value:(dnis ?: "none"))
+		device.updateSetting("assocDNI$grp", [value:"${dnis}", type:"string"])
+	}
+	else {
+		logDebug "Unhandled Group: $cmd"
+	}
+}
+
+void zwaveEvent(hubitat.zwave.commands.multichannelassociationv3.MultiChannelAssociationReport cmd) {
+	logTrace "${cmd}"
+	updateSyncingStatus()
+
+	if (cmd.groupingIdentifier == 1) {
+		logDebug "Lifeline Association: ${cmd.nodeId} | MC: ${cmd.multiChannelNodeIds}"
+		state.group1Assoc = (cmd.multiChannelNodeIds == [[nodeId:zwaveHubNodeId, bitAddress:0, endPointId:0]] ? true : false)
 	}
 	else {
 		logDebug "Unhandled Group: $cmd"
@@ -606,6 +653,10 @@ String associationRemoveCmd(Integer group, List<Integer> nodes) {
 
 String associationGetCmd(Integer group) {
 	return secureCmd(zwave.associationV2.associationGet(groupingIdentifier: group))
+}
+
+String mcAssociationGetCmd(Integer group) {
+	return secureCmd(zwave.multiChannelAssociationV3.multiChannelAssociationGet(groupingIdentifier: group))
 }
 
 String versionGetCmd() {
@@ -736,15 +787,59 @@ void clearVariables() {
 List getConfigureAssocsCmds() {
 	List<String> cmds = []
 
-	if ((!state.group1Assoc || state.resyncAll) && state.deviceModel != "ZEN52") {
-		if (state.group1Assoc == false) {
-			logDebug "Adding missing lifeline association..."
+	if (!state.group1Assoc || state.resyncAll) {
+		if (!state.group1Assoc) {
+			logDebug "Setting lifeline association..."
+			cmds << secureCmd(zwave.multiChannelAssociationV3.multiChannelAssociationRemove(groupingIdentifier: 1, nodeId:[], multiChannelNodeIds:[]))
+			cmds << secureCmd(zwave.multiChannelAssociationV3.multiChannelAssociationSet(groupingIdentifier: 1, multiChannelNodeIds: [[nodeId: zwaveHubNodeId, bitAddress:0, endPointId: 0]]))
 		}
-		cmds << associationSetCmd(1, [zwaveHubNodeId])
-		cmds << associationGetCmd(1)
+		cmds << mcAssociationGetCmd(1)
+	}
+
+	for (int i = 2; i <= maxAssocGroups; i++) {
+		List<String> cmdsEach = []
+		List settingNodeIds = getAssocDNIsSettingNodeIds(i)
+
+		//Need to remove first then add in case we are at limit
+		List oldNodeIds = state."assocNodes$i"?.findAll { !(it in settingNodeIds) }
+		if (oldNodeIds) {
+			logDebug "Removing Nodes: Group $i - $oldNodeIds"
+			cmdsEach << associationRemoveCmd(i, oldNodeIds)
+		}
+
+		List newNodeIds = settingNodeIds.findAll { !(it in state."assocNodes$i") }
+		if (newNodeIds) {
+			logDebug "Adding Nodes: Group $i - $newNodeIds"
+			cmdsEach << associationSetCmd(i, newNodeIds)
+		}
+
+		if (cmdsEach || state.resyncAll) {
+			cmdsEach << associationGetCmd(i)
+			cmds += cmdsEach
+		}
 	}
 
 	return cmds
+}
+
+List getAssocDNIsSettingNodeIds(grp) {
+	def dni = getAssocDNIsSetting(grp)
+	def nodeIds = convertHexListToIntList(dni.split(","))
+
+	if (dni && !nodeIds) {
+		logWarn "'${dni}' is not a valid value for the 'Device Associations - Group ${grp}' setting.  All z-wave devices have a 2 character Device Network ID and if you're entering more than 1, use commas to separate them."
+	}
+	else if (nodeIds.size() > maxAssocNodes) {
+		logWarn "The 'Device Associations - Group ${grp}' setting contains more than ${maxAssocNodes} IDs so some (or all) may not get associated."
+	}
+
+	return nodeIds
+}
+
+// iOS app has no way of clearing string input so workaround is to have users enter 0.
+String getAssocDNIsSetting(grp) {
+	def val = settings."assocDNI$grp"
+	return ((val && (val.trim() != "0")) ? val : "")
 }
 
 List getChildRefreshCmds(Integer endPoint) {
@@ -787,7 +882,6 @@ void sendEventLog(Map evt, Integer ep=0) {
 		String logEp = "Switch ${ep} "
 
 		if (childDev) {
-			childDev.sendEvent(name:"numberOfButtons", value:5)
 			if (childDev.currentValue(evt.name).toString() != evt.value.toString() || evt.isStateChange) {
 				evt.descriptionText = "${childDev}: ${evt.descriptionText}"
 				childDev.parse([evt])
@@ -818,7 +912,7 @@ void sendSwitchEvents(rawVal, String type, Integer ep=0) {
 	sendEventLog(name:"switch", value:value, type:type, desc:desc, ep)
 }
 
-void sendBasicButtonEvent(Number buttonId, String name) {
+void sendBasicButtonEvent(buttonId, String name) {
 	String desc = "button ${buttonId} ${name} (digital)"
 	sendEventLog(name:name, value:buttonId, type:"digital", desc:desc, isStateChange:true)
 }
@@ -946,7 +1040,7 @@ List<Map> getConfigParams() {
 }
 
 //Get a single param by name or number
-Map getParam(def search) {
+Map getParam(search) {
 	//logDebug "Get Param (${search} | ${search.class})"
 	Map param = [:]
 
@@ -1010,7 +1104,7 @@ void addChild(endPoint) {
 	}
 	if (childDev) {
 		childDev.updateDataValue("endPoint","$endPoint")
-		child.sendEvent(name:"numberOfButtons", value:5)
+		childDev.sendEvent(name:"numberOfButtons", value:(childScene ? 5 : 0))
 	}
 }
 
@@ -1108,6 +1202,19 @@ List convertIntListToHexList(intList, pad=2) {
 		hexList.add(Integer.toHexString(it).padLeft(pad, "0").toUpperCase())
 	}
 	return hexList
+}
+
+List convertHexListToIntList(String[] hexList) {
+	def intList = []
+
+	hexList?.each {
+		try {
+			it = it.trim()
+			intList.add(Integer.parseInt(it, 16))
+		}
+		catch (e) { }
+	}
+	return intList
 }
 
 Integer validateRange(val, Integer defaultVal, Integer lowVal, Integer highVal) {

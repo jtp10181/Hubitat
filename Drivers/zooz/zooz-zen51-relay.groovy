@@ -9,6 +9,11 @@
 
 Changelog:
 
+## [1.0.2] - 2023-02-28 (@jtp10181)
+  - Added Association Group Support
+  - Fixed made some typing more lax to prevent errors
+  - Fixed lifeline association configuration for ZEN52
+
 ## [0.2.0] - 2021-08-22 (@jtp10181)
   - Initial Release of ZEN52
   - Minor fixes for ZEN51
@@ -34,8 +39,8 @@ Changelog:
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "0.2.0"
-@Field static final Map deviceModelNames = ["0104:0201":"ZEN51"]
+@Field static final String VERSION = "1.0.2"
+@Field static final Map deviceModelNames = ["0104:0201":"ZEN51", "0904:0201":"ZEN51"]
 
 metadata {
 	definition (
@@ -63,6 +68,7 @@ metadata {
 
 		fingerprint mfr:"027A", prod:"0104", deviceId:"0201", inClusters:"0x5E,0x55,0x9F,0x6C", deviceJoinName:"Zooz ZEN51 Relay"
 		fingerprint mfr:"027A", prod:"0104", deviceId:"0201", inClusters:"0x5E,0x55,0x9F,0x6C,0x25,0x70,0x85,0x59,0x8E,0x86,0x72,0x5A,0x73,0x7A,0x22,0x5B,0x87", deviceJoinName:"Zooz ZEN51 Relay"
+		fingerprint mfr:"027A", prod:"0904", deviceId:"0201", deviceJoinName:"Zooz ZEN51 Relay LR"
 	}
 
 	preferences {
@@ -87,6 +93,13 @@ metadata {
 				}
 			}
 		}
+	
+		for(int i in 2..maxAssocGroups) {
+			input "assocDNI$i", "string",
+				title: fmtTitle("Device Associations - Group $i"),
+				description: fmtDesc("Supports up to ${maxAssocNodes} Hex Device IDs separated by commas. Check device documentation for more info. Save as blank or 0 to clear."),
+				required: false
+		}
 
 		//Logging options similar to other Hubitat drivers
 		input "txtEnable", "bool", title: fmtTitle("Enable Description Text Logging?"), defaultValue: true
@@ -109,8 +122,8 @@ void debugShowVars() {
 }
 
 //Association Settings
-@Field static final int maxAssocGroups = 1
-@Field static final int maxAssocNodes = 1
+@Field static final int maxAssocGroups = 2
+@Field static final int maxAssocNodes = 5
 
 //Main Parameters Listing
 @Field static Map<String, Map> paramsMap =
@@ -277,7 +290,7 @@ void release(buttonId) { sendBasicButtonEvent(buttonId, "released") }
 void doubleTap(buttonId) { sendBasicButtonEvent(buttonId, "doubleTapped") }
 
 //Flashing Capability
-void flash(Number rateToFlash = 1500) {
+void flash(rateToFlash = 1500) {
 	logInfo "Flashing started with rate of ${rateToFlash}ms"
 
 	//Min rate of 1 sec, max of 30, max run time of 5 minutes
@@ -413,6 +426,19 @@ void zwaveEvent(hubitat.zwave.commands.associationv2.AssociationReport cmd) {
 	if (grp == 1) {
 		logDebug "Lifeline Association: ${cmd.nodeId}"
 		state.group1Assoc = (cmd.nodeId == [zwaveHubNodeId]) ? true : false
+	}
+	else if (grp > 1 && grp <= maxAssocGroups) {
+		logDebug "Group $grp Association: ${cmd.nodeId}"
+
+		if (cmd.nodeId.size() > 0) {
+			state["assocNodes$grp"] = cmd.nodeId
+		} else {
+			state.remove("assocNodes$grp".toString())
+		}
+
+		String dnis = convertIntListToHexList(cmd.nodeId)?.join(", ")
+		//sendEventLog(name:"assocDNI$grp", value:(dnis ?: "none"))
+		device.updateSetting("assocDNI$grp", [value:"${dnis}", type:"string"])
 	}
 	else {
 		logDebug "Unhandled Group: $cmd"
@@ -648,7 +674,50 @@ List getConfigureAssocsCmds() {
 		cmds << associationGetCmd(1)
 	}
 
+	for (int i = 2; i <= maxAssocGroups; i++) {
+		List<String> cmdsEach = []
+		List settingNodeIds = getAssocDNIsSettingNodeIds(i)
+
+		//Need to remove first then add in case we are at limit
+		List oldNodeIds = state."assocNodes$i"?.findAll { !(it in settingNodeIds) }
+		if (oldNodeIds) {
+			logDebug "Removing Nodes: Group $i - $oldNodeIds"
+			cmdsEach << associationRemoveCmd(i, oldNodeIds)
+		}
+
+		List newNodeIds = settingNodeIds.findAll { !(it in state."assocNodes$i") }
+		if (newNodeIds) {
+			logDebug "Adding Nodes: Group $i - $newNodeIds"
+			cmdsEach << associationSetCmd(i, newNodeIds)
+		}
+
+		if (cmdsEach || state.resyncAll) {
+			cmdsEach << associationGetCmd(i)
+			cmds += cmdsEach
+		}
+	}
+
 	return cmds
+}
+
+List getAssocDNIsSettingNodeIds(grp) {
+	def dni = getAssocDNIsSetting(grp)
+	def nodeIds = convertHexListToIntList(dni.split(","))
+
+	if (dni && !nodeIds) {
+		logWarn "'${dni}' is not a valid value for the 'Device Associations - Group ${grp}' setting.  All z-wave devices have a 2 character Device Network ID and if you're entering more than 1, use commas to separate them."
+	}
+	else if (nodeIds.size() > maxAssocNodes) {
+		logWarn "The 'Device Associations - Group ${grp}' setting contains more than ${maxAssocNodes} IDs so some (or all) may not get associated."
+	}
+
+	return nodeIds
+}
+
+// iOS app has no way of clearing string input so workaround is to have users enter 0.
+String getAssocDNIsSetting(grp) {
+	def val = settings."assocDNI$grp"
+	return ((val && (val.trim() != "0")) ? val : "")
 }
 
 Integer getPendingChanges() {
@@ -690,7 +759,7 @@ void sendSwitchEvents(rawVal, String type, Integer ep=0) {
 	sendEventLog(name:"switch", value:value, type:type, desc:desc, ep)
 }
 
-void sendBasicButtonEvent(Number buttonId, String name) {
+void sendBasicButtonEvent(buttonId, String name) {
 	String desc = "button ${buttonId} ${name} (digital)"
 	sendEventLog(name:name, value:buttonId, type:"digital", desc:desc, isStateChange:true)
 }
@@ -818,7 +887,7 @@ List<Map> getConfigParams() {
 }
 
 //Get a single param by name or number
-Map getParam(def search) {
+Map getParam(search) {
 	//logDebug "Get Param (${search} | ${search.class})"
 	Map param = [:]
 
@@ -917,6 +986,19 @@ List convertIntListToHexList(intList, pad=2) {
 		hexList.add(Integer.toHexString(it).padLeft(pad, "0").toUpperCase())
 	}
 	return hexList
+}
+
+List convertHexListToIntList(String[] hexList) {
+	def intList = []
+
+	hexList?.each {
+		try {
+			it = it.trim()
+			intList.add(Integer.parseInt(it, 16))
+		}
+		catch (e) { }
+	}
+	return intList
 }
 
 Integer validateRange(val, Integer defaultVal, Integer lowVal, Integer highVal) {

@@ -1,12 +1,16 @@
-/*  
+/*
  *  Zooz ZEN17 PARAMETER COMPANION DRIVER
  *    - Model: ZEN17 - MINIMUM FIRMWARE 1.04
  *
- *  For Support: https://community.hubitat.com/
+ *  For Support, Information, and Updates:
+ *  https://community.hubitat.com/t/zooz-relays-advanced/98194
  *  https://github.com/jtp10181/Hubitat/tree/main/Drivers/zooz
  *
 
 Changelog:
+
+## [1.0.2] - 2022-02-28 (@jtp10181)
+  - Minor cleanup and code sync with shared functions
 
 ## [1.0.0] - 2021-07-26 (@jtp10181)
   ### Added
@@ -14,12 +18,9 @@ Changelog:
   - Automatically figure out reverse setting based on trigger
   ### Fixed
   - Race condition with configVals (now keeping copy in static var)
-  
+
 ## [0.1.0] - 2021-07-18 (@jtp10181)
   - Initial Release
-
-NOTICE: This file has been created by *Jeff Page* with some code used 
-	from the original work of *Zooz* and *Kevin LaFramboise* under compliance with the Apache 2.0 License.
 
  *  Copyright 2022 Jeff Page
  *
@@ -39,7 +40,7 @@ NOTICE: This file has been created by *Jeff Page* with some code used
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "1.0.0" 
+@Field static final String VERSION = "1.0.2"
 @Field static final Map deviceModelNames = ["7000:A00A":"ZEN17"]
 
 metadata {
@@ -65,9 +66,7 @@ metadata {
 
 	preferences {
 
-		//Saved Parameters
 		configParams.each { param ->
-			//log.debug "${param}"
 			if (!param.hidden) {
 				Integer paramVal = getParamValue(param)
 				if (param.options) {
@@ -93,8 +92,8 @@ metadata {
 		input name: "logLevel", type: "enum", title: fmtTitle("Logging Level"), defaultValue: 3, options: debugOpts
 
 		//Help Text at very bottom
-		input name: "infoText", type: "number",
-			title: fmtTitle("HIGHLY RECOMMEND to sync from device and refresh the page before saving below!")
+		input name: "infoText", type: "string", title: fmtTitle("HIGHLY RECOMMENDED"),
+			description: fmtDesc("Sync from device and refresh the page before saving below!")
 	}
 }
 
@@ -113,6 +112,7 @@ void debugShowVars() {
 	log.warn "settings ${settings.hashCode()} ${settings}"
 }
 
+//Main Parameters Listing
 @Field static Map<String, Map> paramsMap =
 [
 	p1: [ num:1,
@@ -144,7 +144,7 @@ void debugShowVars() {
 			8:"Carbon Monoxide (CO) Sensor",
 			9:"Carbon Dioxide (CO₂) Sensor",
 			10:"Dry Contact Switch/Sensor",
-			11:"Relay- Garage Door / Input- Contact Sensor" 
+			11:"Relay- Garage Door / Input- Contact Sensor"
 		]
 	],
 	p3: [ num:3,
@@ -163,7 +163,7 @@ void debugShowVars() {
 			8:"Carbon Monoxide (CO) Sensor",
 			9:"Carbon Dioxide (CO₂) Sensor",
 			10:"Dry Contact Switch/Sensor",
-			11:"Relay- Garage Door / Input- Contact Sensor" 
+			11:"Relay- Garage Door / Input- Contact Sensor"
 		]
 	],
 	p10: [ num:10,
@@ -273,12 +273,12 @@ void debugShowVars() {
 	],
 ]
 
-//Command Classes Supported
+//Set Command Class Versions
 @Field static final Map commandClassVersions = [
-	0x6C: 1,	// Supervision (supervisionv1)
-	0x70: 2,	// Configuration (configurationv2) (4)
-	0x86: 2,	// Version (versionv2) (3)
-	0x9F: 1		// Security S2
+	0x60: 3,	// Multi Channel
+	0x6C: 1,	// Supervision
+	0x70: 2,	// Configuration
+	0x86: 2,	// Version
 ]
 
 /*** Static Lists and Settings ***/
@@ -297,7 +297,6 @@ List<String> configure() {
 
 	sendEvent(name:"syncStatus", value:"Save Preferences to finish Configure")
 	state.resyncAll = true
-
 	return []
 }
 
@@ -334,7 +333,7 @@ void syncFromDevice() {
 	List<String> cmds = []
 	configParams.each { param ->
 		logDebug "Getting ${param.title} (#${param.num}) from device"
-		cmds += configGetCmd(param)
+		cmds << configGetCmd(param)
 	}
 
 	if (cmds) sendCommands(cmds)
@@ -356,9 +355,8 @@ void deleteChild(String dni) {
  ***** Z-Wave Reports
 ********************************************************************/
 void parse(String description) {
-	//logTrace "parse: ${description} -- ${commandClassVersions}"
 	hubitat.zwave.Command cmd = zwave.parse(description, commandClassVersions)
-	
+
 	if (cmd) {
 		logTrace "parse: ${description} --PARSED-- ${cmd}"
 		zwaveEvent(cmd)
@@ -368,10 +366,10 @@ void parse(String description) {
 }
 
 //Decodes Multichannel Encapsulated Commands
-void zwaveEvent(hubitat.zwave.commands.multichannelv4.MultiChannelCmdEncap cmd) {
+void zwaveEvent(hubitat.zwave.commands.multichannelv3.MultiChannelCmdEncap cmd) {
 	def encapsulatedCmd = cmd.encapsulatedCommand(commandClassVersions)
 	logTrace "${cmd} --ENCAP-- ${encapsulatedCmd}"
-	
+
 	if (encapsulatedCmd) {
 		zwaveEvent(encapsulatedCmd, cmd.sourceEndPoint as Integer)
 	} else {
@@ -383,7 +381,7 @@ void zwaveEvent(hubitat.zwave.commands.multichannelv4.MultiChannelCmdEncap cmd) 
 void zwaveEvent(hubitat.zwave.commands.supervisionv1.SupervisionGet cmd, ep=0) {
 	def encapsulatedCmd = cmd.encapsulatedCommand(commandClassVersions)
 	logTrace "${cmd} --ENCAP-- ${encapsulatedCmd}"
-	
+
 	if (encapsulatedCmd) {
 		zwaveEvent(encapsulatedCmd, ep)
 	} else {
@@ -396,8 +394,7 @@ void zwaveEvent(hubitat.zwave.commands.supervisionv1.SupervisionGet cmd, ep=0) {
 void zwaveEvent(hubitat.zwave.commands.versionv2.VersionReport cmd) {
 	logTrace "${cmd}"
 
-	String subVersion = String.format("%02d", cmd.firmware0SubVersion)
-	String fullVersion = "${cmd.firmware0Version}.${subVersion}"
+	String fullVersion = String.format("%d.%02d",cmd.firmware0Version,cmd.firmware0SubVersion)
 	device.updateDataValue("firmwareVersion", fullVersion)
 
 	logDebug "Received Version Report - Firmware: ${fullVersion}"
@@ -480,10 +477,11 @@ String secureCmd(hubitat.zwave.Command cmd, ep=0) {
 String multiChannelEncap(hubitat.zwave.Command cmd, ep) {
 	//logTrace "multiChannelEncap: ${cmd} (ep ${ep})"
 	if (ep > 0) {
-		cmd = zwave.multiChannelV4.multiChannelCmdEncap(destinationEndPoint:ep).encapsulate(cmd)
+		cmd = zwave.multiChannelV3.multiChannelCmdEncap(destinationEndPoint:ep).encapsulate(cmd)
 	}
 	return cmd.format()
 }
+
 
 /*******************************************************************
  ***** Execute / Build Commands
@@ -590,7 +588,6 @@ void updateParamsList() {
 	Short modelNum = deviceModelShort
 	Short modelSeries = Math.floor(modelNum/10)
 	BigDecimal firmware = firmwareVersion
-	//log.debug "${devModel} | ${modelNum} | ${modelSeries}"
 
 	List<Map> tmpList = []
 	paramsMap.each { name, pMap ->
@@ -624,7 +621,7 @@ void updateParamsList() {
 	//Remove invalid or not supported by firmware
 	tmpList.removeAll { it.num == null }
 	tmpList.removeAll { firmware < (it.firmVer ?: 0) }
-	tmpList.removeAll { 
+	tmpList.removeAll {
 		if (it.firmVerM) {
 			(firmware-(int)firmware)*100 < it.firmVerM[(int)firmware]
 		}
@@ -639,25 +636,33 @@ void updateParamsList() {
 void verifyParamsList() {
 	String devModel = state.deviceModel
 	BigDecimal firmware = firmwareVersion
+	if (!paramsMap.settings?.fixed) fixParamsMap()
 	if (paramsList[devModel] == null) updateParamsList()
 	if (paramsList[devModel][firmware] == null) updateParamsList()
+}
+//These have to be added in after the fact or groovy complains
+void fixParamsMap() {
+	paramsMap['settings'] = [fixed: true]
 }
 
 //Gets full list of params
 List<Map> getConfigParams() {
 	//logDebug "Get Config Params"
+	if (!device) return []
 	String devModel = state.deviceModel
 	BigDecimal firmware = firmwareVersion
+
+	//Try to get device model if not set
+	if (devModel) { verifyParamsList() }
+	else          { runInMillis(200, setDevModel) }
+	//Bail out if unknown device
 	if (!devModel || devModel == "UNK00") return []
 
-	verifyParamsList()
-
-	//log.debug "${paramsList[devModel][firmware]}"
 	return paramsList[devModel][firmware]
 }
 
 //Get a single param by name or number
-Map getParam(def search) {
+Map getParam(search) {
 	//logDebug "Get Param (${search} | ${search.class})"
 	Map param = [:]
 
@@ -675,8 +680,9 @@ Map getParam(def search) {
 Integer getParamValue(String paramName) {
 	return getParamValue(getParam(paramName))
 }
-Integer getParamValue(Map param, Boolean adjust=false) {
-	Integer paramVal = safeToInt(settings."configParam${param.num}", param.defaultVal)
+Number getParamValue(Map param, Boolean adjust=false) {
+	if (param == null) return
+	Number paramVal = safeToInt(settings."configParam${param.num}", param.defaultVal)
 	if (!adjust) return paramVal
 
 	switch(param.num) {
@@ -714,20 +720,25 @@ void refreshSyncStatus() {
 	}
 }
 
+//Stash the model in a state variable
 String setDevModel(BigDecimal firmware) {
-	//Stash the model in a state variable
+	if (!device) return
 	def devTypeId = convertIntListToHexList([safeToInt(device.getDataValue("deviceType")),safeToInt(device.getDataValue("deviceId"))],4)
 	String devModel = deviceModelNames[devTypeId.join(":")] ?: "UNK00"
+	if (!firmware) { firmware = firmwareVersion }
 
-	logDebug "Set Device Info - Model: ${devModel} | Firmware: ${firmware}"
 	state.deviceModel = devModel
 	device.updateDataValue("deviceModel", devModel)
+	logDebug "Set Device Info - Model: ${devModel} | Firmware: ${firmware}"
 
 	if (devModel == "UNK00") {
 		logWarn "Unsupported Device USE AT YOUR OWN RISK: ${devTypeId}"
 		state.WARNING = "Unsupported Device Model - USE AT YOUR OWN RISK!"
 	}
 	else state.remove("WARNING")
+
+	//Setup parameters if not set
+	verifyParamsList()
 
 	return devModel
 }
@@ -749,16 +760,17 @@ List convertIntListToHexList(intList, pad=2) {
 	return hexList
 }
 
-private safeToInt(val, defaultVal=0) {
-	if ("${val}"?.isInteger())		{ return "${val}".toInteger() } 
-	else if ("${val}"?.isDouble())	{ return "${val}".toDouble()?.round() }
+Integer safeToInt(val, defaultVal=0) {
+	if ("${val}"?.isInteger())		{ return "${val}".toInteger() }
+	else if ("${val}"?.isNumber())	{ return "${val}".toDouble()?.round() }
 	else { return defaultVal }
 }
 
-private safeToDec(val, defaultVal=0, roundTo=-1) {
-	def decVal = "${val}"?.isBigDecimal() ? "${val}".toBigDecimal() : defaultVal
-    if (roundTo == 0)       { decVal = Math.round(decVal) }
-    else if (roundTo > 0)   { decVal = decVal.doubleValue().round(roundTo) }
+BigDecimal safeToDec(val, defaultVal=0, roundTo=-1) {
+	BigDecimal decVal = "${val}"?.isNumber() ? "${val}".toBigDecimal() : defaultVal
+	if (roundTo == 0)		{ decVal = Math.round(decVal) }
+	else if (roundTo > 0)	{ decVal = decVal.setScale(roundTo, BigDecimal.ROUND_HALF_UP).stripTrailingZeros() }
+	if (decVal.scale()<0)	{ decVal = decVal.setScale(0) }
 	return decVal
 }
 
