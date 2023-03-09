@@ -1,12 +1,17 @@
 /*  
  *  Leviton Z-Wave Plus Dimmer
  *    - Model: DZPD3 Plug-In Dimmer
+ *    - Model: DZ6HD In Wall Dimmer
  *
  *  For Support, Information and Updates:
  *  https://github.com/jtp10181/Hubitat/tree/main/Drivers/
  *
 
 Changelog:
+
+## [1.0.0] - 2023-03-08 (@jtp10181)
+  - Added support for DZ6HD
+  - Testing completed and no issues found
 
 ## [0.1.0] - 2023-03-01 (@jtp10181)
   - Initial Release
@@ -29,8 +34,8 @@ Changelog:
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "0.1.0"
-@Field static final Map deviceModelNames = ["3501:0001":"DZPD3"]
+@Field static final String VERSION = "1.0.0"
+@Field static final Map deviceModelNames = ["3501:0001":"DZPD3", "3201:0001":"DZ6HD"]
 
 metadata {
 	definition (
@@ -52,8 +57,6 @@ metadata {
 			[name:"Direction*", description:"Direction for level change request", type: "ENUM", constraints: ["up","down"]],
 			[name:"Duration", type:"NUMBER", description:"Transition duration in seconds", constraints:["NUMBER"]] ]
 
-		//command "refreshParams"
-
 		// command "setParameter",[[name:"parameterNumber*",type:"NUMBER", description:"Parameter Number", constraints:["NUMBER"]],
 		// 	[name:"value*",type:"NUMBER", description:"Parameter Value", constraints:["NUMBER"]],
 		// 	[name:"size",type:"NUMBER", description:"Parameter Size", constraints:["NUMBER"]]]
@@ -63,7 +66,8 @@ metadata {
 
 		attribute "syncStatus", "string"
 
-		fingerprint mfr:"001D", prod:"3501", deviceId:"0001", inClusters:"0x5E,0x85,0x59,0x86,0x72,0x70,0x5A,0x73,0x26,0x20,0x27,0x2C,0x2B,0x7A", outClusters:"0x82", deviceJoinName:"Leviton DZPD3 Dimmer"
+		fingerprint mfr:"001D", prod:"3501", deviceId:"0001", inClusters:"0x5E,0x85,0x59,0x86,0x72,0x70,0x5A,0x73,0x26,0x20,0x27,0x2C,0x2B,0x7A", outClusters:"0x82", deviceJoinName:"Leviton DZPD3 Plug Dimmer"
+		fingerprint mfr:"001D", prod:"3201", deviceId:"0001", inClusters:"0x5E,0x85,0x59,0x86,0x72,0x70,0x5A,0x73,0x26,0x20,0x27,0x2C,0x2B,0x7A", outClusters:"0x82", deviceJoinName:"Leviton DZ6HD Dimmer"
 	}
 
 	preferences {
@@ -137,6 +141,20 @@ void debugShowVars() {
 		size: 1, defaultVal: 100,
 		range: "0..100"
 	],
+	presetLevel: [ num: 5,
+		title: "Preset Light Level",
+		description: "0 = Restore last level when turned on",
+		size: 1, defaultVal: 0,
+		range: "0..100",
+		changes: ['DZPD3':[num:null]]
+	],
+	ledTimeout: [ num: 6,
+		title: "LED Dim Indicator Timeout (seconds)",
+		description: "0 = Off / 255 = Always On",
+		size: 1, defaultVal: 3,
+		range: "0..255",
+		changes: ['DZPD3':[num:null]]
+	],
 	ledMode: [ num: 7,
 		title: "LED Indicator",
 		size: 1, defaultVal: 255,
@@ -149,7 +167,7 @@ void debugShowVars() {
 	]
 ]
 
-/* Levison DZPD3
+/* Leviton DZPD3
 CommandClassReport - class:0x20, version:2
 CommandClassReport - class:0x26, version:4
 CommandClassReport - class:0x27, version:1
@@ -239,10 +257,13 @@ String setLevel(level, duration=null) {
 	return getSetLevelCmds(level, duration)
 }
 
-List<String> startLevelChange(direction, duration=null) {
+String startLevelChange(direction, duration=null) {
 	Boolean upDown = (direction == "down") ? true : false
 	Integer durationVal = validateRange(duration, 0, 0, 127)
 	logDebug "startLevelChange($direction) for ${durationVal}s"
+
+	//Required after change to send updated report
+	runIn((durationVal+1),stopLevelChange)
 
 	return switchMultilevelStartLvChCmd(upDown, durationVal)
 }
@@ -292,19 +313,6 @@ void flashHandler(Integer rateToFlash) {
 
 
 /*** Custom Commands ***/
-void refreshParams() {
-	List<String> cmds = []
-	for (int i = 1; i <= maxAssocGroups; i++) {
-		cmds << associationGetCmd(i)
-	}
-
-	configParams.each { param ->
-		cmds << configGetCmd(param)
-	}
-
-	if (cmds) sendCommands(cmds)
-}
-
 String setParameter(paramNum, value, size = null) {
 	Map param = getParam(paramNum)
 	if (param && !size) { size = param.size	}
@@ -614,7 +622,7 @@ String getSetLevelCmds(level, duration=null, Integer endPoint=0) {
 	// 0x80..0xFE 1 minute (0x80) to 127 minutes (0xFE) in 1 minute resolution.
 	// 0xFF Factory default duration.
 
-	//Convert seconds to minutes for 7x only
+	//Convert seconds to minutes above 120s
 	if (duration > 120) {
 		logDebug "getSetLevelCmds converting ${duration}s to ${Math.round(duration/60)}min"
 		duration = (duration / 60) + 127
