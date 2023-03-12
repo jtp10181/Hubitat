@@ -3,12 +3,13 @@
  *    - Model: ZEN54
  *
  *  For Support, Information, and Updates:
+ *  https://community.hubitat.com/t/zooz-zen54-0-10v-dimmer/114592
  *  https://github.com/jtp10181/Hubitat/tree/main/Drivers/zooz
  *
 
 Changelog:
 
-## [0.1.0] - 2023-03-01 (@jtp10181)
+## [0.1.0] - 2023-03-11 (@jtp10181)
   - Initial Release
 
  *  Copyright 2023 Jeff Page
