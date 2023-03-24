@@ -9,6 +9,14 @@
 
 Changelog:
 
+## [0.2.0] - 2023-03-23 (@jtp10181)
+  - Added full control to parent driver, color commands and white
+  - Added setRGBW command to set individual channels to a precise value
+  - Added option to hide parameter settings
+  - Added setting for channel/transition fade
+  - Changed the On command to use last brightness from level attribute
+  - Removed Pre-Stage option, was not implemented correctly, may come back later
+
 ## [0.1.0] - 2023-03-19 (@jtp10181)
   - Initial Release
 
@@ -32,7 +40,7 @@ import groovy.transform.Field
 import groovy.json.JsonOutput
 import hubitat.helper.ColorUtils
 
-@Field static final String VERSION = "0.1.0"
+@Field static final String VERSION = "0.2.0"
 @Field static final Map deviceModelNames = ["0902:2000":"ZEN31"]
 
 metadata {
@@ -47,12 +55,13 @@ metadata {
 		capability "Switch"
 		capability "SwitchLevel"
 		capability "ChangeLevel"
+		//capability "LevelPreset"
 		capability "Configuration"
 		capability "Refresh"
 		//capability "Flash"
 		capability "PowerMeter"
 		capability "ColorMode"
-		//capability "ColorControl"
+		capability "ColorControl"
 		//capability "ColorTemperature"
 		capability "LightEffects"
 		capability "PushableButton"
@@ -63,25 +72,39 @@ metadata {
 		//Modified from default to add duration argument
 		command "startLevelChange", [
 			[name:"Direction*", description:"Direction for level change request", type: "ENUM", constraints: ["up","down"]],
-			[name:"Duration", type:"NUMBER", description:"Transition duration in seconds", constraints:["NUMBER"]] ]
+			[name:"Duration", type:"NUMBER", description:"Transition duration in seconds"] ]
+
+		command "setRGBW", [
+			[name:"Channel*", description:"Select a channel to set", type: "ENUM", constraints: ["Red", "Green", "Blue", "White"]],
+			[name:"Level*", type:"NUMBER", description:"Precise value (0-255)" ] ]
+
+		command "setWhite", [
+			[name:"Level*", type:"NUMBER", description:"White level to set (0-100)"] ]
+
 
 		//command "refreshParams"
 		command "setScene", [ [name:"Select Scene*", type: "ENUM", constraints: PRESET_SCENES] ]
-		command "setParameter",[[name:"parameterNumber*",type:"NUMBER", description:"Parameter Number", constraints:["NUMBER"]],
-			[name:"value*",type:"NUMBER", description:"Parameter Value", constraints:["NUMBER"]],
-			[name:"size",type:"NUMBER", description:"Parameter Size", constraints:["NUMBER"]]]
+		command "setParameter",[[name:"parameterNumber*",type:"NUMBER", description:"Parameter Number"],
+			[name:"value*",type:"NUMBER", description:"Parameter Value"],
+			[name:"size",type:"NUMBER", description:"Parameter Size"]]
 
 		//DEBUGGING
 		//command "debugShowVars"
 
+		attribute "white", "string"
 		attribute "syncStatus", "string"
 
 		fingerprint mfr:"027A", prod:"0902", deviceId:"2000", inClusters:"0x5E,0x55,0x98,0x9F,0x56,0x22,0x6C", deviceJoinName:"Zooz ZEN31 RGBW Dimmer"
 	}
 
 	preferences {
+		input "hideParams", "bool",
+			title: fmtTitle("Hide Parameter Settings"),
+			description: fmtDesc("Turn on and Save to hide the Parameter Settings"),
+			defaultValue: false
+
 		configParams.each { param ->
-			if (!param.hidden) {
+			if (!param.hidden && !hideParams) {
 				Integer paramVal = getParamValue(param)
 				if (param.options) {
 					input "configParam${param.num}", "enum",
@@ -102,6 +125,13 @@ metadata {
 			}
 		}
 
+		input "channelFade", "enum",
+			title: fmtTitle("Channel Fade Durartion"),
+			description: fmtDesc("Default fade duration when adjusting channel colors or level"),
+			defaultValue: 0,
+			options: [0:"Instant On/Off"] + rampRateOptions
+			required: false
+
 		input "forceBrightness", "bool",
 			title: fmtTitle("Force Full Device Brightness"),
 			description: fmtDesc("<b>Disabled:</b> Turns on with previous level. <b>Enabled:</b> Forces parent device brightness (level) to maximum, child levels are not affected."),
@@ -112,10 +142,10 @@ metadata {
 			description: fmtDesc("<b>Disabled:</b> Waits for device to send status back after making changes. <b>Enabled:</b> Immediately requests status update after making changes. WARNING: This will cause a significant increase in Z-Wave messages."),
 			defaultValue: false
 
-		input "preStaging", "bool",
-			title: fmtTitle("Allow Pre-Staging"),
-			description: fmtDesc("<b>Disabled:</b> Setting level or colors will turn the LED on. <b>Enabled:</b> Allows colors and level to be pre-staged on child devices while LED is off."),
-			defaultValue: false
+		// input "preStaging", "bool",
+		// 	title: fmtTitle("Allow Pre-Staging"),
+		// 	description: fmtDesc("<b>Disabled:</b> Setting level or colors will turn the LED on. <b>Enabled:</b> Allows colors and level to be pre-staged on child devices while LED is off."),
+		// 	defaultValue: false
 
 		input "whiteAndRGB", "bool",
 			title: fmtTitle("Allow White and RGB Simultaneously"),
@@ -204,23 +234,23 @@ void debugShowVars() {
 	//Scene Control
 	sceneIn1: [ num: 40,
 		title: "Scene Events (IN1)",
-		size: 1, defaultVal: 15,
-		options: [0:"Disabled", 15:"All Enabled"],
+		size: 1, defaultVal: 11,
+		options: [0:"Disabled", 11:"Enable Supported"],
 	],
 	sceneIn2: [ num: 41,
 		title: "Scene Events (IN2)",
-		size: 1, defaultVal: 15,
-		options: [0:"Disabled", 15:"All Enabled"],
+		size: 1, defaultVal: 11,
+		options: [0:"Disabled", 11:"Enable Supported"],
 	],
 	sceneIn3: [ num: 42,
 		title: "Scene Events (IN3)",
-		size: 1, defaultVal: 15,
-		options: [0:"Disabled", 15:"All Enabled"],
+		size: 1, defaultVal: 11,
+		options: [0:"Disabled", 11:"Enable Supported"],
 	],
 	sceneIn4: [ num: 43,
 		title: "Scene Events (IN4)",
-		size: 1, defaultVal: 15,
-		options: [0:"Disabled", 15:"All Enabled"],
+		size: 1, defaultVal: 11,
+		options: [0:"Disabled", 11:"Enable Supported"],
 	],
 	//Power Reporting
 	powerFrequency: [ num: 62,
@@ -323,6 +353,7 @@ CommandClassReport - class:0x9F, version:1    (Security 2)
 
 /*** Static Lists and Settings ***/
 @Field static final Map COLOR_COMPONENTS = [white:0, red:2, green:3, blue:4]
+@Field static final Map COLOR_NAMES = [warmWhite:"white", red:"red", green:"green", blue:"blue"]
 @Field static final Map PRESET_SCENES = [0:"Disabled", 6:"Fireplace", 7:"Storm", 8:"Rainbow", 9:"Polar Lights", 10:"Police"]
 
 /*******************************************************************
@@ -380,14 +411,13 @@ void refresh() {
 def on() {
 	logDebug "on..."
 	//flashStop()
-	def onVal = forceBrightness ? 99 : 0xFF
-	return delayBetween(getSetLevelCmds(onVal), 200)
+	return delayBetween(getOnOffCmds(0XFF), 200)
 }
 
 def off() {
 	logDebug "off..."
 	//flashStop()
-	return delayBetween(getSetLevelCmds(0x00), 200)
+	return delayBetween(getOnOffCmds(0x00), 200)
 }
 
 def setLevel(level, duration=null) {
@@ -395,17 +425,15 @@ def setLevel(level, duration=null) {
 	return delayBetween(getSetLevelCmds(level, duration), 200)
 }
 
-List<String> startLevelChange(direction, duration=null) {
+def startLevelChange(direction, duration=null) {
 	Boolean upDown = (direction == "down") ? true : false
 	Integer durationVal = validateRange(duration, getParamValue("holdRampRate"), 0, 127)
 	logDebug "startLevelChange($direction) for ${durationVal}s"
 
-	List<String> cmds = [switchMultilevelStartLvChCmd(upDown, durationVal)]
-
-	return delayBetween(cmds, 200)
+	return switchMultilevelStartLvChCmd(upDown, durationVal)
 }
 
-String stopLevelChange() {
+def stopLevelChange() {
 	logDebug "stopLevelChange()"
 	return switchMultilevelStopLvChCmd()
 }
@@ -415,6 +443,21 @@ void push(buttonId) { sendBasicButtonEvent(buttonId, "pushed") }
 void hold(buttonId) { sendBasicButtonEvent(buttonId, "held") }
 void release(buttonId) { sendBasicButtonEvent(buttonId, "released") }
 void doubleTap(buttonId) { sendBasicButtonEvent(buttonId, "doubleTapped") }
+
+void setSaturation(percent) {
+	logDebug "setSaturation(${percent})"
+	sendCommands(getColorCmds([saturation: percent]), 100)
+}
+
+void setHue(value) {
+	logDebug "setHue(${value})"
+	sendCommands(getColorCmds([hue: value]), 100)
+}
+
+void setColor(cMap) {
+	logDebug "setColor(${cMap})"
+	sendCommands(getColorCmds(cMap), 100)
+}
 
 void setEffect(efNum) {
 	logDebug "setEffect(${efNum})"
@@ -485,6 +528,18 @@ void flashHandler(Integer rateToFlash) {
 
 
 /*** Custom Commands ***/
+void setRGBW(String channel, value) {
+	logDebug "setChannel($channel, $value)"
+	//Fix channel name and set white to correct name
+	channel = channel.toLowerCase()
+	sendCommands(switchColorSetCmd(channel, value as Integer))
+}
+
+void setWhite(level) {
+	logDebug "setWhite($level)"
+	sendCommands(getWhiteCmds(level), 100)
+}
+
 void setScene(String efName) {
 	Short paramVal = PRESET_SCENES.find{ efName.equalsIgnoreCase(it.value) }.key
 	logDebug "Set Scene [${paramVal} : ${efName}]"
@@ -514,7 +569,7 @@ String setParameter(paramNum, value, size = null) {
 		return
 	}
 	logDebug "setParameter ( number: $paramNum, value: $value, size: $size )" + (param ? " [${param.name}]" : "")
-	return secureCmd(configSetCmd([num: paramNum, size: size], value as Integer))
+	sendCommands(configSetGetCmd([num: paramNum, size: size], value as Integer))
 }
 
 /*** Child Capabilities ***/
@@ -530,7 +585,6 @@ void componentOn(cd) {
 		Integer level = cd.currentValue("level")
 		cmds += getWhiteCmds(level)
 	}
-	if (preStaging) { cmds += on() }
 
 	sendCommands(cmds, 100)
 }
@@ -585,7 +639,7 @@ void componentSetSaturation(cd, percent) {
 	if (name == "color") {
 		cmds += getColorCmds([saturation: percent], cd)
 	}
-	sendCommands(cmds,100)
+	sendCommands(cmds, 100)
 }
 
 void componentSetHue(cd, value) {
@@ -597,7 +651,7 @@ void componentSetHue(cd, value) {
 	if (name == "color") {
 		cmds += getColorCmds([hue: value], cd)
 	}
-	sendCommands(cmds,100)
+	sendCommands(cmds, 100)
 }
 
 void componentSetColor(cd, cMap) {
@@ -609,7 +663,7 @@ void componentSetColor(cd, cMap) {
 	if (name == "color") { 
 		cmds += getColorCmds(cMap)
 	}
-	sendCommands(cmds,100)
+	sendCommands(cmds, 100)
 }
 
 def componentStartLevelChange(cd, direction) {
@@ -732,7 +786,7 @@ void zwaveEvent(hubitat.zwave.commands.associationv2.AssociationReport cmd) {
 void zwaveEvent(hubitat.zwave.commands.basicv1.BasicReport cmd, ep=0) {
 	logTrace "${cmd} (ep ${ep})"
 	//flashStop() //Stop flashing if its running
-	sendSwitchEvents(cmd.value, null, ep)
+	sendSwitchEvents(cmd.value ? true : false, "digital", ep)
 }
 
 void zwaveEvent(hubitat.zwave.commands.switchmultilevelv2.SwitchMultilevelReport cmd, ep=0) {
@@ -749,7 +803,9 @@ void zwaveEvent(hubitat.zwave.commands.switchcolorv3.SwitchColorReport cmd, ep=0
 	logTrace "${cmd} (ep ${ep})"
 
 	if (!state.RGBW) state.RGBW = [red:0, green:0, blue:0]
-    state.RGBW[cmd.colorComponent] = cmd.targetValue
+
+	String color = COLOR_NAMES[cmd.colorComponent]
+    state.RGBW[color] = cmd.targetValue
 
 	//Delayed so we get all updates before sending
 	runInMillis(800, sendColorEvents)
@@ -839,6 +895,10 @@ String versionGetCmd() {
 	return secureCmd(zwave.versionV2.versionGet())
 }
 
+String basicGetCmd(Integer ep=0) {
+	return secureCmd(zwave.basicV1.basicGet(), ep)
+}
+
 String switchBinarySetCmd(Integer value, Integer ep=0) {
 	return secureCmd(zwave.switchBinaryV1.switchBinarySet(switchValue: value), ep)
 }
@@ -855,22 +915,46 @@ String switchMultilevelGetCmd(Integer ep=0) {
 	return secureCmd(zwave.switchMultilevelV2.switchMultilevelGet(), ep)
 }
 
-String switchColorRGBSetCmd(rgb) {
-	Map colors = [red: rgb[0], green: rgb[1], blue: rgb[2]]
-	if (!whiteAndRGB && rgb != [0,0,0]) {
-		colors += [warmWhite:0]
-		logDebug "whiteAndRGB is ${whiteAndRGB}, turning off WHITE ${colors}"
+String switchColorSetCmd(String color, Integer value, Integer duration=null) {
+	Map colors = [(COLOR_COMPONENTS[color]): value]
+	if (duration == null) {
+		duration = (state.switchEnabled ? safeToInt(channelFade) : 0)
 	}
-	return secureCmd(zwave.switchColorV3.switchColorSet(colors))
+
+	colorCheckPending(colors)
+	return secureCmd(zwave.switchColorV3.switchColorSet(colorComponents: colors, dimmingDuration: duration))
 }
 
-String switchColorWhiteSetCmd(value) {
-	Map colors = [warmWhite: value]
+String switchColorRGBSetCmd(List rgb, Integer duration=null) {
+	Map colors = [
+		(COLOR_COMPONENTS.red): rgb[0],
+		(COLOR_COMPONENTS.green): rgb[1],
+		(COLOR_COMPONENTS.blue): rgb[2]
+	]
+	if (!whiteAndRGB && rgb != [0,0,0]) {
+		colors += [(COLOR_COMPONENTS.white): 0]
+		logDebug "whiteAndRGB is ${whiteAndRGB}, turning off WHITE ${colors}"
+	}
+	if (duration == null) {
+		duration = (state.switchEnabled ? safeToInt(channelFade) : 0)
+	}
+
+	colorCheckPending(colors)
+	return secureCmd(zwave.switchColorV3.switchColorSet(colorComponents: colors, dimmingDuration: duration))
+}
+
+String switchColorWhiteSetCmd(Integer value, Integer duration=null) {
+	Map colors = [(COLOR_COMPONENTS.white): value]
 	if (!whiteAndRGB && value > 0) {
-		colors += [red:0, green:0, blue:0]
+		colors += [2:0, 3:0, 4:0]
 		logDebug "whiteAndRGB is ${whiteAndRGB}, turning off RGB ${colors}"
 	}
-	return secureCmd(zwave.switchColorV3.switchColorSet(colors))
+	if (duration == null) {
+		duration = (state.switchEnabled ? safeToInt(channelFade) : 0)
+	}
+
+	colorCheckPending(colors)
+	return secureCmd(zwave.switchColorV3.switchColorSet(colorComponents: colors, dimmingDuration: duration))
 }
 
 String switchColorGetCmd(colorId) {	
@@ -1059,7 +1143,13 @@ Integer getPendingChanges() {
 	return (!state.resyncAll ? (configChanges + pendingAssocs) : configChanges)
 }
 
-List<String> getSetLevelCmds(Number level, Number duration=null, Integer endPoint=0) {
+List getOnOffCmds(val, Number duration=null, Integer endPoint=0) {
+	Short onVal = device.currentValue("level") ?: 0xFF
+	if (forceBrightness) onVal = 99
+	return getSetLevelCmds(val ? onVal : 0x00, duration, endPoint)
+}
+
+List getSetLevelCmds(Number level, Number duration=null, Integer endPoint=0) {
 	Short levelVal = safeToInt(level, 99)
 	// level 0xFF tells device to use last level, 0x00 is off
 	if (levelVal != 0xFF && levelVal != 0x00) {
@@ -1085,11 +1175,12 @@ List<String> getSetLevelCmds(Number level, Number duration=null, Integer endPoin
 	}
 
 	//state.isDigital = true
+	state.switchEnabled = levelVal ? true : false
 	logDebug "getSetLevelCmds output [level:${levelVal}, duration:${durationVal}, endPoint:${endPoint}]"
 
 	List<String> cmds = []
 	cmds << switchMultilevelSetCmd(levelVal, durationVal, endPoint)
-	if (quickRefresh) cmds << switchMultilevelGetCmd()
+	if (quickRefresh) cmds << basicGetCmd()
 
 	return cmds
 }
@@ -1098,22 +1189,19 @@ List<String> getColorCmds(Map hsvMap, child=null) {
 	logDebug "getColorCmds(${hsvMap})"
 
 	//Get Current State
-	List rgb = [state.RGBW?.red, state.RGBW?.green, state.RGBW?.blue]
-	List hsv = ColorUtils.rgbToHSV(rgb)
+	Map hsvMapDev = state.colorLast
 
 	//Override with current settings from child device
 	if (child) {
-		hsv = [
-			child.currentValue("hue"),
-			child.currentValue("saturation"),
-			child.currentValue("level")
-		]
+		hsvMapDev.hue = child.currentValue("hue")
+		hsvMapDev.saturation = child.currentValue("saturation")
+		hsvMapDev.level = child.currentValue("level")
 	}
 
 	//Figure out desired state from data provided
-	def hue = (hsvMap.hue != null ? hsvMap.hue : hsv[0])
-	def sat = (hsvMap.saturation != null ? hsvMap.saturation : hsv[1])
-	def val = (hsvMap.level != null ? hsvMap.level : hsv[2])
+	def hue = (hsvMap.hue != null ? hsvMap.hue : hsvMapDev.hue)
+	def sat = (hsvMap.saturation != null ? hsvMap.saturation : hsvMapDev.saturation)
+	def val = (hsvMap.level != null ? hsvMap.level : hsvMapDev.level)
 
 	//Convert back to RGB
 	rgb = ColorUtils.hsvToRGB([hue, sat, val])
@@ -1121,10 +1209,11 @@ List<String> getColorCmds(Map hsvMap, child=null) {
 
 	List<String> cmds = []
 	cmds << switchColorRGBSetCmd(rgb)
-	if (!preStaging && val > 0) { cmds += on() }
+	if (!state.switchEnabled && val > 0) { cmds += getOnOffCmds(0xFF) }
 	if (quickRefresh) {
 		COLOR_COMPONENTS.each {	cmds << switchColorGetCmd(it.value) }
 	}
+	state.colorEnabled = val ? true : false
 
 	return cmds
 }
@@ -1137,10 +1226,11 @@ List<String> getWhiteCmds(level) {
 
 	List<String> cmds = []
 	cmds << switchColorWhiteSetCmd(scaledLevel)
-	if (!preStaging && level > 0) { cmds += on() }
+	if (!state.switchEnabled && level > 0) { cmds += getOnOffCmds(0xFF) }
 	if (quickRefresh) {
 		cmds << switchColorGetCmd(COLOR_COMPONENTS.white)
 	}
+	state.whiteEnabled = level ? true : false
 
 	return cmds
 }
@@ -1188,6 +1278,7 @@ void sendSwitchEvents(rawVal, String type, ep=null) {
 	String value = (rawVal ? "on" : "off")
 	String desc = "switch is turned ${value}" + (type ? " (${type})" : "")
 	sendEventLog(name:"switch", value:value, type:type, desc:desc, ep)
+	if (!"$rawVal".isNumber()) return
 
 	if (rawVal) {
 		Integer level = (rawVal == 99 ? 100 : rawVal)
@@ -1199,6 +1290,7 @@ void sendSwitchEvents(rawVal, String type, ep=null) {
 		sendEventLog(name:"level", value:level, type:type, unit:"%", desc:desc, ep)
 	}
 
+	state.switchEnabled = (rawVal ? true : false)
 	String whValue = (rawVal && state.whiteEnabled) ? "on" : "off"
 	String cValue  = (rawVal && state.colorEnabled) ? "on" : "off"
 	sendEventLog(name:"switch", value:whValue, type:type, "white")
@@ -1211,58 +1303,99 @@ void sendBasicButtonEvent(buttonId, String name) {
 }
 
 void sendColorEvents() {
+	logDebug "sendColorEvents(${state.RGBW})"
 	//Check main switch state
-	Boolean mainSwitch = (device.currentValue("switch") == "on")
+	//Boolean mainSwitch = (device.currentValue("switch") == "on")
+	Boolean mainSwitch = state.switchEnabled
+	List rgb, hsv
+
+	//Check for still pending states
+	Map pending = [any: false, color: false, white: false]
+	state.RGBW.each{ k, v ->
+		if (v == "PEND") {
+			pending.any = true
+			if (k == "white")	pending.white = true
+			else				pending.color = true
+		}
+	}
 
 	//RGB Color Events
-	List rgb = [state.RGBW.red, state.RGBW.green, state.RGBW.blue]
-	List hsv = ColorUtils.rgbToHSV(rgb)
-	Integer cHue = Math.round(hsv[0])
-	Integer cSat = Math.round(hsv[1])
-	Integer cLevel = Math.round(hsv[2])
-	def cdColor = getChildByName("color")
+	if (!pending.color) {
+		rgb = [state.RGBW.red, state.RGBW.green, state.RGBW.blue]
+		hsv = ColorUtils.rgbToHSV(rgb)
+		Integer cHue = Math.round(hsv[0])
+		Integer cSat = Math.round(hsv[1])
+		Integer cLevel = Math.round(hsv[2])
+		def cdColor = getChildByName("color")
 
-	if (hsv[2] > 0) {
-		state.colorEnabled = true
-		sendEventLog(name:"hue", value: cHue, "color")
-		sendEventLog(name:"saturation", value: cSat, unit:"%", "color")
-		sendEventLog(name:"level", value: cLevel, unit:"%", "color")
-		sendEventLog(name:"colorName", value: getGenericColor(hsv), "color")
-		//sendEventLog(name:"RGB", value: rgb, "color")
-		//sendEventLog(name:"color", value: [hue:cHue, saturation:cSat, level:cLevel], "color")
-		//Sending to parse doesn't work for RGB on component driver
-		cdColor.sendEvent(name:"RGB", value: rgb)
-		//If device is on switch on the color child
-		if (mainSwitch) {
-			sendEventLog(name:"switch", value: "on", "color")
+		if (cLevel > 0) {
+			state.colorEnabled = true
+			//Parent Events
+			state.colorLast = [hue:cHue, saturation:cSat, level:cLevel]
+			sendEventLog(name:"hue", value: cHue)
+			sendEventLog(name:"saturation", value: cSat, unit:"%")
+			//sendEventLog(name:"level", value: cLevel, unit:"%")
+			sendEventLog(name:"RGB", value: rgb)
+			sendEventLog(name:"color", value: state.colorLast)
+			//Child Events
+			sendEventLog(name:"hue", value: cHue, "color")
+			sendEventLog(name:"saturation", value: cSat, unit:"%", "color")
+			sendEventLog(name:"level", value: cLevel, unit:"%", "color")
+			sendEventLog(name:"colorName", value: getGenericColor(hsv), "color")
+			//Sending to parse doesn't work for RGB on component driver
+			cdColor.sendEvent(name:"RGB", value: rgb)
+			//If device is on switch on the color child
+			if (mainSwitch) {
+				sendEventLog(name:"switch", value: "on", "color")
+			}
+		}
+		else {
+			state.colorEnabled = false
+			sendEventLog(name:"switch", value: "off", "color")
 		}
 	}
-	else {
-		state.colorEnabled = false
-		sendEventLog(name:"switch", value: "off", "color")
-	}
-	
-	if (state.effectNumber == 0) sendEventLog(name:"colorMode", value:"RGB")
 
 	//White Events
-	Integer white = state.RGBW?.warmWhite
-	Integer whLevel = Math.round((white*100)/255)
-	if (whLevel > 0) {
-		state.whiteEnabled = true
-		sendEventLog(name:"level", value: whLevel, unit:"%", "white")
-		//If device is on switch on the white child
-		if (mainSwitch) {
-			sendEventLog(name:"switch", value: "on", "white")
+	if (!pending.white) {
+		Integer white = state.RGBW?.white
+		Integer whLevel = Math.round((white*100)/255)
+		if (whLevel > 0) {
+			state.whiteEnabled = true
+			//Parent EVents
+			state.whiteLast = [level: whLevel, W: white]
+			sendEventLog(name:"white", value: state.whiteLast)
+			//Child Events
+			sendEventLog(name:"level", value: whLevel, unit:"%", "white")
+			//If device is on switch on the white child
+			if (mainSwitch) {
+				sendEventLog(name:"switch", value: "on", "white")
+			}
+		}
+		else {
+			state.whiteEnabled = false
+			sendEventLog(name:"switch", value: "off", "white")
 		}
 	}
-	else {
-		state.whiteEnabled = false
-		sendEventLog(name:"switch", value: "off", "white")
+
+	//Set colorMode and colorName
+	if (!pending.any && state.effectNumber == 0) {
+		if (state.whiteEnabled && state.colorEnabled) {
+			sendEventLog(name:"colorMode", value:"RGBW")
+			sendEventLog(name:"colorName", value: getGenericColor(hsv) + "/White")
+		}
+		else if (state.colorEnabled ) {
+			sendEventLog(name:"colorMode", value: "RGB")
+			sendEventLog(name:"colorName", value: getGenericColor(hsv))
+		}
+		else if (state.whiteEnabled ) {
+			sendEventLog(name:"colorMode", value:"WHITE")
+			sendEventLog(name:"colorName", value:"White")
+		} 
 	}
 
 	//If Both off turn off main switch
-	if (mainSwitch && !state.colorEnabled && !state.whiteEnabled) {
-		sendCommands(getSetLevelCmds(0x00))
+	if (mainSwitch && !pending.any && !state.colorEnabled && !state.whiteEnabled) {
+		sendCommands(getOnOffCmds(0x00))
 	}
 }
 
@@ -1275,9 +1408,6 @@ void sendEffectEvents(effect) {
 		sendEventLog(name:"colorMode", value:"EFFECTS", desc:"colorMode set to EFFECTS (${efName})")
 		sendEventLog(name:"switch", value:"on")
 		sendCommands(["delay 2500",switchMultilevelGetCmd()])
-	}
-	else {
-		sendEventLog(name:"colorMode", value:"RGB", desc:"colorMode set to RGB (Effects Disabled)")
 	}
 }
 
@@ -1567,6 +1697,13 @@ Integer convertLevel(level, userLevel=false) {
 	}
 
 	return level
+}
+
+void colorCheckPending(Map colors) {
+	colors.each{ k, v ->
+		String color = COLOR_COMPONENTS.find{ it.value == k }.key
+		if (state.RGBW[color] != v) state.RGBW[color] = "PEND"
+	}
 }
 
 String getGenericColor(List hsv){
