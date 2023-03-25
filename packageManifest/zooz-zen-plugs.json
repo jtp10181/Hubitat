@@ -1,11 +1,11 @@
 {
   "packageName": "Zooz Plugs Advanced Drivers",
-  "author": "jtp10181",
+  "author": "Jeff Page (@jtp10181)",
   "minimumHEVersion": "2.3.0",
   "dateReleased": "2023-01-14",
   "documentationLink": "https://github.com/jtp10181/Hubitat/tree/main/Drivers/zooz",
   "communityLink": "https://community.hubitat.com/t/zooz-smart-plugs-advanced/98333",
-  "releaseNotes": "Version [1.1.2] - 2023-01-14 (@jtp10181)\n - Added full support for ZEN15\n - Support for ANY standard Z-Wave Power Metering Plug\n Check community post for full details.",
+  "releaseNotes": "Support for ANY standard Z-Wave Power Metering Plug\n\nVersion [1.1.2] - 2023-01-14 (@jtp10181)\n  ### Added\n  - Put useful info into the warnings event description\n  - Added lower limits to catch negative reports\nVersion [1.1.0] - 2023-01-08 (@jtp10181)\n  ### Added\n  - Support for ZEN15\n  - energyDuration as an attribute so it can display on dashboard\n  - Over limit checking with Warn log and warnings count attribute\n  ### Changed\n  - Probing device for power metering support instead of hard coded by model\n  - Reworked the meter lists to implement the limits\n  - Reworked switch event handling to catch BasicReport and SwitchBinaryReport",
   "version": "1.1.2",
   "drivers": [
     {

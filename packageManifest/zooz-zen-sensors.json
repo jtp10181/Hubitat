@@ -1,6 +1,6 @@
 {
   "packageName": "Zooz Sensors Advanced Drivers",
-  "author": "jtp10181",
+  "author": "Jeff Page (@jtp10181)",
   "minimumHEVersion": "2.3.0",
   "dateReleased": "2022-08-06",
   "documentationLink": "https://github.com/jtp10181/Hubitat/tree/main/Drivers/zooz",
