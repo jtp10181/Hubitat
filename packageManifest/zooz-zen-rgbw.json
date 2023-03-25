@@ -1,0 +1,19 @@
+{
+  "packageName": "Zooz ZEN31 RGBW Advanced Driver",
+  "author": "Jeff Page (@jtp10181)",
+  "minimumHEVersion": "2.3.0",
+  "dateReleased": "2023-03-25",
+  "documentationLink": "https://github.com/jtp10181/Hubitat/tree/main/Drivers/zooz",
+  "communityLink": "https://community.hubitat.com/t/zooz-zen31-rgbw-dimmer-advanced/115212",
+  "releaseNotes": "Version [0.3.0] - 2023-03-25 (@jtp10181)\n  - Changed Quick Refresh to be enabled by default\n  - Changed Force Full Brightness to enabled by default\n  - Fixed issues with Start Level Change defaulting to duration of 0\n  - Fixed color/white event sending to skip when no changes\n  - Reworked Quick Refresh to work better in various situations",
+  "version": "0.3.0",
+  "drivers": [
+    {
+      "id": "5a7bb71c-38aa-4ff8-b059-bfc4bd8449ab",
+      "name": "Zooz ZEN31 RGBW Dimmer Advanced",
+      "namespace": "jtp10181",
+      "location": "https://jtp10181.gateway.scarf.sh/zooz-zen31-rgbw-dimmer.groovy",
+      "required": false
+    }
+  ]
+}

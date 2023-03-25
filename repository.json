@@ -1,5 +1,5 @@
 {
-  "author": "jtp10181",
+  "author": "Jeff Page (@jtp10181)",
   "gitHubUrl": "https://github.com/jtp10181/Hubitat",
   "payPalUrl": "http://paypal.me/JPage81",
   "packages": [
@@ -52,6 +52,18 @@
       "descriptive": "<p><strong>Officially Supported Models:</strong></p>\n\n<ul>\n\t<li>ZEN04 Smart Plug - <a href=\"https://www.getzooz.com/zooz-zen04-smart-plug/\">[Product Info]</a> <a href=\"https://www.support.getzooz.com/kb/article/1114-zen04-smart-plug-advanced-settings/\">[Settings Docs]</a></li>\n\t<li>ZEN05 Outdoor Plug - <a href=\"https://www.thesmartesthouse.com/products/zooz-700-series-z-wave-plus-outdoor-smart-plug-zen05\">[Product Info]</a> <a href=\"https://www.support.getzooz.com/kb/article/1118-zen05-outdoor-plug-advanced-settings/\">[Settings Docs]</a></li>\n\t<li>ZEN14 Outdoor Double Plug - <a href=\"https://www.thesmartesthouse.com/products/zooz-700-series-z-wave-plus-outdoor-double-plug-zen14\">[Product Info]</a> <a href=\"https://www.support.getzooz.com/kb/article/1122-zen14-double-outdoor-plug-advanced-settings/\">[Settings Docs]</a></li>\n\t<li>ZEN15 Power Switch (v1.06) - <a href=\"https://www.getzooz.com/zooz-zen15-power-switch/\">[Product Info]</a> <a href=\"https://www.support.getzooz.com/kb/article/616-zen15-power-switch-ver-1-06-advanced-settings/\">[Settings Docs]</a></li>\n</ul>\n\n<p><strong>Features:</strong></p>\n\n<ul>\n\t<li>All configuration variables available with designated defaults per Zooz</li>\n\t<li>Basic energy monitoring from collected metrics (on available models)</li>\n\t<li>Can be used as a universal Z-Wave plug driver including Power Metering!</li>\n</ul>\n\n<p>For more info on the advanced settings check the <a href=\"https://www.support.getzooz.com/kb/section/8/\">Zooz Support Documentation</a>. Select your model &gt; Z-Wave Questions &gt; Advanced Settings (bottom right corner)</p>",
       "tags": [
         "Energy Monitoring",
+        "Lights & Switches",
+        "ZWave"
+      ]
+    },
+    {
+      "id": "aaeb26b7-3156-452c-9424-d733c3df79ee",
+      "name": "Zooz ZEN31 RGBW Advanced Driver",
+      "category": "Control",
+      "location": "https://raw.githubusercontent.com/jtp10181/Hubitat/main/packageManifest/zooz-zen-rgbw.json",
+      "description": "Zooz ZEN31 RGBW Dimmer driver with advanced features and settings",
+      "descriptive": "",
+      "tags": [
         "Lights & Switches",
         "ZWave"
       ]
