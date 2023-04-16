@@ -1,13 +1,17 @@
 /*  
  *  Leviton Z-Wave Plus Dimmer
- *    - Model: DZPD3 Plug-In Dimmer
- *    - Model: DZ6HD In Wall Dimmer
+ *    - Model: DZPD3 Z-Wave+ Plug-In Dimmer
+ *    - Model: DZ6HD Z-Wave+ In Wall Dimmer
  *
  *  For Support, Information and Updates:
+ *  https://community.hubitat.com/t/leviton-dimmers/114333
  *  https://github.com/jtp10181/Hubitat/tree/main/Drivers/
  *
 
 Changelog:
+
+## [1.0.1] - 2023-04-16 (@jtp10181)
+  - Fixed startLevelChange not working when duration left blank
 
 ## [1.0.0] - 2023-03-08 (@jtp10181)
   - Added support for DZ6HD
@@ -260,16 +264,18 @@ String setLevel(level, duration=null) {
 String startLevelChange(direction, duration=null) {
 	Boolean upDown = (direction == "down") ? true : false
 	Integer durationVal = validateRange(duration, 0, 0, 127)
+	if (durationVal == 0) durationVal = 20 //Device default is 20s when you send 0
 	logDebug "startLevelChange($direction) for ${durationVal}s"
 
 	//Required after change to send updated report
-	runIn((durationVal+1),stopLevelChange)
+	runIn((durationVal+2),stopLevelChange)
 
 	return switchMultilevelStartLvChCmd(upDown, durationVal)
 }
 
 String stopLevelChange() {
 	logDebug "stopLevelChange()"
+	unschedule(stopLevelChange)
 	return switchMultilevelStopLvChCmd()
 }
 
@@ -579,6 +585,7 @@ void clearVariables() {
 
 	//Restore
 	if (devModel) state.deviceModel = devModel
+	setDevModel()
 }
 
 List getConfigureAssocsCmds() {
