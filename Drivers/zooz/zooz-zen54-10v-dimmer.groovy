@@ -112,14 +112,6 @@ metadata {
 	}
 }
 
-//Preference Helpers
-String fmtDesc(String str) {
-	return "<div style='font-size: 85%; font-style: italic; padding: 1px 0px 4px 2px;'>${str}</div>"
-}
-String fmtTitle(String str) {
-	return "<strong>${str}</strong>"
-}
-
 void debugShowVars() {
 	log.warn "paramsList ${paramsList.hashCode()} ${paramsList}"
 	log.warn "paramsMap ${paramsMap.hashCode()} ${paramsMap}"
@@ -129,6 +121,9 @@ void debugShowVars() {
 //Association Settings
 @Field static final int maxAssocGroups = 4
 @Field static final int maxAssocNodes = 5
+
+/*** Static Lists and Settings ***/
+//NONE
 
 //Main Parameters Listing
 @Field static Map<String, Map> paramsMap =
@@ -265,6 +260,7 @@ CommandClassReport - class:0x9F, version:1    (Security 2)
 	0x86: 2,	// versionv2
 	0x8E: 3,	// multichannelassociationv3
 ]
+
 
 /*******************************************************************
  ***** Core Functions
@@ -427,7 +423,6 @@ void parse(String description) {
 
 	//Update Last Activity
 	updateLastCheckIn()
-	//sendEvent(name:"numberOfButtons", value:10)
 }
 
 //Decodes Multichannel Encapsulated Commands
@@ -536,6 +531,188 @@ void zwaveEvent(hubitat.zwave.Command cmd, ep=0) {
 
 
 /*******************************************************************
+ ***** Execute / Build Commands
+********************************************************************/
+void executeConfigureCmds() {
+	logDebug "executeConfigureCmds..."
+
+	List<String> cmds = []
+
+	if (!firmwareVersion || !state.deviceModel) {
+		cmds << versionGetCmd()
+	}
+
+	cmds += getConfigureAssocsCmds()
+
+	configParams.each { param ->
+		Integer paramVal = getParamValue(param, true)
+		Integer storedVal = getParamStoredValue(param.num)
+
+		if ((paramVal != null) && (state.resyncAll || (storedVal != paramVal))) {
+			logDebug "Changing ${param.name} (#${param.num}) from ${storedVal} to ${paramVal}"
+			cmds += configSetGetCmd(param, paramVal)
+		}
+	}
+
+	if (state.resyncAll) clearVariables()
+	state.resyncAll = false
+
+	if (cmds) sendCommands(cmds)
+}
+
+void executeRefreshCmds() {
+	List<String> cmds = []
+
+	if (state.resyncAll || !firmwareVersion || !state.deviceModel) {
+		cmds << versionGetCmd()
+	}
+
+	cmds << switchMultilevelGetCmd()
+
+	sendCommands(cmds)
+}
+
+List getConfigureAssocsCmds() {
+	List<String> cmds = []
+
+	if (!state.group1Assoc || state.resyncAll) {
+		cmds << associationSetCmd(1, [zwaveHubNodeId])
+		cmds << associationGetCmd(1)
+		if (state.group1Assoc == false) {
+			logDebug "Adding missing lifeline association..."
+		}
+	}
+
+	for (int i = 2; i <= maxAssocGroups; i++) {
+		List<String> cmdsEach = []
+		List settingNodeIds = getAssocDNIsSettingNodeIds(i)
+
+		//Need to remove first then add in case we are at limit
+		List oldNodeIds = state."assocNodes$i"?.findAll { !(it in settingNodeIds) }
+		if (oldNodeIds) {
+			logDebug "Removing Nodes: Group $i - $oldNodeIds"
+			cmdsEach << associationRemoveCmd(i, oldNodeIds)
+		}
+
+		List newNodeIds = settingNodeIds.findAll { !(it in state."assocNodes$i") }
+		if (newNodeIds) {
+			logDebug "Adding Nodes: Group $i - $newNodeIds"
+			cmdsEach << associationSetCmd(i, newNodeIds)
+		}
+
+		if (cmdsEach || state.resyncAll) {
+			cmdsEach << associationGetCmd(i)
+			cmds += cmdsEach
+		}
+	}
+
+	return cmds
+}
+
+List getAssocDNIsSettingNodeIds(grp) {
+	def dni = getAssocDNIsSetting(grp)
+	def nodeIds = convertHexListToIntList(dni.split(","))
+
+	if (dni && !nodeIds) {
+		logWarn "'${dni}' is not a valid value for the 'Device Associations - Group ${grp}' setting.  All z-wave devices have a 2 character Device Network ID and if you're entering more than 1, use commas to separate them."
+	}
+	else if (nodeIds.size() > maxAssocNodes) {
+		logWarn "The 'Device Associations - Group ${grp}' setting contains more than ${maxAssocNodes} IDs so some (or all) may not get associated."
+	}
+
+	return nodeIds
+}
+
+String getOnOffCmds(val, Integer endPoint=0) {
+	return getSetLevelCmds(val ? 0xFF : 0x00, null, endPoint)
+}
+
+String getSetLevelCmds(Number level, Number duration=null, Integer endPoint=0) {
+	Short levelVal = safeToInt(level, 99)
+	// level 0xFF tells device to use last level, 0x00 is off
+	if (levelVal != 0xFF && levelVal != 0x00) {
+		//Convert level in range of min/max
+		levelVal = convertLevel(levelVal, true)
+		levelVal = validateRange(levelVal, 99, 1, 99)
+	}
+
+	// Duration Encoding:
+	// 0x01..0x7F 1 second (0x01) to 127 seconds (0x7F) in 1 second resolution.
+	// 0x80..0xFE 1 minute (0x80) to 127 minutes (0xFE) in 1 minute resolution.
+	// 0xFF Factory default duration.
+
+	//Convert seconds to minutes above 120s
+	if (duration > 120) {
+		logDebug "getSetLevelCmds converting ${duration}s to ${Math.round(duration/60)}min"
+		duration = (duration / 60) + 127
+	}
+
+	Short durationVal = validateRange(duration, -1, -1, 254)
+	if (duration == null || durationVal == -1) {
+		durationVal = 0xFF
+	}
+
+	state.isDigital = true
+	logDebug "getSetLevelCmds output [level:${levelVal}, duration:${durationVal}, endPoint:${endPoint}]"
+	return switchMultilevelSetCmd(levelVal, durationVal, endPoint)
+}
+
+/*** Parameter Helper Functions ***/
+//These have to be added in after the fact or groovy complains
+void fixParamsMap() {
+	paramsMap.dimSpeed.options << rampRateOptions
+	paramsMap.rampRateOn.options << rampRateOptions
+	paramsMap.rampRateOff.options << rampRateOptions
+	paramsMap.zwaveRampRateOn.options << rampRateOptions
+	paramsMap.zwaveRampRateOff.options << rampRateOptions
+	paramsMap['settings'] = [fixed: true]
+}
+
+private getRampRateOptions() {
+	return getTimeOptionsRange("Second", 1, [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,20,25,30,45,60,75,90])
+}
+
+private getTimeOptionsRange(String name, Integer multiplier, List range) {
+	return range.collectEntries{ [(it*multiplier): "${it} ${name}${it == 1 ? '' : 's'}"] }
+}
+
+
+/*******************************************************************
+ ***** Event Senders
+********************************************************************/
+//evt = [name, value, type, unit, desc, isStateChange]
+void sendEventLog(Map evt, Integer ep=0) {
+	//Set description if not passed in
+	evt.descriptionText = evt.desc ?: "${evt.name} set to ${evt.value}${evt.unit ?: ''}"
+
+	//Main Device Events
+	if (device.currentValue(evt.name).toString() != evt.value.toString() || evt.isStateChange) {
+		logInfo "${evt.descriptionText}"
+	} else {
+		logDebug "${evt.descriptionText} [NOT CHANGED]"
+	}
+	//Always send event to update last activity
+	sendEvent(evt)
+}
+
+void sendSwitchEvents(rawVal, String type, Integer ep=0) {
+	String value = (rawVal ? "on" : "off")
+	String desc = "switch is turned ${value}" + (type ? " (${type})" : "")
+	sendEventLog(name:"switch", value:value, type:type, desc:desc, ep)
+
+	if (rawVal) {
+		Integer level = (rawVal == 99 ? 100 : rawVal)
+		level = convertLevel(level, false)
+
+		desc = "level is set to ${level}%"
+		if (type) desc += " (${type})"
+		if (levelCorrection) desc += " [actual: ${rawVal}]"
+		sendEventLog(name:"level", value:level, type:type, unit:"%", desc:desc, ep)
+	}
+}
+
+
+/*******************************************************************
  ***** Z-Wave Command Shortcuts
 ********************************************************************/
 //These send commands to the device either a list or a single command
@@ -629,202 +806,6 @@ String multiChannelEncap(hubitat.zwave.Command cmd, ep) {
 		cmd = zwave.multiChannelV3.multiChannelCmdEncap(destinationEndPoint:ep).encapsulate(cmd)
 	}
 	return cmd.format()
-}
-
-
-/*******************************************************************
- ***** Execute / Build Commands
-********************************************************************/
-void executeConfigureCmds() {
-	logDebug "executeConfigureCmds..."
-
-	List<String> cmds = []
-
-	if (!firmwareVersion || !state.deviceModel) {
-		cmds << versionGetCmd()
-	}
-
-	cmds += getConfigureAssocsCmds()
-
-	configParams.each { param ->
-		Integer paramVal = getParamValue(param, true)
-		Integer storedVal = getParamStoredValue(param.num)
-
-		if ((paramVal != null) && (state.resyncAll || (storedVal != paramVal))) {
-			logDebug "Changing ${param.name} (#${param.num}) from ${storedVal} to ${paramVal}"
-			cmds += configSetGetCmd(param, paramVal)
-		}
-	}
-
-	if (state.resyncAll) clearVariables()
-	state.resyncAll = false
-
-	if (cmds) sendCommands(cmds)
-}
-
-void executeRefreshCmds() {
-	List<String> cmds = []
-
-	if (state.resyncAll || !firmwareVersion || !state.deviceModel) {
-		cmds << versionGetCmd()
-	}
-
-	cmds << switchMultilevelGetCmd()
-
-	sendCommands(cmds)
-}
-
-void clearVariables() {
-	logWarn "Clearing state variables and data..."
-
-	//Backup
-	String devModel = state.deviceModel
-
-	//Clears State Variables
-	state.clear()
-
-	//Clear Config Data
-	configsList["${device.id}"] = [:]
-	device.removeDataValue("configVals")
-	//Clear Data from other Drivers
-	device.removeDataValue("protocolVersion")
-	device.removeDataValue("hardwareVersion")
-	device.removeDataValue("zwaveAssociationG1")
-	device.removeDataValue("zwaveAssociationG2")
-	device.removeDataValue("zwaveAssociationG3")
-
-	//Restore
-	if (devModel) state.deviceModel = devModel
-	setDevModel()
-}
-
-List getConfigureAssocsCmds() {
-	List<String> cmds = []
-
-	if (!state.group1Assoc || state.resyncAll) {
-		cmds << associationSetCmd(1, [zwaveHubNodeId])
-		cmds << associationGetCmd(1)
-		if (state.group1Assoc == false) {
-			logDebug "Adding missing lifeline association..."
-		}
-	}
-
-	for (int i = 2; i <= maxAssocGroups; i++) {
-		List<String> cmdsEach = []
-		List settingNodeIds = getAssocDNIsSettingNodeIds(i)
-
-		//Need to remove first then add in case we are at limit
-		List oldNodeIds = state."assocNodes$i"?.findAll { !(it in settingNodeIds) }
-		if (oldNodeIds) {
-			logDebug "Removing Nodes: Group $i - $oldNodeIds"
-			cmdsEach << associationRemoveCmd(i, oldNodeIds)
-		}
-
-		List newNodeIds = settingNodeIds.findAll { !(it in state."assocNodes$i") }
-		if (newNodeIds) {
-			logDebug "Adding Nodes: Group $i - $newNodeIds"
-			cmdsEach << associationSetCmd(i, newNodeIds)
-		}
-
-		if (cmdsEach || state.resyncAll) {
-			cmdsEach << associationGetCmd(i)
-			cmds += cmdsEach
-		}
-	}
-
-	return cmds
-}
-
-List getAssocDNIsSettingNodeIds(grp) {
-	def dni = getAssocDNIsSetting(grp)
-	def nodeIds = convertHexListToIntList(dni.split(","))
-
-	if (dni && !nodeIds) {
-		logWarn "'${dni}' is not a valid value for the 'Device Associations - Group ${grp}' setting.  All z-wave devices have a 2 character Device Network ID and if you're entering more than 1, use commas to separate them."
-	}
-	else if (nodeIds.size() > maxAssocNodes) {
-		logWarn "The 'Device Associations - Group ${grp}' setting contains more than ${maxAssocNodes} IDs so some (or all) may not get associated."
-	}
-
-	return nodeIds
-}
-
-Integer getPendingChanges() {
-	Integer configChanges = configParams.count { param ->
-		Integer paramVal = getParamValue(param, true)
-		((paramVal != null) && (paramVal != getParamStoredValue(param.num)))
-	}
-	Integer pendingAssocs = Math.ceil(getConfigureAssocsCmds()?.size()/2) ?: 0
-	return (!state.resyncAll ? (configChanges + pendingAssocs) : configChanges)
-}
-
-String getOnOffCmds(val, Integer endPoint=0) {
-	return getSetLevelCmds(val ? 0xFF : 0x00, null, endPoint)
-}
-
-String getSetLevelCmds(Number level, Number duration=null, Integer endPoint=0) {
-	Short levelVal = safeToInt(level, 99)
-	// level 0xFF tells device to use last level, 0x00 is off
-	if (levelVal != 0xFF && levelVal != 0x00) {
-		//Convert level in range of min/max
-		levelVal = convertLevel(levelVal, true)
-		levelVal = validateRange(levelVal, 99, 1, 99)
-	}
-
-	// Duration Encoding:
-	// 0x01..0x7F 1 second (0x01) to 127 seconds (0x7F) in 1 second resolution.
-	// 0x80..0xFE 1 minute (0x80) to 127 minutes (0xFE) in 1 minute resolution.
-	// 0xFF Factory default duration.
-
-	//Convert seconds to minutes above 120s
-	if (duration > 120) {
-		logDebug "getSetLevelCmds converting ${duration}s to ${Math.round(duration/60)}min"
-		duration = (duration / 60) + 127
-	}
-
-	Short durationVal = validateRange(duration, -1, -1, 254)
-	if (duration == null || durationVal == -1) {
-		durationVal = 0xFF
-	}
-
-	state.isDigital = true
-	logDebug "getSetLevelCmds output [level:${levelVal}, duration:${durationVal}, endPoint:${endPoint}]"
-	return switchMultilevelSetCmd(levelVal, durationVal, endPoint)
-}
-
-
-/*******************************************************************
- ***** Event Senders
-********************************************************************/
-//evt = [name, value, type, unit, desc, isStateChange]
-void sendEventLog(Map evt, Integer ep=0) {
-	//Set description if not passed in
-	evt.descriptionText = evt.desc ?: "${evt.name} set to ${evt.value}${evt.unit ?: ''}"
-
-	//Main Device Events
-	if (device.currentValue(evt.name).toString() != evt.value.toString() || evt.isStateChange) {
-		logInfo "${evt.descriptionText}"
-	} else {
-		logDebug "${evt.descriptionText} [NOT CHANGED]"
-	}
-	//Always send event to update last activity
-	sendEvent(evt)
-}
-
-void sendSwitchEvents(rawVal, String type, Integer ep=0) {
-	String value = (rawVal ? "on" : "off")
-	String desc = "switch is turned ${value}" + (type ? " (${type})" : "")
-	sendEventLog(name:"switch", value:value, type:type, desc:desc, ep)
-
-	if (rawVal) {
-		Integer level = (rawVal == 99 ? 100 : rawVal)
-		level = convertLevel(level, false)
-
-		desc = "level is set to ${level}%"
-		if (type) desc += " (${type})"
-		if (levelCorrection) desc += " [actual: ${rawVal}]"
-		sendEventLog(name:"level", value:level, type:type, unit:"%", desc:desc, ep)
-	}
 }
 
 
@@ -928,15 +909,6 @@ void verifyParamsList() {
 	if (paramsList[devModel] == null) updateParamsList()
 	if (paramsList[devModel][firmware] == null) updateParamsList()
 }
-//These have to be added in after the fact or groovy complains
-void fixParamsMap() {
-	paramsMap.dimSpeed.options << rampRateOptions
-	paramsMap.rampRateOn.options << rampRateOptions
-	paramsMap.rampRateOff.options << rampRateOptions
-	paramsMap.zwaveRampRateOn.options << rampRateOptions
-	paramsMap.zwaveRampRateOff.options << rampRateOptions
-	paramsMap['settings'] = [fixed: true]
-}
 
 //Gets full list of params
 List<Map> getConfigParams() {
@@ -988,13 +960,12 @@ Number getParamValue(Map param, Boolean adjust=false) {
 	return paramVal
 }
 
-/*** Parameter Helper Functions ***/
-private getRampRateOptions() {
-	return getTimeOptionsRange("Second", 1, [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,20,25,30,45,60,75,90])
+/*** Preference Helpers ***/
+String fmtDesc(String str) {
+	return "<div style='font-size: 85%; font-style: italic; padding: 1px 0px 4px 2px;'>${str}</div>"
 }
-
-private getTimeOptionsRange(String name, Integer multiplier, List range) {
-	return range.collectEntries{ [(it*multiplier): "${it} ${name}${it == 1 ? '' : 's'}"] }
+String fmtTitle(String str) {
+	return "<strong>${str}</strong>"
 }
 
 /*** Other Helper Functions ***/
@@ -1015,10 +986,44 @@ void updateLastCheckIn() {
 	}
 }
 
-// iOS app has no way of clearing string input so workaround is to have users enter 0.
+Integer getPendingChanges() {
+	Integer configChanges = configParams.count { param ->
+		Integer paramVal = getParamValue(param, true)
+		((paramVal != null) && (paramVal != getParamStoredValue(param.num)))
+	}
+	Integer pendingAssocs = Math.ceil(getConfigureAssocsCmds()?.size()/2) ?: 0
+	return (!state.resyncAll ? (configChanges + pendingAssocs) : configChanges)
+}
+
+//iOS app has no way of clearing string input so workaround is to have users enter 0.
 String getAssocDNIsSetting(grp) {
 	def val = settings."assocDNI$grp"
 	return ((val && (val.trim() != "0")) ? val : "")
+}
+
+//Used with configure to reset variables
+void clearVariables() {
+	logWarn "Clearing state variables and data..."
+
+	//Backup
+	String devModel = state.deviceModel
+
+	//Clears State Variables
+	state.clear()
+
+	//Clear Config Data
+	configsList["${device.id}"] = [:]
+	device.removeDataValue("configVals")
+	//Clear Data from other Drivers
+	device.removeDataValue("protocolVersion")
+	device.removeDataValue("hardwareVersion")
+	device.removeDataValue("zwaveAssociationG1")
+	device.removeDataValue("zwaveAssociationG2")
+	device.removeDataValue("zwaveAssociationG3")
+
+	//Restore
+	if (devModel) state.deviceModel = devModel
+	setDevModel()
 }
 
 //Stash the model in a state variable
@@ -1127,6 +1132,14 @@ Integer safeToInt(val, defaultVal=0) {
 	if ("${val}"?.isInteger())		{ return "${val}".toInteger() }
 	else if ("${val}"?.isNumber())	{ return "${val}".toDouble()?.round() }
 	else { return defaultVal }
+}
+
+BigDecimal safeToDec(val, defaultVal=0, roundTo=-1) {
+	BigDecimal decVal = "${val}"?.isNumber() ? "${val}".toBigDecimal() : defaultVal
+	if (roundTo == 0)		{ decVal = Math.round(decVal) }
+	else if (roundTo > 0)	{ decVal = decVal.setScale(roundTo, BigDecimal.ROUND_HALF_UP).stripTrailingZeros() }
+	if (decVal.scale()<0)	{ decVal = decVal.setScale(0) }
+	return decVal
 }
 
 boolean isDuplicateCommand(lastExecuted, allowedMil) {
