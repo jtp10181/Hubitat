@@ -9,6 +9,10 @@
 
 Changelog:
 
+## [1.0.0] - 2023-04-23 (@jtp10181)
+  - Added support for FW 1.21 new parameters
+  - Code refactoring
+
 ## [0.1.0] - 2023-03-11 (@jtp10181)
   - Initial Release
 
@@ -30,7 +34,7 @@ Changelog:
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "0.1.0"
+@Field static final String VERSION = "1.0.0"
 @Field static final Map deviceModelNames = ["0904:0218":"ZEN54"]
 
 metadata {
@@ -139,10 +143,10 @@ void debugShowVars() {
 		size: 1, defaultVal: 1,
 		options: [1:"LED On When Load On", 0:"LED Always Off"]
 	],
-	rampRate: [ num: 3,
-		title: "Ramp Rate to Full On/Off",
-		size: 1, defaultVal: 3,
-		options: [0:"Instant On/Off"] //rampRateOptions
+	dimSpeed: [ num: 3,
+		title: "Dimming Speed when Switch is Held",
+		size: 1, defaultVal: 5,
+		options: [:], //rampRateOptions
 	],
 	minimumBrightness: [ num: 4,
 		title: "Minimum Brightness",
@@ -193,11 +197,36 @@ void debugShowVars() {
 		size: 1, defaultVal: 1,
 		options: [1:"Enable Switch and Z-Wave", 0:"Disable Switch Control", 2:"Disable Switch and Z-Wave Control"],
 	],
-	// dimmerOffBehavior: [ num: 14,  //NOT WORKING ON FW 1.20
-	// 	title: "Power to LED Driver when Off",
-	// 	size: 1, defaultVal: 1,
-	// 	options: [1:"Cut Power", 0:"Keep Powered"],
-	// ],
+	dimmerOffBehavior: [ num: 14,
+		title: "Power to LED Driver when Off",
+		size: 1, defaultVal: 1,
+		options: [1:"Cut Power", 0:"Keep Powered"],
+		firmVer: 1.21
+	],
+	rampRateOn: [ num: 15,
+		title: "Ramp Rate to Full ON",
+		size: 1, defaultVal: 1,
+		options: [0:"Instant On/Off"], //rampRateOptions
+		firmVer: 1.21
+	],
+	rampRateOff: [ num: 16,
+		title: "Ramp Rate to Full OFF",
+		size: 1, defaultVal: 0,
+		options: [0:"Instant Off"], //rampRateOptions
+		firmVer: 1.21
+	],
+	zwaveRampRateOn: [ num: 17,
+		title: "Z-Wave Ramp Rate to Full ON",
+		size: 1, defaultVal: 100,
+		options: [100:"Match Physical",0:"Instant On"], //rampRateOptions
+		firmVer: 1.21
+	],
+	zwaveRampRateOff: [ num: 18,
+		title: "Z-Wave Ramp Rate to Full OFF",
+		size: 1, defaultVal: 100,
+		options: [100:"Match Physical",0:"Instant Off"], //rampRateOptions
+		firmVer: 1.21
+	],
 	// Hidden Parameters to Set Defaults
 	assocReports: [ num: 13,
 		title: "Association Reports",
@@ -303,7 +332,7 @@ String setLevel(Number level, Number duration=null) {
 
 List<String> startLevelChange(direction, duration=null) {
 	Boolean upDown = (direction == "down") ? true : false
-	Integer durationVal = validateRange(duration, getParamValue("holdRampRate"), 0, 127)
+	Integer durationVal = validateRange(duration, getParamValue("dimSpeed"), 0, 127)
 	logDebug "startLevelChange($direction) for ${durationVal}s"
 
 	List<String> cmds = [switchMultilevelStartLvChCmd(upDown, durationVal)]
@@ -511,15 +540,6 @@ void zwaveEvent(hubitat.zwave.Command cmd, ep=0) {
 ********************************************************************/
 //These send commands to the device either a list or a single command
 void sendCommands(List<String> cmds, Long delay=200) {
-	//Calculate supervisionCheck delay based on how many commands
-	Integer packetsCount = supervisedPackets?."${device.id}"?.size()
-	if (packetsCount > 0) {
-		Integer delayTotal = (cmds.size() * delay) + 2000
-		logDebug "Setting supervisionCheck to ${delayTotal}ms | ${packetsCount} | ${cmds.size()} | ${delay}"
-		runInMillis(delayTotal, supervisionCheck, [data:1])
-	}
-
-	//Send the commands
 	sendHubCommand(new hubitat.device.HubMultiAction(delayBetween(cmds, delay), hubitat.device.Protocol.ZWAVE))
 }
 
@@ -675,6 +695,7 @@ void clearVariables() {
 
 	//Restore
 	if (devModel) state.deviceModel = devModel
+	setDevModel()
 }
 
 List getConfigureAssocsCmds() {
@@ -909,7 +930,11 @@ void verifyParamsList() {
 }
 //These have to be added in after the fact or groovy complains
 void fixParamsMap() {
-	paramsMap.rampRate.options << rampRateOptions
+	paramsMap.dimSpeed.options << rampRateOptions
+	paramsMap.rampRateOn.options << rampRateOptions
+	paramsMap.rampRateOff.options << rampRateOptions
+	paramsMap.zwaveRampRateOn.options << rampRateOptions
+	paramsMap.zwaveRampRateOff.options << rampRateOptions
 	paramsMap['settings'] = [fixed: true]
 }
 
