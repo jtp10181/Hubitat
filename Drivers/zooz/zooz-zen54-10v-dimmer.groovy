@@ -455,7 +455,10 @@ void zwaveEvent(hubitat.zwave.commands.versionv2.VersionReport cmd) {
 	logTrace "${cmd}"
 
 	String fullVersion = String.format("%d.%02d",cmd.firmware0Version,cmd.firmware0SubVersion)
+	String zwaveVersion = String.format("%d.%02d",cmd.zWaveProtocolVersion,cmd.zWaveProtocolSubVersion)
 	device.updateDataValue("firmwareVersion", fullVersion)
+	device.updateDataValue("protocolVersion", zwaveVersion)
+	device.updateDataValue("hardwareVersion", "${cmd.hardwareVersion}")
 
 	logDebug "Received Version Report - Firmware: ${fullVersion}"
 	setDevModel(new BigDecimal(fullVersion))
@@ -1015,8 +1018,6 @@ void clearVariables() {
 	configsList["${device.id}"] = [:]
 	device.removeDataValue("configVals")
 	//Clear Data from other Drivers
-	device.removeDataValue("protocolVersion")
-	device.removeDataValue("hardwareVersion")
 	device.removeDataValue("zwaveAssociationG1")
 	device.removeDataValue("zwaveAssociationG2")
 	device.removeDataValue("zwaveAssociationG3")
