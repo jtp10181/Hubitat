@@ -9,6 +9,9 @@
 
 Changelog:
 
+## [0.2.0] - 2023-05-08 (@jtp10181)
+  - Adjustments to check in functions
+
 ## [0.1.0] - 2023-05-06 (@jtp10181)
   - Initial Release
 
@@ -30,7 +33,7 @@ Changelog:
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "0.1.0"
+@Field static final String VERSION = "0.2.0"
 @Field static final String DRIVER = "Zooz-ZEN55"
 @Field static final String COMM_LINK = "https://community.hubitat.com/t/zooz-zen55/118449"
 @Field static final Map deviceModelNames = ["0004:0110":"ZEN55"]
@@ -92,12 +95,6 @@ metadata {
 				description: fmtDesc("Supports up to ${maxAssocNodes} Hex Device IDs separated by commas. Check device documentation for more info. Save as blank or 0 to clear."),
 				required: false
 		}
-
-		//Logging Options
-		input name: "logLevel", type: "enum", title: fmtTitle("Logging Level"), defaultValue: 3, options: LOG_LEVELS
-		input name: "logLevelTime", type: "enum", title: fmtTitle("Logging Level Time"), description: fmtDesc("Time to enable Debug/Trace logging"),defaultValue: 30, options: LOG_TIMES
-		//Help Link
-		input "helpInfo", "hidden", title: fmtHelpInfo("Community Link<br>${DRIVER} v${VERSION}")
 	}
 }
 
@@ -900,30 +897,29 @@ void refreshSyncStatus() {
 	sendEvent(name:"syncStatus", value:(changes ? "${changes} Pending Changes" : "Synced"))
 }
 
-// void updateLastCheckIn() {
-// 	if (!isDuplicateCommand(state.lastCheckInTime, 60000)) {
-// 		state.lastCheckInTime = new Date().time
-// 		state.lastCheckInDate = convertToLocalTimeString(new Date())
-// 	}
-// }
-
 void updateLastCheckIn() {
-	state.lastCheckInDate = convertToLocalTimeString(new Date())
+	def nowDate = new Date()
+	state.lastCheckInDate = convertToLocalTimeString(nowDate)
 
-	//Every 12 Hours (43200000)
-	if (!isDuplicateCommand(state.lastCheckInTime, 43200000)) {
-		state.lastCheckInTime = new Date().time
+	Long lastExecuted = state.lastCheckInTime ?: 0
+	Long allowedMil = 20 * 60 * 60 * 1000    //20 Hours
+	if (lastExecuted + allowedMil <= nowDate.time) {
+		state.lastCheckInTime = nowDate.time
 		refreshSyncStatus()
-		runInMillis(10, doCheckIn)
+		scheduleCheckIn()
+		if (lastExecuted) runInMillis(100, doCheckIn)
 	}
 }
 
-void doCheckIn() {
+void scheduleCheckIn() {
 	Integer hour = Calendar.instance[Calendar.HOUR_OF_DAY]
 	Integer minute = Calendar.instance[Calendar.MINUTE]
+	schedule( "0 ${minute-1} ${hour} * * ?", doCheckIn)	
+}
+
+void doCheckIn() {
 	String devModel = state.deviceModel ? "${state.deviceModel}-" : ""
 	String checkUri = "http://jtp10181.gateway.scarf.sh/${DRIVER}/chk-${devModel}${VERSION}"
-	schedule( "0 ${minute} ${hour} * * ?", doCheckIn)
 
 	try {
 		httpGet(uri:checkUri, timeout:5) { logDebug "Driver ${DRIVER} v${VERSION}" } 
@@ -1084,7 +1080,7 @@ BigDecimal safeToDec(val, defaultVal=0, roundTo=-1) {
 	return decVal
 }
 
-boolean isDuplicateCommand(lastExecuted, allowedMil) {
+boolean isDuplicateCommand(Long lastExecuted, Long allowedMil) {
 	!lastExecuted ? false : (lastExecuted + allowedMil > new Date().time)
 }
 
@@ -1096,15 +1092,19 @@ boolean isDuplicateCommand(lastExecuted, allowedMil) {
 @Field static final Map LOG_LEVELS = [0:"Error", 1:"Warn", 2:"Info", 3:"Debug", 4:"Trace"]
 @Field static final Map LOG_TIMES = [0:"Indefinitely", 30:"30 Minutes", 60:"1 Hour", 120:"2 Hours", 180:"3 Hours", 360:"6 Hours", 720:"12 Hours", 1440:"24 Hours"]
 
-/*//INCLUDE THESE IN DRIVER PREFERENCES
-input name: "logLevel", type: "enum", title: fmtTitle("Logging Level"), defaultValue: 3, options: LOG_LEVELS
-input name: "logLevelTime", type: "enum", title: fmtTitle("Logging Level Time"), description: fmtDesc("Time to enable Debug/Trace logging"),defaultValue: 30, options: LOG_TIMES
-*/
-
 /*//Command to set log level, OPTIONAL. Can be copied to driver or uncommented here
 command "setLogLevel", [ [name:"Select Level*", description:"Log this type of message and above", type: "ENUM", constraints: LOG_LEVELS],
 	[name:"Debug/Trace Time", description:"Timer for Debug/Trace logging", type: "ENUM", constraints: LOG_TIMES] ]
 */
+
+//Additional Preferences
+preferences {
+	//Logging Options
+	input name: "logLevel", type: "enum", title: fmtTitle("Logging Level"), defaultValue: 3, options: LOG_LEVELS
+	input name: "logLevelTime", type: "enum", title: fmtTitle("Logging Level Time"), description: fmtDesc("Time to enable Debug/Trace logging"),defaultValue: 30, options: LOG_TIMES
+	//Help Link
+	input name: "helpInfo", type: "hidden", title: fmtHelpInfo("Community Link<br>${DRIVER} v${VERSION}")
+}
 
 //Call this function from within updated() and configure() with no parameters: checkLogLevel()
 void checkLogLevel(Map levelInfo = [level:null, time:null]) {
