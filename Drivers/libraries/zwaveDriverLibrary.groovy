@@ -16,7 +16,12 @@ library (
 /*******************************************************************
  ***** Z-Wave Reports (COMMON)
 ********************************************************************/
-void parse(String description) {
+//Include these in Driver
+//void parse(String description) {zwaveParse(description)}
+//void zwaveEvent(hubitat.zwave.commands.multichannelv3.MultiChannelCmdEncap cmd) {zwaveMultiChannel(cmd)}
+//void zwaveEvent(hubitat.zwave.commands.supervisionv1.SupervisionGet cmd, ep=0) {zwaveSupervision(cmd,ep)}
+
+void zwaveParse(String description) {
 	hubitat.zwave.Command cmd = zwave.parse(description, commandClassVersions)
 
 	if (cmd) {
@@ -31,7 +36,7 @@ void parse(String description) {
 }
 
 //Decodes Multichannel Encapsulated Commands
-void zwaveEvent(hubitat.zwave.commands.multichannelv3.MultiChannelCmdEncap cmd) {
+void zwaveMultiChannel(hubitat.zwave.commands.multichannelv3.MultiChannelCmdEncap cmd) {
 	def encapsulatedCmd = cmd.encapsulatedCommand(commandClassVersions)
 	logTrace "${cmd} --ENCAP-- ${encapsulatedCmd}"
 
@@ -43,7 +48,7 @@ void zwaveEvent(hubitat.zwave.commands.multichannelv3.MultiChannelCmdEncap cmd) 
 }
 
 //Decodes Supervision Encapsulated Commands (and replies to device)
-void zwaveEvent(hubitat.zwave.commands.supervisionv1.SupervisionGet cmd, ep=0) {
+void zwaveSupervision(hubitat.zwave.commands.supervisionv1.SupervisionGet cmd, ep=0) {
 	def encapsulatedCmd = cmd.encapsulatedCommand(commandClassVersions)
 	logTrace "${cmd} --ENCAP-- ${encapsulatedCmd}"
 
@@ -67,6 +72,10 @@ void zwaveEvent(hubitat.zwave.commands.versionv2.VersionReport cmd) {
 
 	logDebug "Received Version Report - Firmware: ${fullVersion}"
 	setDevModel(new BigDecimal(fullVersion))
+}
+
+void zwaveEvent(hubitat.zwave.Command cmd, ep=0) {
+	logDebug "Unhandled zwaveEvent: $cmd (ep ${ep})"
 }
 
 

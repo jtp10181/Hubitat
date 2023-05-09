@@ -2,26 +2,26 @@
   "packageName": "Zooz Modules Advanced Drivers",
   "author": "Jeff Page (@jtp10181)",
   "minimumHEVersion": "2.3.0",
-  "dateReleased": "2023-05-06",
+  "dateReleased": "2023-05-08",
   "documentationLink": "https://github.com/jtp10181/Hubitat/tree/main/Drivers/zooz",
-  "communityLink": "https://community.hubitat.com/t/zooz-zen54-0-10v-dimmer-advanced/114592",
-  "releaseNotes": "Update - 2023-05-08\n  - ZEN55 [0.2.0] - Adjustments to check in functions\n  - ZEN53 [0.1.0] - Initial BETA TEST Release\n  - ZEN54 [1.0.0] - Added support for FW 1.30 new parameters, Code refactoring",
+  "communityLink": "https://community.hubitat.com/t/zooz-zen54/114592",
+  "releaseNotes": "Update - 2023-05-08\n  - Update to use library code for ZEN53, ZEN54, and ZEN55",
   "drivers": [
     {
       "id": "20e32090-b2a1-40f5-ab50-4c918e7a5cd6",
       "name": "Zooz ZEN53 DC Motor Controller",
       "namespace": "jtp10181",
-      "location": "https://jtp10181.gateway.scarf.sh/zooz-zen53-v0.1.0.groovy",
+      "location": "https://jtp10181.gateway.scarf.sh/zooz-zen53-v0.2.0.groovy",
       "required": false,
-      "version": "0.1.0"
+      "version": "0.2.0"
     },
     {
       "id": "a05b12ed-d367-435f-816c-6f268f59fd50",
       "name": "Zooz ZEN54 0-10V Advanced",
       "namespace": "jtp10181",
-      "location": "https://jtp10181.gateway.scarf.sh/zooz-zen54-10v-dimmer.groovy",
+      "location": "https://jtp10181.gateway.scarf.sh/zooz-zen54-v1.1.0.groovy",
       "required": false,
-      "version": "1.0.0"
+      "version": "1.1.0"
     },
     {
       "id": "75b9aef5-4a7b-460f-a879-d5e35153d7c6",

@@ -73,7 +73,7 @@
       "name": "Zooz Modules Advanced Drivers",
       "category": "Control",
       "location": "https://raw.githubusercontent.com/jtp10181/Hubitat/main/packageManifest/zooz-zen-modules.json",
-      "description": "Zooz Misc Module drivers with advanced features and settings: <br>ZEN54",
+      "description": "Zooz Misc Module drivers with advanced features and settings: <br>ZEN53, ZEN54, ZEN55",
       "descriptive": "",
       "tags": [
         "Lights & Switches",
