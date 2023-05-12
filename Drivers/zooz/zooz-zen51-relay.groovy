@@ -9,9 +9,15 @@
 
 Changelog:
 
+## [1.1.0] - 2023-05-11 (@jtp10181)
+  - Refactoring to use custom library code
+  - Flash command now remembers last rate for default
+  - Fixed on/off handling for ZEN52 FW 1.60
+  - Changed to new logging engine / options
+
 ## [1.0.2] - 2023-02-28 (@jtp10181)
   - Added Association Group Support
-  - Fixed made some typing more lax to prevent errors
+  - Fixed some variable typing to be more lax to prevent errors
   - Fixed lifeline association configuration for ZEN52
 
 ## [0.2.0] - 2021-08-22 (@jtp10181)
@@ -39,7 +45,9 @@ Changelog:
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "1.0.2"
+@Field static final String VERSION = "1.1.0"
+@Field static final String DRIVER = "Zooz-ZEN51"
+@Field static final String COMM_LINK = "https://community.hubitat.com/t/zooz-relays-advanced/98194"
 @Field static final Map deviceModelNames = ["0104:0201":"ZEN51", "0904:0201":"ZEN51"]
 
 metadata {
@@ -59,15 +67,14 @@ metadata {
 		capability "DoubleTapableButton"
 		capability "Flash"
 
-		command "refreshParams"
+		//command "refreshParams"
 
 		//DEBUGGING
 		//command "debugShowVars"
 
 		attribute "syncStatus", "string"
 
-		fingerprint mfr:"027A", prod:"0104", deviceId:"0201", inClusters:"0x5E,0x55,0x9F,0x6C", deviceJoinName:"Zooz ZEN51 Relay"
-		fingerprint mfr:"027A", prod:"0104", deviceId:"0201", inClusters:"0x5E,0x55,0x9F,0x6C,0x25,0x70,0x85,0x59,0x8E,0x86,0x72,0x5A,0x73,0x7A,0x22,0x5B,0x87", deviceJoinName:"Zooz ZEN51 Relay"
+		fingerprint mfr:"027A", prod:"0104", deviceId:"0201", deviceJoinName:"Zooz ZEN51 Relay"
 		fingerprint mfr:"027A", prod:"0904", deviceId:"0201", deviceJoinName:"Zooz ZEN51 Relay LR"
 	}
 
@@ -93,37 +100,28 @@ metadata {
 				}
 			}
 		}
-	
+
 		for(int i in 2..maxAssocGroups) {
 			input "assocDNI$i", "string",
 				title: fmtTitle("Device Associations - Group $i"),
 				description: fmtDesc("Supports up to ${maxAssocNodes} Hex Device IDs separated by commas. Check device documentation for more info. Save as blank or 0 to clear."),
 				required: false
 		}
-
-		//Logging options similar to other Hubitat drivers
-		input "txtEnable", "bool", title: fmtTitle("Enable Description Text Logging?"), defaultValue: true
-		input "debugEnable", "bool", title: fmtTitle("Enable Debug Logging?"), defaultValue: true
 	}
 }
 
-//Preference Helpers
-String fmtDesc(String str) {
-	return "<div style='font-size: 85%; font-style: italic; padding: 1px 0px 4px 2px;'>${str}</div>"
-}
-String fmtTitle(String str) {
-	return "<strong>${str}</strong>"
-}
-
 void debugShowVars() {
+	log.warn "settings ${settings.hashCode()} ${settings}"
 	log.warn "paramsList ${paramsList.hashCode()} ${paramsList}"
 	log.warn "paramsMap ${paramsMap.hashCode()} ${paramsMap}"
-	log.warn "settings ${settings.hashCode()} ${settings}"
 }
 
 //Association Settings
 @Field static final int maxAssocGroups = 2
 @Field static final int maxAssocNodes = 5
+
+/*** Static Lists and Settings ***/
+//NONE
 
 //Main Parameters Listing
 @Field static Map<String, Map> paramsMap =
@@ -182,45 +180,46 @@ void debugShowVars() {
 		size: 1, defaultVal: 10,
 		range: 2..200,
 	],
+	// Hidden Parameters to Set Defaults
 	assocReports: [ num: 8,
 		title: "Association Reports",
-		size: 1, defaultVal: 1,
+		size: 1, defaultVal: 0,
 		options: [0:"Binary for Z-Wave, Basic for Physical", 1:"Always Binary Reports"],
 		hidden: true
 	],
 ]
 
 /* ZEN51
-CommandClassReport - class:0x22, version:1
-CommandClassReport - class:0x25, version:2
-CommandClassReport - class:0x55, version:2
-CommandClassReport - class:0x59, version:3
-CommandClassReport - class:0x5A, version:1
-CommandClassReport - class:0x5B, version:3
-CommandClassReport - class:0x5E, version:2
-CommandClassReport - class:0x6C, version:1
-CommandClassReport - class:0x70, version:4
-CommandClassReport - class:0x72, version:2
-CommandClassReport - class:0x73, version:1
-CommandClassReport - class:0x7A, version:5
-CommandClassReport - class:0x85, version:2
-CommandClassReport - class:0x86, version:3
-CommandClassReport - class:0x87, version:3
-CommandClassReport - class:0x8E, version:3
-CommandClassReport - class:0x9F, version:1
+CommandClassReport - class:0x22, version:1   (Application Status)
+CommandClassReport - class:0x25, version:2   (Binary Switch)
+CommandClassReport - class:0x55, version:2   (Transport Service)
+CommandClassReport - class:0x59, version:3   (Association Group Information (AGI))
+CommandClassReport - class:0x5A, version:1   (Device Reset Locally)
+CommandClassReport - class:0x5B, version:3   (Central Scene)
+CommandClassReport - class:0x5E, version:2   (Z-Wave Plus Info)
+CommandClassReport - class:0x6C, version:1   (Supervision)
+CommandClassReport - class:0x70, version:4   (Configuration)
+CommandClassReport - class:0x72, version:2   (Manufacturer Specific)
+CommandClassReport - class:0x73, version:1   (Powerlevel)
+CommandClassReport - class:0x7A, version:5   (Firmware Update Meta Data)
+CommandClassReport - class:0x85, version:2   (Association)
+CommandClassReport - class:0x86, version:3   (Version)
+CommandClassReport - class:0x87, version:3   (Indicator)
+CommandClassReport - class:0x8E, version:3   (Multi Channel Association)
+CommandClassReport - class:0x9F, version:1   (Security 2)
 */
 
 //Set Command Class Versions
 @Field static final Map commandClassVersions = [
-	0x25: 1,	// Switch Binary
-	0x5B: 3,	// CentralScene
-	0x60: 3,	// Multi Channel
-	0x6C: 1,	// Supervision
-	0x70: 2,	// Configuration
-	0x72: 2,	// ManufacturerSpecific
-	0x85: 2,	// Association
-	0x86: 2,	// Version
-	0x8E: 3,	// Multi Channel Association
+	0x25: 1,	// switchBinary
+	0x5B: 3,	// centralScene
+	0x60: 3,	// multiChannel
+	0x6C: 1,	// supervision
+	0x70: 2,	// configuration
+	0x72: 2,	// manufacturerSpecific
+	0x85: 2,	// association
+	0x86: 2,	// version
+	0x8E: 3,	// multiChannelAssociation
 ]
 
 
@@ -239,7 +238,6 @@ void initialize() {
 
 void configure() {
 	logWarn "configure..."
-	if (debugEnable) runIn(1800, debugLogsOff)
 
 	if (!pendingChanges || state.resyncAll == null) {
 		logDebug "Enabling Full Re-Sync"
@@ -253,11 +251,6 @@ void configure() {
 
 void updated() {
 	logDebug "updated..."
-	logDebug "Debug logging is: ${debugEnable == true}"
-	logDebug "Description logging is: ${txtEnable == true}"
-
-	if (debugEnable) runIn(1800, debugLogsOff)
-
 	runIn(1, executeConfigureCmds)
 }
 
@@ -271,13 +264,13 @@ void refresh() {
  ***** Driver Commands
 ********************************************************************/
 /*** Capabilities ***/
-String on() {
+def on() {
 	logDebug "on..."
 	flashStop()
 	return getOnOffCmds(0xFF)
 }
 
-String off() {
+def off() {
 	logDebug "off..."
 	flashStop()
 	return getOnOffCmds(0x00)
@@ -290,13 +283,15 @@ void release(buttonId) { sendBasicButtonEvent(buttonId, "released") }
 void doubleTap(buttonId) { sendBasicButtonEvent(buttonId, "doubleTapped") }
 
 //Flashing Capability
-void flash(rateToFlash = 1500) {
-	logInfo "Flashing started with rate of ${rateToFlash}ms"
+void flash(rateToFlash = null) {
+	if (!rateToFlash) rateToFlash = state.flashRate
+	//Min rate of 750ms sec, max of 30s
+	rateToFlash = validateRange(rateToFlash, 1500, 750, 30000)
+	Integer maxRun = 30 * 60 //30 Minutes
+	state.flashNext = (device.currentValue("switch")=="on" ? "off" : "on")
+	state.flashRate = rateToFlash
 
-	//Min rate of 1 sec, max of 30, max run time of 5 minutes
-	rateToFlash = validateRange(rateToFlash, 1500, 1000, 30000)
-	Integer maxRun = validateRange((rateToFlash*30)/1000, 30, 30, 300)
-	state.flashNext = device.currentValue("switch") ?: "on"
+	logInfo "Flashing started with rate of ${rateToFlash}ms"
 
 	//Start the flashing
 	runIn(maxRun,flashStop,[data:true])
@@ -307,6 +302,7 @@ void flashStop(Boolean turnOn = false) {
 	if (state.flashNext != null) {
 		logInfo "Flashing stopped..."
 		unschedule("flashHandler")
+		unschedule("flashStop")
 		state.remove("flashNext")
 		if (turnOn) { runIn(1,on) }
 	}
@@ -347,54 +343,14 @@ void refreshParams() {
  ***** Z-Wave Reports
 ********************************************************************/
 void parse(String description) {
-	hubitat.zwave.Command cmd = zwave.parse(description, commandClassVersions)
-
-	if (cmd) {
-		logTrace "parse: ${description} --PARSED-- ${cmd}"
-		zwaveEvent(cmd)
-	} else {
-		logWarn "Unable to parse: ${description}"
-	}
-
-	//Update Last Activity
-	updateLastCheckIn()
+	zwaveParse(description)
 	sendEvent(name:"numberOfButtons", value:5)
 }
-
-//Decodes Multichannel Encapsulated Commands
 void zwaveEvent(hubitat.zwave.commands.multichannelv3.MultiChannelCmdEncap cmd) {
-	def encapsulatedCmd = cmd.encapsulatedCommand(commandClassVersions)
-	logTrace "${cmd} --ENCAP-- ${encapsulatedCmd}"
-
-	if (encapsulatedCmd) {
-		zwaveEvent(encapsulatedCmd, cmd.sourceEndPoint as Integer)
-	} else {
-		logWarn "Unable to extract encapsulated cmd from $cmd"
-	}
+	zwaveMultiChannel(cmd)
 }
-
-//Decodes Supervision Encapsulated Commands (and replies to device)
 void zwaveEvent(hubitat.zwave.commands.supervisionv1.SupervisionGet cmd, ep=0) {
-	def encapsulatedCmd = cmd.encapsulatedCommand(commandClassVersions)
-	logTrace "${cmd} --ENCAP-- ${encapsulatedCmd}"
-
-	if (encapsulatedCmd) {
-		zwaveEvent(encapsulatedCmd, ep)
-	} else {
-		logWarn "Unable to extract encapsulated cmd from $cmd"
-	}
-
-	sendCommands(secureCmd(zwave.supervisionV1.supervisionReport(sessionID: cmd.sessionID, reserved: 0, moreStatusUpdates: false, status: 0xFF, duration: 0), ep))
-}
-
-void zwaveEvent(hubitat.zwave.commands.versionv2.VersionReport cmd) {
-	logTrace "${cmd}"
-
-	String fullVersion = String.format("%d.%02d",cmd.firmware0Version,cmd.firmware0SubVersion)
-	device.updateDataValue("firmwareVersion", fullVersion)
-
-	logDebug "Received Version Report - Firmware: ${fullVersion}"
-	setDevModel(new BigDecimal(fullVersion))
+	zwaveSupervision(cmd,ep)
 }
 
 void zwaveEvent(hubitat.zwave.commands.configurationv2.ConfigurationReport cmd) {
@@ -437,7 +393,6 @@ void zwaveEvent(hubitat.zwave.commands.associationv2.AssociationReport cmd) {
 		}
 
 		String dnis = convertIntListToHexList(cmd.nodeId)?.join(", ")
-		//sendEventLog(name:"assocDNI$grp", value:(dnis ?: "none"))
 		device.updateSetting("assocDNI$grp", [value:"${dnis}", type:"string"])
 	}
 	else {
@@ -445,20 +400,19 @@ void zwaveEvent(hubitat.zwave.commands.associationv2.AssociationReport cmd) {
 	}
 }
 
-//To catch if parameter gets changed somehow
+//Physical Only
 void zwaveEvent(hubitat.zwave.commands.basicv1.BasicReport cmd, ep=0) {
 	logTrace "${cmd} (ep ${ep})"
 	flashStop() //Stop flashing if its running
 	sendSwitchEvents(cmd.value, "physical", ep)
 }
 
+//Digital or Refresh
 void zwaveEvent(hubitat.zwave.commands.switchbinaryv1.SwitchBinaryReport cmd, ep=0) {
 	logTrace "${cmd} (ep ${ep})"
 
-	String type = (state.isDigital ? "digital" : "physical")
+	String type = (state.isDigital ? "digital" : null)
 	state.remove("isDigital")
-
-	if (type == "physical") flashStop()
 
 	sendSwitchEvents(cmd.value, type, ep)
 }
@@ -512,96 +466,15 @@ void zwaveEvent(hubitat.zwave.commands.centralscenev3.CentralSceneNotification c
 	}
 }
 
-void zwaveEvent(hubitat.zwave.Command cmd, ep=0) {
-	logDebug "Unhandled zwaveEvent: $cmd (ep ${ep})"
-}
-
-
-/*******************************************************************
- ***** Z-Wave Command Shortcuts
-********************************************************************/
-//These send commands to the device either a list or a single command
-void sendCommands(List<String> cmds, Long delay=200) {
-	sendHubCommand(new hubitat.device.HubMultiAction(delayBetween(cmds, delay), hubitat.device.Protocol.ZWAVE))
-}
-
-//Single Command
-void sendCommands(String cmd) {
-    sendHubCommand(new hubitat.device.HubAction(cmd, hubitat.device.Protocol.ZWAVE))
-}
-
-//Consolidated zwave command functions so other code is easier to read
-String associationSetCmd(Integer group, List<Integer> nodes) {
-	return secureCmd(zwave.associationV2.associationSet(groupingIdentifier: group, nodeId: nodes))
-}
-
-String associationRemoveCmd(Integer group, List<Integer> nodes) {
-	return secureCmd(zwave.associationV2.associationRemove(groupingIdentifier: group, nodeId: nodes))
-}
-
-String associationGetCmd(Integer group) {
-	return secureCmd(zwave.associationV2.associationGet(groupingIdentifier: group))
-}
-
-String versionGetCmd() {
-	return secureCmd(zwave.versionV2.versionGet())
-}
-
-String switchBinarySetCmd(Integer value, Integer ep=0) {
-	return secureCmd(zwave.switchBinaryV1.switchBinarySet(switchValue: value), ep)
-}
-
-String switchBinaryGetCmd(Integer ep=0) {
-	return secureCmd(zwave.switchBinaryV1.switchBinaryGet(), ep)
-}
-
-String configSetCmd(Map param, Integer value) {
-	//Convert from unsigned to signed for scaledConfigurationValue
-	Long sizeFactor = Math.pow(256,param.size).round()
-	if (value >= sizeFactor/2) { value -= sizeFactor }
-
-	return secureCmd(zwave.configurationV2.configurationSet(parameterNumber: param.num, size: param.size, scaledConfigurationValue: value))
-}
-
-String configGetCmd(Map param) {
-	return secureCmd(zwave.configurationV2.configurationGet(parameterNumber: param.num))
-}
-
-List configSetGetCmd(Map param, Integer value) {
-	List<String> cmds = []
-	cmds << configSetCmd(param, value)
-	cmds << configGetCmd(param)
-	return cmds
-}
-
-
-/*******************************************************************
- ***** Z-Wave Encapsulation
-********************************************************************/
-//Secure and MultiChannel Encapsulate
-String secureCmd(String cmd) {
-	return zwaveSecureEncap(cmd)
-}
-String secureCmd(hubitat.zwave.Command cmd, ep=0) {
-	return zwaveSecureEncap(multiChannelEncap(cmd, ep))
-}
-
-//MultiChannel Encapsulate if needed
-//This is called from secureCmd or supervisionEncap, do not call directly
-String multiChannelEncap(hubitat.zwave.Command cmd, ep) {
-	//logTrace "multiChannelEncap: ${cmd} (ep ${ep})"
-	if (ep > 0) {
-		cmd = zwave.multiChannelV3.multiChannelCmdEncap(destinationEndPoint:ep).encapsulate(cmd)
-	}
-	return cmd.format()
-}
-
 
 /*******************************************************************
  ***** Execute / Build Commands
 ********************************************************************/
 void executeConfigureCmds() {
 	logDebug "executeConfigureCmds..."
+
+	//Checks and sets scheduled turn off
+	checkLogLevel()
 
 	List<String> cmds = []
 
@@ -638,29 +511,6 @@ void executeRefreshCmds() {
 	cmds << switchBinaryGetCmd()
 
 	sendCommands(cmds)
-}
-
-void clearVariables() {
-	logWarn "Clearing state variables and data..."
-
-	//Backup
-	String devModel = state.deviceModel
-
-	//Clears State Variables
-	state.clear()
-
-	//Clear Config Data
-	configsList["${device.id}"] = [:]
-	device.removeDataValue("configVals")
-	//Clear Data from other Drivers
-	device.removeDataValue("protocolVersion")
-	device.removeDataValue("hardwareVersion")
-	device.removeDataValue("zwaveAssociationG1")
-	device.removeDataValue("zwaveAssociationG2")
-	device.removeDataValue("zwaveAssociationG3")
-
-	//Restore
-	if (devModel) state.deviceModel = devModel
 }
 
 List getConfigureAssocsCmds() {
@@ -714,24 +564,15 @@ List getAssocDNIsSettingNodeIds(grp) {
 	return nodeIds
 }
 
-// iOS app has no way of clearing string input so workaround is to have users enter 0.
-String getAssocDNIsSetting(grp) {
-	def val = settings."assocDNI$grp"
-	return ((val && (val.trim() != "0")) ? val : "")
-}
-
-Integer getPendingChanges() {
-	Integer configChanges = configParams.count { param ->
-		Integer paramVal = getParamValue(param, true)
-		((paramVal != null) && (paramVal != getParamStoredValue(param.num)))
-	}
-	Integer pendingAssocs = Math.ceil(getConfigureAssocsCmds()?.size()/2) ?: 0
-	return (!state.resyncAll ? (configChanges + pendingAssocs) : configChanges)
-}
-
 String getOnOffCmds(val, Integer endPoint=0) {
 	state.isDigital = true
 	return switchBinarySetCmd(val ? 0xFF : 0x00, endPoint)
+}
+
+/*** Parameter Helper Functions ***/
+//These have to be added in after the fact or groovy complains
+void fixParamsMap() {
+	paramsMap['settings'] = [fixed: true]
 }
 
 
@@ -762,6 +603,196 @@ void sendSwitchEvents(rawVal, String type, Integer ep=0) {
 void sendBasicButtonEvent(buttonId, String name) {
 	String desc = "button ${buttonId} ${name} (digital)"
 	sendEventLog(name:name, value:buttonId, type:"digital", desc:desc, isStateChange:true)
+}
+
+
+//#include jtp10181.zwaveDriverLibrary
+/*******************************************************************
+ *******************************************************************
+ ***** Z-Wave Driver Library by Jeff Page (@jtp10181)
+ *******************************************************************
+********************************************************************/
+library (
+  author: "Jeff Page (@jtp10181)",
+  category: "zwave",
+  description: "Z-Wave Driver Library",
+  name: "zwaveDriverLibrary",
+  namespace: "jtp10181",
+  documentationLink: ""
+)
+
+/*******************************************************************
+ ***** Z-Wave Reports (COMMON)
+********************************************************************/
+//Include these in Driver
+//void parse(String description) {zwaveParse(description)}
+//void zwaveEvent(hubitat.zwave.commands.multichannelv3.MultiChannelCmdEncap cmd) {zwaveMultiChannel(cmd)}
+//void zwaveEvent(hubitat.zwave.commands.supervisionv1.SupervisionGet cmd, ep=0) {zwaveSupervision(cmd,ep)}
+
+void zwaveParse(String description) {
+	hubitat.zwave.Command cmd = zwave.parse(description, commandClassVersions)
+
+	if (cmd) {
+		logTrace "parse: ${description} --PARSED-- ${cmd}"
+		zwaveEvent(cmd)
+	} else {
+		logWarn "Unable to parse: ${description}"
+	}
+
+	//Update Last Activity
+	updateLastCheckIn()
+}
+
+//Decodes Multichannel Encapsulated Commands
+void zwaveMultiChannel(hubitat.zwave.commands.multichannelv3.MultiChannelCmdEncap cmd) {
+	def encapsulatedCmd = cmd.encapsulatedCommand(commandClassVersions)
+	logTrace "${cmd} --ENCAP-- ${encapsulatedCmd}"
+
+	if (encapsulatedCmd) {
+		zwaveEvent(encapsulatedCmd, cmd.sourceEndPoint as Integer)
+	} else {
+		logWarn "Unable to extract encapsulated cmd from $cmd"
+	}
+}
+
+//Decodes Supervision Encapsulated Commands (and replies to device)
+void zwaveSupervision(hubitat.zwave.commands.supervisionv1.SupervisionGet cmd, ep=0) {
+	def encapsulatedCmd = cmd.encapsulatedCommand(commandClassVersions)
+	logTrace "${cmd} --ENCAP-- ${encapsulatedCmd}"
+
+	if (encapsulatedCmd) {
+		zwaveEvent(encapsulatedCmd, ep)
+	} else {
+		logWarn "Unable to extract encapsulated cmd from $cmd"
+	}
+
+	sendCommands(secureCmd(zwave.supervisionV1.supervisionReport(sessionID: cmd.sessionID, reserved: 0, moreStatusUpdates: false, status: 0xFF, duration: 0), ep))
+}
+
+void zwaveEvent(hubitat.zwave.commands.versionv2.VersionReport cmd) {
+	logTrace "${cmd}"
+
+	String fullVersion = String.format("%d.%02d",cmd.firmware0Version,cmd.firmware0SubVersion)
+	String zwaveVersion = String.format("%d.%02d",cmd.zWaveProtocolVersion,cmd.zWaveProtocolSubVersion)
+	device.updateDataValue("firmwareVersion", fullVersion)
+	device.updateDataValue("protocolVersion", zwaveVersion)
+	device.updateDataValue("hardwareVersion", "${cmd.hardwareVersion}")
+
+	logDebug "Received Version Report - Firmware: ${fullVersion}"
+	setDevModel(new BigDecimal(fullVersion))
+}
+
+void zwaveEvent(hubitat.zwave.Command cmd, ep=0) {
+	logDebug "Unhandled zwaveEvent: $cmd (ep ${ep})"
+}
+
+
+/*******************************************************************
+ ***** Z-Wave Command Shortcuts
+********************************************************************/
+//These send commands to the device either a list or a single command
+void sendCommands(List<String> cmds, Long delay=200) {
+	sendHubCommand(new hubitat.device.HubMultiAction(delayBetween(cmds, delay), hubitat.device.Protocol.ZWAVE))
+}
+
+//Single Command
+void sendCommands(String cmd) {
+	sendHubCommand(new hubitat.device.HubAction(cmd, hubitat.device.Protocol.ZWAVE))
+}
+
+//Consolidated zwave command functions so other code is easier to read
+String associationSetCmd(Integer group, List<Integer> nodes) {
+	return secureCmd(zwave.associationV2.associationSet(groupingIdentifier: group, nodeId: nodes))
+}
+
+String associationRemoveCmd(Integer group, List<Integer> nodes) {
+	return secureCmd(zwave.associationV2.associationRemove(groupingIdentifier: group, nodeId: nodes))
+}
+
+String associationGetCmd(Integer group) {
+	return secureCmd(zwave.associationV2.associationGet(groupingIdentifier: group))
+}
+
+String mcAssociationGetCmd(Integer group) {
+	return secureCmd(zwave.multiChannelAssociationV3.multiChannelAssociationGet(groupingIdentifier: group))
+}
+
+String versionGetCmd() {
+	return secureCmd(zwave.versionV2.versionGet())
+}
+
+String switchBinarySetCmd(Integer value, Integer ep=0) {
+	return secureCmd(zwave.switchBinaryV1.switchBinarySet(switchValue: value), ep)
+}
+
+String switchBinaryGetCmd(Integer ep=0) {
+	return secureCmd(zwave.switchBinaryV1.switchBinaryGet(), ep)
+}
+
+String switchMultilevelSetCmd(Integer value, Integer duration, Integer ep=0) {
+	return secureCmd(zwave.switchMultilevelV4.switchMultilevelSet(dimmingDuration: duration, value: value), ep)
+}
+
+String switchMultilevelGetCmd(Integer ep=0) {
+	return secureCmd(zwave.switchMultilevelV4.switchMultilevelGet(), ep)
+}
+
+String switchMultilevelStartLvChCmd(Boolean upDown, Integer duration, Integer ep=0) {
+	//upDown: false=up, true=down
+	return secureCmd(zwave.switchMultilevelV4.switchMultilevelStartLevelChange(upDown: upDown, ignoreStartLevel:1, dimmingDuration: duration), ep)
+}
+
+String switchMultilevelStopLvChCmd(Integer ep=0) {
+	return secureCmd(zwave.switchMultilevelV4.switchMultilevelStopLevelChange(), ep)
+}
+
+String batteryGetCmd() {
+	return secureCmd(zwave.batteryV1.batteryGet())
+}
+
+String notificationGetCmd(notificationType, eventType) {
+	return secureCmd(zwave.notificationV3.notificationGet(notificationType: notificationType, v1AlarmType:0, event: eventType))
+}
+
+String configSetCmd(Map param, Integer value) {
+	//Convert from unsigned to signed for scaledConfigurationValue
+	Long sizeFactor = Math.pow(256,param.size).round()
+	if (value >= sizeFactor/2) { value -= sizeFactor }
+
+	return secureCmd(zwave.configurationV1.configurationSet(parameterNumber: param.num, size: param.size, scaledConfigurationValue: value))
+}
+
+String configGetCmd(Map param) {
+	return secureCmd(zwave.configurationV1.configurationGet(parameterNumber: param.num))
+}
+
+List configSetGetCmd(Map param, Integer value) {
+	List<String> cmds = []
+	cmds << configSetCmd(param, value)
+	cmds << configGetCmd(param)
+	return cmds
+}
+
+
+/*******************************************************************
+ ***** Z-Wave Encapsulation
+********************************************************************/
+//Secure and MultiChannel Encapsulate
+String secureCmd(String cmd) {
+	return zwaveSecureEncap(cmd)
+}
+String secureCmd(hubitat.zwave.Command cmd, ep=0) {
+	return zwaveSecureEncap(multiChannelEncap(cmd, ep))
+}
+
+//MultiChannel Encapsulate if needed
+//This is called from secureCmd or supervisionEncap, do not call directly
+String multiChannelEncap(hubitat.zwave.Command cmd, ep) {
+	//logTrace "multiChannelEncap: ${cmd} (ep ${ep})"
+	if (ep > 0) {
+		cmd = zwave.multiChannelV3.multiChannelCmdEncap(destinationEndPoint:ep).encapsulate(cmd)
+	}
+	return cmd.format()
 }
 
 
@@ -865,10 +896,6 @@ void verifyParamsList() {
 	if (paramsList[devModel] == null) updateParamsList()
 	if (paramsList[devModel][firmware] == null) updateParamsList()
 }
-//These have to be added in after the fact or groovy complains
-void fixParamsMap() {
-	paramsMap['settings'] = [fixed: true]
-}
 
 //Gets full list of params
 List<Map> getConfigParams() {
@@ -887,7 +914,7 @@ List<Map> getConfigParams() {
 }
 
 //Get a single param by name or number
-Map getParam(search) {
+Map getParam(def search) {
 	//logDebug "Get Param (${search} | ${search.class})"
 	Map param = [:]
 
@@ -920,6 +947,22 @@ Number getParamValue(Map param, Boolean adjust=false) {
 	return paramVal
 }
 
+/*** Preference Helpers ***/
+String fmtDesc(String str) {
+	return "<div style='font-size: 85%; font-style: italic; padding: 1px 0px 4px 2px;'>${str}</div>"
+}
+String fmtTitle(String str) {
+	return "<strong>${str}</strong>"
+}
+String fmtHelpInfo(String str) {
+	String link = "<a href='${COMM_LINK}' target='_blank'>${str}</a>"
+	return "<div style='font-size: 140%; font-style: bold; padding: 2px 0; text-align: center;'>${link}</div>" +
+		"<div style='font-size: 20px; padding: 8px; text-align: center; position: absolute; top: 10px; right: 60px; border: 3px solid SlateGray;'>${link}</div>"
+}
+
+private getTimeOptionsRange(String name, Integer multiplier, List range) {
+	return range.collectEntries{ [(it*multiplier): "${it} ${name}${it == 1 ? '' : 's'}"] }
+}
 
 /*** Other Helper Functions ***/
 void updateSyncingStatus(Integer delay=2) {
@@ -933,10 +976,71 @@ void refreshSyncStatus() {
 }
 
 void updateLastCheckIn() {
-	if (!isDuplicateCommand(state.lastCheckInTime, 60000)) {
-		state.lastCheckInTime = new Date().time
-		state.lastCheckInDate = convertToLocalTimeString(new Date())
+	def nowDate = new Date()
+	state.lastCheckInDate = convertToLocalTimeString(nowDate)
+
+	Long lastExecuted = state.lastCheckInTime ?: 0
+	Long allowedMil = 20 * 60 * 60 * 1000    //20 Hours
+	if (lastExecuted + allowedMil <= nowDate.time) {
+		state.lastCheckInTime = nowDate.time
+		//refreshSyncStatus()
+		scheduleCheckIn()
+		if (lastExecuted) runInMillis(100, doCheckIn)
 	}
+}
+
+void scheduleCheckIn() {
+	Integer hour = Calendar.instance[Calendar.HOUR_OF_DAY]
+	Integer minute = Calendar.instance[Calendar.MINUTE]
+	schedule( "0 ${minute-1} ${hour} * * ?", doCheckIn)
+}
+
+void doCheckIn() {
+	String devModel = state.deviceModel ? "${state.deviceModel}-" : ""
+	String checkUri = "http://jtp10181.gateway.scarf.sh/${DRIVER}/chk-${devModel}${VERSION}"
+
+	try {
+		httpGet(uri:checkUri, timeout:5) { logDebug "Driver ${DRIVER} v${VERSION}" }
+	} catch (Exception e) { }
+}
+
+Integer getPendingChanges() {
+	Integer configChanges = configParams.count { param ->
+		Integer paramVal = getParamValue(param, true)
+		((paramVal != null) && (paramVal != getParamStoredValue(param.num)))
+	}
+	Integer pendingAssocs = Math.ceil(getConfigureAssocsCmds()?.size()/2) ?: 0
+	return (!state.resyncAll ? (configChanges + pendingAssocs) : configChanges)
+}
+
+//iOS app has no way of clearing string input so workaround is to have users enter 0.
+String getAssocDNIsSetting(grp) {
+	def val = settings."assocDNI$grp"
+	return ((val && (val.trim() != "0")) ? val : "")
+}
+
+//Used with configure to reset variables
+void clearVariables() {
+	logWarn "Clearing state variables and data..."
+
+	//Backup
+	String devModel = state.deviceModel
+
+	//Clears State Variables
+	state.clear()
+
+	//Clear Config Data
+	configsList["${device.id}"] = [:]
+	device.removeDataValue("configVals")
+	//Clear Data from other Drivers
+	device.removeDataValue("zwaveAssociationG1")
+	device.removeDataValue("zwaveAssociationG2")
+	device.removeDataValue("zwaveAssociationG3")
+
+	//Restore
+	if (devModel) state.deviceModel = devModel
+	setDevModel()
+	//doCheckIn()
 }
 
 //Stash the model in a state variable
@@ -1001,6 +1105,35 @@ List convertHexListToIntList(String[] hexList) {
 	return intList
 }
 
+Integer convertLevel(level, userLevel=false) {
+	if (levelCorrection) {
+		Integer brightmax = getParamValue("maximumBrightness")
+		Integer brightmin = getParamValue("minimumBrightness")
+		brightmax = (brightmax == 99) ? 100 : brightmax
+		brightmin = (brightmin == 1) ? 0 : brightmin
+
+		if (userLevel) {
+			//This converts what the user selected into a physical level within the min/max range
+			level = ((brightmax-brightmin) * (level/100)) + brightmin
+			state.levelActual = level
+			level = validateRange(Math.round(level), brightmax, brightmin, brightmax)
+		}
+		else {
+			//This takes the true physical level and converts to what we want to show to the user
+			if (Math.round(state.levelActual ?: 0) == level) level = state.levelActual
+			else state.levelActual = level
+
+			level = ((level - brightmin) / (brightmax - brightmin)) * 100
+			level = validateRange(Math.round(level), 100, 1, 100)
+		}
+	}
+	else if (state.levelActual) {
+		state.remove("levelActual")
+	}
+
+	return level
+}
+
 Integer validateRange(val, Integer defaultVal, Integer lowVal, Integer highVal) {
 	Integer intVal = safeToInt(val, defaultVal)
 	if (intVal > highVal) {
@@ -1026,7 +1159,7 @@ BigDecimal safeToDec(val, defaultVal=0, roundTo=-1) {
 	return decVal
 }
 
-boolean isDuplicateCommand(lastExecuted, allowedMil) {
+boolean isDuplicateCommand(Long lastExecuted, Long allowedMil) {
 	!lastExecuted ? false : (lastExecuted + allowedMil > new Date().time)
 }
 
@@ -1034,26 +1167,79 @@ boolean isDuplicateCommand(lastExecuted, allowedMil) {
 /*******************************************************************
  ***** Logging Functions
 ********************************************************************/
-void logsOff() {}
+//Logging Level Options
+@Field static final Map LOG_LEVELS = [0:"Error", 1:"Warn", 2:"Info", 3:"Debug", 4:"Trace"]
+@Field static final Map LOG_TIMES = [0:"Indefinitely", 30:"30 Minutes", 60:"1 Hour", 120:"2 Hours", 180:"3 Hours", 360:"6 Hours", 720:"12 Hours", 1440:"24 Hours"]
+
+/*//Command to set log level, OPTIONAL. Can be copied to driver or uncommented here
+command "setLogLevel", [ [name:"Select Level*", description:"Log this type of message and above", type: "ENUM", constraints: LOG_LEVELS],
+	[name:"Debug/Trace Time", description:"Timer for Debug/Trace logging", type: "ENUM", constraints: LOG_TIMES] ]
+*/
+
+//Additional Preferences
+preferences {
+	//Logging Options
+	input name: "logLevel", type: "enum", title: fmtTitle("Logging Level"), defaultValue: 3, options: LOG_LEVELS
+	input name: "logLevelTime", type: "enum", title: fmtTitle("Logging Level Time"), description: fmtDesc("Time to enable Debug/Trace logging"),defaultValue: 30, options: LOG_TIMES
+	//Help Link
+	input name: "helpInfo", type: "hidden", title: fmtHelpInfo("Community Link<br>${DRIVER} v${VERSION}")
+}
+
+//Call this function from within updated() and configure() with no parameters: checkLogLevel()
+void checkLogLevel(Map levelInfo = [level:null, time:null]) {
+	unschedule(logsOff)
+	//Set Defaults
+	if (settings.logLevel == null) device.updateSetting("logLevel",[value:"3", type:"enum"])
+	if (settings.logLevelTime == null) device.updateSetting("logLevelTime",[value:"30", type:"enum"])
+	//Schedule turn off and log as needed
+	if (levelInfo.level == null) levelInfo = getLogLevelInfo()
+	String logMsg = "Logging Level is: ${LOG_LEVELS[levelInfo.level]} (${levelInfo.level})"
+	if (levelInfo.level >= 3 && levelInfo.time > 0) {
+		logMsg += " for ${LOG_TIMES[levelInfo.time]}"
+		runIn(60*levelInfo.time, logsOff)
+	}
+	logInfo(logMsg)
+}
+
+//Function for optional command
+void setLogLevel(String levelName, String timeName=null) {
+	Integer level = LOG_LEVELS.find{ levelName.equalsIgnoreCase(it.value) }.key
+	Integer time = LOG_TIMES.find{ timeName.equalsIgnoreCase(it.value) }.key
+	device.updateSetting("logLevel",[value:"${level}", type:"enum"])
+	checkLogLevel(level: level, time: time)
+}
+
+Map getLogLevelInfo() {
+	Integer level = settings.logLevel as Integer
+	Integer time = settings.logLevelTime as Integer
+	return [level: level, time: time]
+}
+
+//Legacy Support
 void debugLogsOff() {
-	logWarn "Debug logging disabled..."
+	logWarn "Debug logging toggle disabled..."
+	device.removeSetting("logEnable")
 	device.updateSetting("debugEnable",[value:"false",type:"bool"])
 }
 
+//Current Support
+void logsOff() {
+	logWarn "Debug and Trace logging disabled..."
+	if (logLevelInfo.level >= 3) {
+		device.updateSetting("logLevel",[value:"2", type:"enum"])
+	}
+}
+
+//Logging Functions
 void logWarn(String msg) {
-	log.warn "${device.displayName}: ${msg}"
+	if (logLevelInfo.level>=1) log.warn "${device.displayName}: ${msg}"
 }
-
 void logInfo(String msg) {
-	if (txtEnable) log.info "${device.displayName}: ${msg}"
+	if (logLevelInfo.level>=2) log.info "${device.displayName}: ${msg}"
 }
-
 void logDebug(String msg) {
-	if (debugEnable) log.debug "${device.displayName}: ${msg}"
+	if (logLevelInfo.level>=3) log.debug "${device.displayName}: ${msg}"
 }
-
-//For Extreme Code Debugging - tracing commands
 void logTrace(String msg) {
-	//Uncomment to Enable
-	//log.trace "${device.displayName}: ${msg}"
+	if (logLevelInfo.level>=4) log.trace "${device.displayName}: ${msg}"
 }

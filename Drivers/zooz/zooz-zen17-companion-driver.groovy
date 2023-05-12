@@ -92,7 +92,7 @@ metadata {
 		input name: "logLevel", type: "enum", title: fmtTitle("Logging Level"), defaultValue: 3, options: debugOpts
 
 		//Help Text at very bottom
-		input name: "infoText", type: "string", title: fmtTitle("HIGHLY RECOMMENDED"),
+		input name: "infoText", type: "hidden", title: fmtTitle("HIGHLY RECOMMENDED"),
 			description: fmtDesc("Sync from device and refresh the page before saving below!")
 	}
 }

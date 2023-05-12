@@ -105,6 +105,10 @@ String associationGetCmd(Integer group) {
 	return secureCmd(zwave.associationV2.associationGet(groupingIdentifier: group))
 }
 
+String mcAssociationGetCmd(Integer group) {
+	return secureCmd(zwave.multiChannelAssociationV3.multiChannelAssociationGet(groupingIdentifier: group))
+}
+
 String versionGetCmd() {
 	return secureCmd(zwave.versionV2.versionGet())
 }
@@ -371,7 +375,7 @@ void updateLastCheckIn() {
 	Long allowedMil = 20 * 60 * 60 * 1000    //20 Hours
 	if (lastExecuted + allowedMil <= nowDate.time) {
 		state.lastCheckInTime = nowDate.time
-		refreshSyncStatus()
+		//refreshSyncStatus()
 		scheduleCheckIn()
 		if (lastExecuted) runInMillis(100, doCheckIn)
 	}
@@ -428,6 +432,7 @@ void clearVariables() {
 	//Restore
 	if (devModel) state.deviceModel = devModel
 	setDevModel()
+	//doCheckIn()
 }
 
 //Stash the model in a state variable
