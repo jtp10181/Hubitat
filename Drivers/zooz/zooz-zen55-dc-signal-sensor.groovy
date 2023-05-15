@@ -171,7 +171,7 @@ void debugShowVars() {
 		size: 1, defaultVal: 2,
 		options: [2:"Restores Last Status", 0:"Forced to Off", 1:"Forced to On"],
 	],
-	// // Hidden Parameters to Set Defaults
+	// Hidden Parameters to Set Defaults
 	statusReports: [ num: 9,
 		title: "Status Reports",
 		size: 1, defaultVal: 1,

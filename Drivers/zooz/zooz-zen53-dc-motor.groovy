@@ -1,6 +1,6 @@
 /*
- *  Zooz ZEN54 0-10V Dimmer
- *    - Model: ZEN54
+ *  Zooz ZEN53 DC Motor Controller
+ *    - Model: ZEN53
  *
  *  For Support, Information, and Updates:
  *  https://community.hubitat.com/t/zooz-zen53/117790
