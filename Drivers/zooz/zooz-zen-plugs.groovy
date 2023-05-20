@@ -185,6 +185,15 @@ void debugShowVars() {
 @Field static final int maxAssocGroups = 1
 @Field static final int maxAssocNodes = 1
 
+/*** Static Lists and Settings ***/
+@Field static List metersList = [
+	[name:"energy", scale:0, unit:"kWh", limitLo:0, limitHi:null],
+	[name:"power", scale:2, unit:"W", limitLo:0, limitHi:2400],
+	[name:"voltage", scale:4, unit:"V", limitLo:0, limitHi:140],
+	[name:"amperage", scale:5, unit:"A", limitLo:0, limitHi:18]
+]
+@Field static final Map multiChan = [ZEN14:[endpoints:1..2]]
+
 //Main Parameters Listing
 @Field static Map<String, Map> paramsMap =
 [
@@ -361,14 +370,6 @@ CommandClassReport - class:0x9F, version:1
 	0x8E: 3,	// Multi Channel Association
 ]
 
-/*** Static Lists and Settings ***/
-@Field static List metersList = [
-	[name:"energy", scale:0, unit:"kWh", limitLo:0, limitHi:null],
-	[name:"power", scale:2, unit:"W", limitLo:0, limitHi:2400],
-	[name:"voltage", scale:4, unit:"V", limitLo:0, limitHi:140],
-	[name:"amperage", scale:5, unit:"A", limitLo:0, limitHi:18]
-]
-@Field static final Map multiChan = [ZEN14:[endpoints:1..2]]
 
 /*******************************************************************
  ***** Core Functions
@@ -689,211 +690,6 @@ void zwaveEvent(hubitat.zwave.Command cmd, ep=0) {
 
 
 /*******************************************************************
- ***** Z-Wave Command Shortcuts
-********************************************************************/
-//These send commands to the device either a list or a single command
-void sendCommands(List<String> cmds, Long delay=200) {
-	sendHubCommand(new hubitat.device.HubMultiAction(delayBetween(cmds, delay), hubitat.device.Protocol.ZWAVE))
-}
-
-//Single Command
-void sendCommands(String cmd) {
-    sendHubCommand(new hubitat.device.HubAction(cmd, hubitat.device.Protocol.ZWAVE))
-}
-
-//Consolidated zwave command functions so other code is easier to read
-String associationSetCmd(Integer group, List<Integer> nodes) {
-	return secureCmd(zwave.associationV2.associationSet(groupingIdentifier: group, nodeId: nodes))
-}
-
-String associationRemoveCmd(Integer group, List<Integer> nodes) {
-	return secureCmd(zwave.associationV2.associationRemove(groupingIdentifier: group, nodeId: nodes))
-}
-
-String associationGetCmd(Integer group) {
-	return secureCmd(zwave.associationV2.associationGet(groupingIdentifier: group))
-}
-
-String versionGetCmd() {
-	return secureCmd(zwave.versionV2.versionGet())
-}
-
-String switchBinarySetCmd(Integer value, Integer ep=0) {
-	return secureCmd(zwave.switchBinaryV1.switchBinarySet(switchValue: value), ep)
-}
-
-String switchBinaryGetCmd(Integer ep=0) {
-	return secureCmd(zwave.switchBinaryV1.switchBinaryGet(), ep)
-}
-
-String meterGetCmd(meter, Integer ep=0) {
-	return secureCmd(zwave.meterV3.meterGet(scale: meter.scale), ep)
-}
-
-String meterResetCmd(Integer ep=0) {
-	return secureCmd(zwave.meterV3.meterReset(), ep)
-}
-
-String configSetCmd(Map param, Integer value) {
-	return secureCmd(zwave.configurationV2.configurationSet(parameterNumber: param.num, size: param.size, scaledConfigurationValue: value))
-}
-
-String configGetCmd(Map param) {
-	return secureCmd(zwave.configurationV2.configurationGet(parameterNumber: param.num))
-}
-
-List configSetGetCmd(Map param, Integer value) {
-	List<String> cmds = []
-	cmds << configSetCmd(param, value)
-	cmds << configGetCmd(param)
-	return cmds
-}
-
-
-/*******************************************************************
- ***** Z-Wave Encapsulation
-********************************************************************/
-//Secure and MultiChannel Encapsulate
-String secureCmd(String cmd) {
-	return zwaveSecureEncap(cmd)
-}
-String secureCmd(hubitat.zwave.Command cmd, ep=0) {
-	return zwaveSecureEncap(multiChannelEncap(cmd, ep))
-}
-
-//MultiChannel Encapsulate if needed
-//This is called from secureCmd or supervisionEncap, do not call directly
-String multiChannelEncap(hubitat.zwave.Command cmd, ep) {
-	//logTrace "multiChannelEncap: ${cmd} (ep ${ep})"
-	if (ep > 0) {
-		cmd = zwave.multiChannelV3.multiChannelCmdEncap(destinationEndPoint:ep).encapsulate(cmd)
-	}
-	return cmd.format()
-}
-
-
-/*******************************************************************
- ***** Execute / Build Commands
-********************************************************************/
-void executeConfigureCmds() {
-	logDebug "executeConfigureCmds..."
-
-	List<String> cmds = []
-
-	if (!firmwareVersion || !state.deviceModel) {
-		cmds << versionGetCmd()
-	}
-
-	cmds += getConfigureAssocsCmds()
-
-	configParams.each { param ->
-		Integer paramVal = getParamValue(param, true)
-		Integer storedVal = getParamStoredValue(param.num)
-
-		if ((paramVal != null) && (state.resyncAll || (storedVal != paramVal))) {
-			logDebug "Changing ${param.name} (#${param.num}) from ${storedVal} to ${paramVal}"
-			cmds += configSetGetCmd(param, paramVal)
-		}
-	}
-
-	if (state.resyncAll) clearVariables()
-	state.resyncAll = false
-
-	if (state.powerMetering == null) {
-		logDebug "Probing for Power Metering Support"
-		cmds.add(0, secureCmd(zwave.meterV3.meterSupportedGet()))
-		state.powerMetering = false
-	}
-
-	if (cmds) sendCommands(cmds)
-}
-
-void executeRefreshCmds() {
-	List<String> cmds = []
-
-	if (state.resyncAll || !firmwareVersion || !state.deviceModel) {
-		cmds << versionGetCmd()
-	}
-
-	//Refresh Switch
-	cmds << switchBinaryGetCmd()
-
-	//Refresh Meters
-	if (state.powerMetering) {
-		metersList.each { meter ->
-			cmds << meterGetCmd(meter)
-		}
-	}
-
-	//Refresh Childs
-	multiChan[state.deviceModel]?.endpoints.each { endPoint ->
-		cmds += getChildRefreshCmds(endPoint)
-	}
-
-	sendCommands(cmds,300)
-}
-
-void clearVariables() {
-	logWarn "Clearing state variables and data..."
-
-	//Backup
-	String devModel = state.deviceModel
-	def engTime = state.energyTime
-
-	//Clears State Variables
-	state.clear()
-
-	//Clear Config Data
-	configsList["${device.id}"] = [:]
-	device.removeDataValue("configVals")
-	//Clear Data from other Drivers
-	device.removeDataValue("protocolVersion")
-	device.removeDataValue("hardwareVersion")
-	device.removeDataValue("zwaveAssociationG1")
-	device.removeDataValue("zwaveAssociationG2")
-	device.removeDataValue("zwaveAssociationG3")
-
-	//Restore
-	if (devModel) state.deviceModel = devModel
-	if (engTime) state.energyTime = engTime
-}
-
-List getConfigureAssocsCmds() {
-	List<String> cmds = []
-
-	if (!state.group1Assoc || state.resyncAll) {
-		if (state.group1Assoc == false) {
-			logDebug "Adding missing lifeline association..."
-		}
-		cmds << associationSetCmd(1, [zwaveHubNodeId])
-		cmds << associationGetCmd(1)
-	}
-
-	return cmds
-}
-
-List getChildRefreshCmds(Integer endPoint) {
-	List<String> cmds = []
-	cmds << switchBinaryGetCmd(endPoint)
-	return cmds
-}
-
-Integer getPendingChanges() {
-	Integer configChanges = configParams.count { param ->
-		Integer paramVal = getParamValue(param, true)
-		((paramVal != null) && (paramVal != getParamStoredValue(param.num)))
-	}
-	Integer pendingAssocs = Math.ceil(getConfigureAssocsCmds()?.size()/2) ?: 0
-	return (!state.resyncAll ? (configChanges + pendingAssocs) : configChanges)
-}
-
-String getOnOffCmds(val, Integer endPoint=0) {
-	state.isDigital = true
-	return switchBinarySetCmd(val ? 0xFF : 0x00, endPoint)
-}
-
-
-/*******************************************************************
  ***** Event Senders
 ********************************************************************/
 //evt = [name, value, type, unit, desc, isStateChange]
@@ -993,6 +789,237 @@ void sendAccessoryEvents(powerVal, Integer ep=0) {
 		String desc = "accessory is turned ${value}"
 		sendEventLog(name:"accessory", value:value, desc:desc, ep)
 	}
+}
+
+
+/*******************************************************************
+ ***** Execute / Build Commands
+********************************************************************/
+void executeConfigureCmds() {
+	logDebug "executeConfigureCmds..."
+
+	List<String> cmds = []
+
+	if (!firmwareVersion || !state.deviceModel) {
+		cmds << versionGetCmd()
+	}
+
+	cmds += getConfigureAssocsCmds()
+
+	configParams.each { param ->
+		Integer paramVal = getParamValue(param, true)
+		Integer storedVal = getParamStoredValue(param.num)
+
+		if ((paramVal != null) && (state.resyncAll || (storedVal != paramVal))) {
+			logDebug "Changing ${param.name} (#${param.num}) from ${storedVal} to ${paramVal}"
+			cmds += configSetGetCmd(param, paramVal)
+		}
+	}
+
+	if (state.resyncAll) clearVariables()
+	state.resyncAll = false
+
+	if (state.powerMetering == null) {
+		logDebug "Probing for Power Metering Support"
+		cmds.add(0, secureCmd(zwave.meterV3.meterSupportedGet()))
+		state.powerMetering = false
+	}
+
+	if (cmds) sendCommands(cmds)
+}
+
+void executeRefreshCmds() {
+	List<String> cmds = []
+
+	if (state.resyncAll || !firmwareVersion || !state.deviceModel) {
+		cmds << versionGetCmd()
+	}
+
+	//Refresh Switch
+	cmds << switchBinaryGetCmd()
+
+	//Refresh Meters
+	if (state.powerMetering) {
+		metersList.each { meter ->
+			cmds << meterGetCmd(meter)
+		}
+	}
+
+	//Refresh Childs
+	multiChan[state.deviceModel]?.endpoints.each { endPoint ->
+		cmds += getChildRefreshCmds(endPoint)
+	}
+
+	sendCommands(cmds,300)
+}
+
+List getConfigureAssocsCmds() {
+	List<String> cmds = []
+
+	if (!state.group1Assoc || state.resyncAll) {
+		if (state.group1Assoc == false) {
+			logDebug "Adding missing lifeline association..."
+		}
+		cmds << associationSetCmd(1, [zwaveHubNodeId])
+		cmds << associationGetCmd(1)
+	}
+
+	return cmds
+}
+
+List getChildRefreshCmds(Integer endPoint) {
+	List<String> cmds = []
+	cmds << switchBinaryGetCmd(endPoint)
+	return cmds
+}
+
+String getOnOffCmds(val, Integer endPoint=0) {
+	state.isDigital = true
+	return switchBinarySetCmd(val ? 0xFF : 0x00, endPoint)
+}
+
+
+/*** Child Helper Functions ***/
+void createChildDevices() {
+	multiChan[state.deviceModel]?.endpoints.each { endPoint ->
+		if (!getChildByEP(endPoint)) {
+			addChildOutlet(endPoint)
+		}
+	}
+}
+
+void addChildOutlet(endPoint) {
+	Map deviceType = [namespace:"hubitat", typeName:"Generic Component Switch"]
+	Map deviceTypeBak = [:]
+	String dni = getChildDNI(endPoint)
+	Map properties = [name: "${device.name} (Outlet ${endPoint})", isComponent: false]
+	def childDev
+
+	logDebug "Creating 'Outlet ${endPoint}' Child Device"
+
+	try {
+		childDev = addChildDevice(deviceType.namespace, deviceType.typeName, dni, properties)
+	}
+	catch (e) {
+		logWarn "The '${deviceType}' driver failed"
+		if (deviceTypeBak) {
+			logWarn "Defaulting to '${deviceTypeBak}' instead"
+			childDev = addChildDevice(deviceTypeBak.namespace, deviceTypeBak.typeName, dni, properties)
+		}
+	}
+	if (childDev) childDev.updateDataValue("endPoint","$endPoint")
+}
+
+private getChildByEP(endPoint) {
+	def dni = getChildDNI(endPoint)
+	return getChildByDNI(dni)
+}
+
+private getChildByDNI(dni) {
+	return childDevices?.find { it.deviceNetworkId == dni }
+}
+
+private getChildEP(childDev) {
+	Integer endPoint = safeToInt(childDev.getDataValue("endPoint"))
+	if (!endPoint) {
+		logDebug "Finding endPoint for $childDev"
+		String[] dni = childDev.deviceNetworkId.split('-')
+		endPoint = safeToInt(dni[1])
+		if (endPoint) {
+			childDev.updateDataValue("endPoint","$endPoint")
+		} else {
+			logWarn "Cannot determine endPoint number for $childDev, defaulting to 0"
+		}
+	}
+	return endPoint
+}
+
+String getChildDNI(endPoint) {
+	return "${device.deviceId}-${endPoint}"
+}
+
+
+/*******************************************************************
+ ***** Z-Wave Command Shortcuts
+********************************************************************/
+//These send commands to the device either a list or a single command
+void sendCommands(List<String> cmds, Long delay=200) {
+	sendHubCommand(new hubitat.device.HubMultiAction(delayBetween(cmds, delay), hubitat.device.Protocol.ZWAVE))
+}
+
+//Single Command
+void sendCommands(String cmd) {
+    sendHubCommand(new hubitat.device.HubAction(cmd, hubitat.device.Protocol.ZWAVE))
+}
+
+//Consolidated zwave command functions so other code is easier to read
+String associationSetCmd(Integer group, List<Integer> nodes) {
+	return secureCmd(zwave.associationV2.associationSet(groupingIdentifier: group, nodeId: nodes))
+}
+
+String associationRemoveCmd(Integer group, List<Integer> nodes) {
+	return secureCmd(zwave.associationV2.associationRemove(groupingIdentifier: group, nodeId: nodes))
+}
+
+String associationGetCmd(Integer group) {
+	return secureCmd(zwave.associationV2.associationGet(groupingIdentifier: group))
+}
+
+String versionGetCmd() {
+	return secureCmd(zwave.versionV2.versionGet())
+}
+
+String switchBinarySetCmd(Integer value, Integer ep=0) {
+	return secureCmd(zwave.switchBinaryV1.switchBinarySet(switchValue: value), ep)
+}
+
+String switchBinaryGetCmd(Integer ep=0) {
+	return secureCmd(zwave.switchBinaryV1.switchBinaryGet(), ep)
+}
+
+String meterGetCmd(meter, Integer ep=0) {
+	return secureCmd(zwave.meterV3.meterGet(scale: meter.scale), ep)
+}
+
+String meterResetCmd(Integer ep=0) {
+	return secureCmd(zwave.meterV3.meterReset(), ep)
+}
+
+String configSetCmd(Map param, Integer value) {
+	return secureCmd(zwave.configurationV2.configurationSet(parameterNumber: param.num, size: param.size, scaledConfigurationValue: value))
+}
+
+String configGetCmd(Map param) {
+	return secureCmd(zwave.configurationV2.configurationGet(parameterNumber: param.num))
+}
+
+List configSetGetCmd(Map param, Integer value) {
+	List<String> cmds = []
+	cmds << configSetCmd(param, value)
+	cmds << configGetCmd(param)
+	return cmds
+}
+
+
+/*******************************************************************
+ ***** Z-Wave Encapsulation
+********************************************************************/
+//Secure and MultiChannel Encapsulate
+String secureCmd(String cmd) {
+	return zwaveSecureEncap(cmd)
+}
+String secureCmd(hubitat.zwave.Command cmd, ep=0) {
+	return zwaveSecureEncap(multiChannelEncap(cmd, ep))
+}
+
+//MultiChannel Encapsulate if needed
+//This is called from secureCmd or supervisionEncap, do not call directly
+String multiChannelEncap(hubitat.zwave.Command cmd, ep) {
+	//logTrace "multiChannelEncap: ${cmd} (ep ${ep})"
+	if (ep > 0) {
+		cmd = zwave.multiChannelV3.multiChannelCmdEncap(destinationEndPoint:ep).encapsulate(cmd)
+	}
+	return cmd.format()
 }
 
 
@@ -1163,66 +1190,6 @@ Number getParamValue(Map param, Boolean adjust=false) {
 }
 
 
-/*** Child Helper Functions ***/
-void createChildDevices() {
-	multiChan[state.deviceModel]?.endpoints.each { endPoint ->
-		if (!getChildByEP(endPoint)) {
-			addChildOutlet(endPoint)
-		}
-	}
-}
-
-void addChildOutlet(endPoint) {
-	Map deviceType = [namespace:"hubitat", typeName:"Generic Component Switch"]
-	Map deviceTypeBak = [:]
-	String dni = getChildDNI(endPoint)
-	Map properties = [name: "${device.name} (Outlet ${endPoint})", isComponent: false]
-	def childDev
-
-	logDebug "Creating 'Outlet ${endPoint}' Child Device"
-
-	try {
-		childDev = addChildDevice(deviceType.namespace, deviceType.typeName, dni, properties)
-	}
-	catch (e) {
-		logWarn "The '${deviceType}' driver failed"
-		if (deviceTypeBak) {
-			logWarn "Defaulting to '${deviceTypeBak}' instead"
-			childDev = addChildDevice(deviceTypeBak.namespace, deviceTypeBak.typeName, dni, properties)
-		}
-	}
-	if (childDev) childDev.updateDataValue("endPoint","$endPoint")
-}
-
-private getChildByEP(endPoint) {
-	def dni = getChildDNI(endPoint)
-	return getChildByDNI(dni)
-}
-
-private getChildByDNI(dni) {
-	return childDevices?.find { it.deviceNetworkId == dni }
-}
-
-private getChildEP(childDev) {
-	Integer endPoint = safeToInt(childDev.getDataValue("endPoint"))
-	if (!endPoint) {
-		logDebug "Finding endPoint for $childDev"
-		String[] dni = childDev.deviceNetworkId.split('-')
-		endPoint = safeToInt(dni[1])
-		if (endPoint) {
-			childDev.updateDataValue("endPoint","$endPoint")
-		} else {
-			logWarn "Cannot determine endPoint number for $childDev, defaulting to 0"
-		}
-	}
-	return endPoint
-}
-
-String getChildDNI(endPoint) {
-	return "${device.deviceId}-${endPoint}"
-}
-
-
 /*** Other Helper Functions ***/
 void updateSyncingStatus(Integer delay=2) {
 	runIn(delay, refreshSyncStatus)
@@ -1239,6 +1206,40 @@ void updateLastCheckIn() {
 		state.lastCheckInTime = new Date().time
 		state.lastCheckInDate = convertToLocalTimeString(new Date())
 	}
+}
+
+Integer getPendingChanges() {
+	Integer configChanges = configParams.count { param ->
+		Integer paramVal = getParamValue(param, true)
+		((paramVal != null) && (paramVal != getParamStoredValue(param.num)))
+	}
+	Integer pendingAssocs = Math.ceil(getConfigureAssocsCmds()?.size()/2) ?: 0
+	return (!state.resyncAll ? (configChanges + pendingAssocs) : configChanges)
+}
+
+void clearVariables() {
+	logWarn "Clearing state variables and data..."
+
+	//Backup
+	String devModel = state.deviceModel
+	def engTime = state.energyTime
+
+	//Clears State Variables
+	state.clear()
+
+	//Clear Config Data
+	configsList["${device.id}"] = [:]
+	device.removeDataValue("configVals")
+	//Clear Data from other Drivers
+	device.removeDataValue("protocolVersion")
+	device.removeDataValue("hardwareVersion")
+	device.removeDataValue("zwaveAssociationG1")
+	device.removeDataValue("zwaveAssociationG2")
+	device.removeDataValue("zwaveAssociationG3")
+
+	//Restore
+	if (devModel) state.deviceModel = devModel
+	if (engTime) state.energyTime = engTime
 }
 
 //Stash the model in a state variable
