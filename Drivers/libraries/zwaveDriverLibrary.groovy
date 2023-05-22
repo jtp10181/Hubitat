@@ -3,7 +3,16 @@
  *******************************************************************
  ***** Z-Wave Driver Library by Jeff Page (@jtp10181)
  *******************************************************************
+********************************************************************
+
+Changelog:
+2023-05-10 - First version used in drivers
+2023-05-12 - Adjustments to community links
+2023-05-14 - Updates for power metering
+2023-05-18 - Adding requirement for getParamValueAdj in driver
+
 ********************************************************************/
+
 library (
   author: "Jeff Page (@jtp10181)",
   category: "zwave",
@@ -136,6 +145,14 @@ String switchMultilevelStartLvChCmd(Boolean upDown, Integer duration, Integer ep
 
 String switchMultilevelStopLvChCmd(Integer ep=0) {
 	return secureCmd(zwave.switchMultilevelV4.switchMultilevelStopLevelChange(), ep)
+}
+
+String meterGetCmd(meter, Integer ep=0) {
+	return secureCmd(zwave.meterV3.meterGet(scale: meter.scale), ep)
+}
+
+String meterResetCmd(Integer ep=0) {
+	return secureCmd(zwave.meterV3.meterReset(), ep)
 }
 
 String batteryGetCmd() {
@@ -321,13 +338,12 @@ Map getParam(def search) {
 }
 
 //Convert Param Value if Needed
-Integer getParamValue(String paramName) {
+BigDecimal getParamValue(String paramName) {
 	return getParamValue(getParam(paramName))
 }
-Number getParamValue(Map param, Boolean adjust=false) {
+BigDecimal getParamValue(Map param) {
 	if (param == null) return
-	Number paramVal = safeToInt(settings."configParam${param.num}", param.defaultVal)
-	if (!adjust) return paramVal
+	BigDecimal paramVal = safeToDec(settings."configParam${param.num}", param.defaultVal)
 
 	//Reset hidden parameters to default
 	if (param.hidden && settings."configParam${param.num}" != null) {
@@ -340,16 +356,20 @@ Number getParamValue(Map param, Boolean adjust=false) {
 }
 
 /*** Preference Helpers ***/
-String fmtDesc(String str) {
-	return "<div style='font-size: 85%; font-style: italic; padding: 1px 0px 4px 2px;'>${str}</div>"
-}
 String fmtTitle(String str) {
 	return "<strong>${str}</strong>"
 }
+String fmtDesc(String str) {
+	return "<div style='font-size: 85%; font-style: italic; padding: 1px 0px 4px 2px;'>${str}</div>"
+}
 String fmtHelpInfo(String str) {
-	String link = "<a href='${COMM_LINK}' target='_blank'>${str}</a>"
-	return "<div style='font-size: 140%; font-style: bold; padding: 2px 0; text-align: center;'>${link}</div>" + 
-		"<div style='font-size: 20px; padding: 8px; text-align: center; position: absolute; top: 10px; right: 60px; border: 3px solid SlateGray;'>${link}</div>"
+	String info = "${DRIVER} v${VERSION}"
+	String prefLink = "<a href='${COMM_LINK}' target='_blank'>${str}<br><div style='font-size: 70%;'>${info}</div></a>"
+	String topStyle = "style='font-size: 18px; padding: 1px 12px; border: 2px solid Crimson; border-radius: 6px;'" //SlateGray
+	String topLink = "<a ${topStyle} href='${COMM_LINK}' target='_blank'>${str}<br><div style='font-size: 14px;'>${info}</div></a>"
+
+	return "<div style='font-size: 160%; font-style: bold; padding: 2px 0px; text-align: center;'>${prefLink}</div>" +
+		"<div style='text-align: center; position: absolute; top: 46px; right: 60px; padding: 0px;'><ul class='nav'><li>${topLink}</ul></li></div>"
 }
 
 private getTimeOptionsRange(String name, Integer multiplier, List range) {
@@ -384,21 +404,21 @@ void updateLastCheckIn() {
 void scheduleCheckIn() {
 	Integer hour = Calendar.instance[Calendar.HOUR_OF_DAY]
 	Integer minute = Calendar.instance[Calendar.MINUTE]
-	schedule( "0 ${minute-1} ${hour} * * ?", doCheckIn)	
+	schedule( "0 ${minute-1} ${hour} * * ?", doCheckIn)
 }
 
 void doCheckIn() {
-	String devModel = state.deviceModel ? "${state.deviceModel}-" : ""
-	String checkUri = "http://jtp10181.gateway.scarf.sh/${DRIVER}/chk-${devModel}${VERSION}"
+	String devModel = state.deviceModel ?: "NA"
+	String checkUri = "http://jtp10181.gateway.scarf.sh/${DRIVER}/chk-${devModel}-${VERSION}"
 
 	try {
-		httpGet(uri:checkUri, timeout:5) { logDebug "Driver ${DRIVER} v${VERSION}" } 
+		httpGet(uri:checkUri, timeout:5) { logDebug "Driver ${DRIVER} v${VERSION}" }
 	} catch (Exception e) { }
 }
 
 Integer getPendingChanges() {
 	Integer configChanges = configParams.count { param ->
-		Integer paramVal = getParamValue(param, true)
+		Integer paramVal = getParamValueAdj(param)
 		((paramVal != null) && (paramVal != getParamStoredValue(param.num)))
 	}
 	Integer pendingAssocs = Math.ceil(getConfigureAssocsCmds()?.size()/2) ?: 0
@@ -417,6 +437,7 @@ void clearVariables() {
 
 	//Backup
 	String devModel = state.deviceModel
+	def engTime = state.energyTime
 
 	//Clears State Variables
 	state.clear()
@@ -431,8 +452,8 @@ void clearVariables() {
 
 	//Restore
 	if (devModel) state.deviceModel = devModel
-	setDevModel()
-	//doCheckIn()
+	if (engTime) state.energyTime = engTime
+	//setDevModel()
 }
 
 //Stash the model in a state variable
@@ -571,10 +592,12 @@ command "setLogLevel", [ [name:"Select Level*", description:"Log this type of me
 //Additional Preferences
 preferences {
 	//Logging Options
-	input name: "logLevel", type: "enum", title: fmtTitle("Logging Level"), defaultValue: 3, options: LOG_LEVELS
-	input name: "logLevelTime", type: "enum", title: fmtTitle("Logging Level Time"), description: fmtDesc("Time to enable Debug/Trace logging"),defaultValue: 30, options: LOG_TIMES
+	input name: "logLevel", type: "enum", title: fmtTitle("Logging Level"),
+		description: fmtDesc("Logs selected level and lower"), defaultValue: 3, options: LOG_LEVELS
+	input name: "logLevelTime", type: "enum", title: fmtTitle("Logging Level Time"),
+		description: fmtDesc("Time to enable Debug/Trace logging"),defaultValue: 30, options: LOG_TIMES
 	//Help Link
-	input name: "helpInfo", type: "hidden", title: fmtHelpInfo("Community Link<br>${DRIVER} v${VERSION}")
+	input name: "helpInfo", type: "hidden", title: fmtHelpInfo("Community Link")
 }
 
 //Call this function from within updated() and configure() with no parameters: checkLogLevel()
@@ -623,6 +646,9 @@ void logsOff() {
 }
 
 //Logging Functions
+void logErr(String msg) {
+	log.error "${device.displayName}: ${msg}"
+}
 void logWarn(String msg) {
 	if (logLevelInfo.level>=1) log.warn "${device.displayName}: ${msg}"
 }

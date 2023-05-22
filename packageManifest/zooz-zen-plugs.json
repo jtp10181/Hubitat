@@ -2,19 +2,18 @@
   "packageName": "Zooz Plugs Advanced Drivers",
   "author": "Jeff Page (@jtp10181)",
   "minimumHEVersion": "2.3.0",
-  "dateReleased": "2023-01-14",
+  "dateReleased": "2023-05-21",
   "documentationLink": "https://github.com/jtp10181/Hubitat/tree/main/Drivers/zooz",
-  "communityLink": "https://community.hubitat.com/t/zooz-smart-plugs-advanced/98333",
-  "releaseNotes": "Support for ANY standard Z-Wave Power Metering Plug\n\nVersion [1.1.2] - 2023-01-14 (@jtp10181)\n  ### Added\n  - Put useful info into the warnings event description\n  - Added lower limits to catch negative reports\nVersion [1.1.0] - 2023-01-08 (@jtp10181)\n  ### Added\n  - Support for ZEN15\n  - energyDuration as an attribute so it can display on dashboard\n  - Over limit checking with Warn log and warnings count attribute\n  ### Changed\n  - Probing device for power metering support instead of hard coded by model\n  - Reworked the meter lists to implement the limits\n  - Reworked switch event handling to catch BasicReport and SwitchBinaryReport",
-  "version": "1.1.2",
+  "communityLink": "https://community.hubitat.com/t/zooz-smart-plugs/98333",
+  "releaseNotes": "Support for ANY standard Z-Wave Power Metering Plug\n\nVersion [1.2.0] - 2023-05-21 (@jtp10181)\n  - Refactor code to work with shared library\n  - Added proper multi-channel detection\n  - Added new settings for ZEN04 FW 1.30\n  - Added notes where 0=Disabled everywhere applicable\n  - Fixed lifeline setting for multichannel devices\n  - Fingerprint adjustments to avoid false matches",
   "drivers": [
     {
       "id": "fd71eac0-0b3e-4ebe-bb23-603d8572c187",
       "name": "Zooz ZEN Plugs Advanced",
       "namespace": "jtp10181",
-      "location": "https://jtp10181.gateway.scarf.sh/zooz-zen-plugs.groovy",
+      "location": "https://jtp10181.gateway.scarf.sh/zooz-zen-plugs-v1.2.0.groovy",
       "required": false,
-      "version": "1.1.2"
+      "version": "1.2.0"
     }
   ]
 }
