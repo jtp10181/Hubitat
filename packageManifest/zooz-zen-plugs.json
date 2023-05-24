@@ -2,18 +2,18 @@
   "packageName": "Zooz Plugs Advanced Drivers",
   "author": "Jeff Page (@jtp10181)",
   "minimumHEVersion": "2.3.0",
-  "dateReleased": "2023-05-21",
+  "dateReleased": "2023-05-24",
   "documentationLink": "https://github.com/jtp10181/Hubitat/tree/main/Drivers/zooz",
   "communityLink": "https://community.hubitat.com/t/zooz-smart-plugs/98333",
-  "releaseNotes": "Support for ANY standard Z-Wave Power Metering Plug\n\nVersion [1.2.0] - 2023-05-21 (@jtp10181)\n  - Refactor code to work with shared library\n  - Added proper multi-channel detection\n  - Added new settings for ZEN04 FW 1.30\n  - Added notes where 0=Disabled everywhere applicable\n  - Fixed lifeline setting for multichannel devices\n  - Fingerprint adjustments to avoid false matches",
+  "releaseNotes": "Support for ANY standard Z-Wave Power Metering Plug\n\nVersion [1.2.1] - 2023-05-24 (@jtp10181)\n  - Fix for possible RuntimeException error due to bad cron string\n\nVersion [1.2.0] - 2023-05-21 (@jtp10181)\n  - Refactor code to work with shared library\n  - Added proper multi-channel detection\n  - Added new settings for ZEN04 FW 1.30\n  - Added notes where 0=Disabled everywhere applicable\n  - Fixed lifeline setting for multichannel devices\n  - Fingerprint adjustments to avoid false matches\n",
   "drivers": [
     {
       "id": "fd71eac0-0b3e-4ebe-bb23-603d8572c187",
       "name": "Zooz ZEN Plugs Advanced",
       "namespace": "jtp10181",
-      "location": "https://jtp10181.gateway.scarf.sh/zooz-zen-plugs-v1.2.0.groovy",
+      "location": "https://jtp10181.gateway.scarf.sh/zooz-zen-plugs-v1.2.1.groovy",
       "required": false,
-      "version": "1.2.0"
+      "version": "1.2.1"
     }
   ]
 }

@@ -10,6 +10,9 @@
 
 Changelog:
 
+## [1.2.1] - 2023-05-24 (@jtp10181)
+  - Fix for possible RuntimeException error due to bad cron string
+
 ## [1.2.0] - 2023-05-21 (@jtp10181)
   - Refactor code to work with shared library
   - Added proper multi-channel detection
@@ -82,7 +85,7 @@ Changelog:
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "1.2.0"
+@Field static final String VERSION = "1.2.1"
 @Field static final String DRIVER = "Zooz-Plugs"
 @Field static final String COMM_LINK = "https://community.hubitat.com/t/zooz-smart-plugs/98333"
 @Field static final Map deviceModelNames =
@@ -1037,6 +1040,7 @@ Changelog:
 2023-05-12 - Adjustments to community links
 2023-05-14 - Updates for power metering
 2023-05-18 - Adding requirement for getParamValueAdj in driver
+2023-05-24 - Fix for possible RuntimeException error due to bad cron string
 
 ********************************************************************/
 
@@ -1419,19 +1423,20 @@ void updateLastCheckIn() {
 	state.lastCheckInDate = convertToLocalTimeString(nowDate)
 
 	Long lastExecuted = state.lastCheckInTime ?: 0
-	Long allowedMil = 20 * 60 * 60 * 1000    //20 Hours
+	Long allowedMil = 24 * 60 * 60 * 1000   //24 Hours
 	if (lastExecuted + allowedMil <= nowDate.time) {
 		state.lastCheckInTime = nowDate.time
-		//refreshSyncStatus()
+		if (lastExecuted) runIn(4, doCheckIn)
 		scheduleCheckIn()
-		if (lastExecuted) runInMillis(100, doCheckIn)
 	}
 }
 
 void scheduleCheckIn() {
-	Integer hour = Calendar.instance[Calendar.HOUR_OF_DAY]
-	Integer minute = Calendar.instance[Calendar.MINUTE]
-	schedule( "0 ${minute-1} ${hour} * * ?", doCheckIn)
+	def cal = Calendar.getInstance()
+	cal.add(Calendar.MINUTE, -1)
+	Integer hour = cal[Calendar.HOUR_OF_DAY]
+	Integer minute = cal[Calendar.MINUTE]
+	schedule( "0 ${minute} ${hour} * * ?", doCheckIn)
 }
 
 void doCheckIn() {
@@ -1439,7 +1444,8 @@ void doCheckIn() {
 	String checkUri = "http://jtp10181.gateway.scarf.sh/${DRIVER}/chk-${devModel}-${VERSION}"
 
 	try {
-		httpGet(uri:checkUri, timeout:5) { logDebug "Driver ${DRIVER} v${VERSION}" }
+		httpGet(uri:checkUri, timeout:4) { logDebug "Driver ${DRIVER} v${VERSION}" }
+		state.lastCheckInTime = (new Date()).time
 	} catch (Exception e) { }
 }
 
@@ -1619,8 +1625,8 @@ command "setLogLevel", [ [name:"Select Level*", description:"Log this type of me
 //Additional Preferences
 preferences {
 	//Logging Options
-	input name: "logLevel", type: "enum", title: fmtTitle("Logging Level"), 
-		description: fmtDesc("Logs selected level and lower"), defaultValue: 3, options: LOG_LEVELS
+	input name: "logLevel", type: "enum", title: fmtTitle("Logging Level"),
+		description: fmtDesc("Logs selected level and above"), defaultValue: 3, options: LOG_LEVELS
 	input name: "logLevelTime", type: "enum", title: fmtTitle("Logging Level Time"),
 		description: fmtDesc("Time to enable Debug/Trace logging"),defaultValue: 30, options: LOG_TIMES
 	//Help Link
