@@ -591,6 +591,56 @@ void zwaveEvent(hubitat.zwave.commands.centralscenev3.CentralSceneNotification c
 
 
 /*******************************************************************
+ ***** Event Senders
+********************************************************************/
+//evt = [name, value, type, unit, desc, isStateChange]
+void sendEventLog(Map evt, Integer ep=0) {
+	//Set description if not passed in
+	evt.descriptionText = evt.desc ?: "${evt.name} set to ${evt.value}${evt.unit ?: ''}"
+
+	//Endpoint Events
+	if (ep) {
+		def childDev = getChildByEP(ep)
+		String logEp = "Switch ${ep} "
+
+		if (childDev) {
+			if (childDev.currentValue(evt.name).toString() != evt.value.toString() || evt.isStateChange) {
+				evt.descriptionText = "${childDev}: ${evt.descriptionText}"
+				childDev.parse([evt])
+			} else {
+				logDebug "${logEp}${evt.descriptionText} [NOT CHANGED]"
+				childDev.sendEvent(evt)
+			}
+		}
+		else {
+			log.error "No device for endpoint (${ep}). Press Configure to create child devices."
+		}
+		return
+	}
+
+	//Main Device Events
+	if (device.currentValue(evt.name).toString() != evt.value.toString() || evt.isStateChange) {
+		logInfo "${evt.descriptionText}"
+	} else {
+		logDebug "${evt.descriptionText} [NOT CHANGED]"
+	}
+	//Always send event to update last activity
+	sendEvent(evt)
+}
+
+void sendSwitchEvents(rawVal, String type, Integer ep=0) {
+	String value = (rawVal ? "on" : "off")
+	String desc = "switch is turned ${value}" + (type ? " (${type})" : "")
+	sendEventLog(name:"switch", value:value, type:type, desc:desc, ep)
+}
+
+void sendBasicButtonEvent(buttonId, String name) {
+	String desc = "button ${buttonId} ${name} (digital)"
+	sendEventLog(name:name, value:buttonId, type:"digital", desc:desc, isStateChange:true)
+}
+
+
+/*******************************************************************
  ***** Execute / Build Commands
 ********************************************************************/
 void executeConfigureCmds() {
@@ -630,7 +680,7 @@ void executeRefreshCmds() {
 		cmds << versionGetCmd()
 	}
 
-	//Refresh Childs
+	//Refresh Children
 	multiChan[state.deviceModel]?.endpoints.each { endPoint ->
 		cmds += getChildRefreshCmds(endPoint)
 	}
@@ -704,13 +754,24 @@ String getOnOffCmds(val, Integer endPoint=0) {
 	return switchBinarySetCmd(val ? 0xFF : 0x00, endPoint)
 }
 
-/*** Parameter Helper Functions ***/
+
+/*******************************************************************
+ ***** Required for Library
+********************************************************************/
 //These have to be added in after the fact or groovy complains
 void fixParamsMap() {
 	paramsMap['settings'] = [fixed: true]
 }
 
-/*** Child Helper Functions ***/
+Integer getParamValueAdj(Map param) {
+	return getParamValue(param)
+}
+
+
+/*******************************************************************
+ ***** Child/Other Functions
+********************************************************************/
+/*** Child Creation Functions ***/
 void createChildDevices() {
 	multiChan[state.deviceModel]?.endpoints.each { endPoint ->
 		if (!getChildByEP(endPoint)) {
@@ -744,6 +805,7 @@ void addChild(endPoint) {
 	}
 }
 
+/*** Child Common Functions ***/
 private getChildByEP(endPoint) {
 	def dni = getChildDNI(endPoint)
 	return getChildByDNI(dni)
@@ -770,56 +832,6 @@ private getChildEP(childDev) {
 
 String getChildDNI(endPoint) {
 	return "${device.deviceId}-${endPoint}"
-}
-
-
-/*******************************************************************
- ***** Event Senders
-********************************************************************/
-//evt = [name, value, type, unit, desc, isStateChange]
-void sendEventLog(Map evt, Integer ep=0) {
-	//Set description if not passed in
-	evt.descriptionText = evt.desc ?: "${evt.name} set to ${evt.value}${evt.unit ?: ''}"
-
-	//Endpoint Events
-	if (ep) {
-		def childDev = getChildByEP(ep)
-		String logEp = "Switch ${ep} "
-
-		if (childDev) {
-			if (childDev.currentValue(evt.name).toString() != evt.value.toString() || evt.isStateChange) {
-				evt.descriptionText = "${childDev}: ${evt.descriptionText}"
-				childDev.parse([evt])
-			} else {
-				logDebug "${logEp}${evt.descriptionText} [NOT CHANGED]"
-				childDev.sendEvent(evt)
-			}
-		}
-		else {
-			log.error "No device for endpoint (${ep}). Press Configure to create child devices."
-		}
-		return
-	}
-
-	//Main Device Events
-	if (device.currentValue(evt.name).toString() != evt.value.toString() || evt.isStateChange) {
-		logInfo "${evt.descriptionText}"
-	} else {
-		logDebug "${evt.descriptionText} [NOT CHANGED]"
-	}
-	//Always send event to update last activity
-	sendEvent(evt)
-}
-
-void sendSwitchEvents(rawVal, String type, Integer ep=0) {
-	String value = (rawVal ? "on" : "off")
-	String desc = "switch is turned ${value}" + (type ? " (${type})" : "")
-	sendEventLog(name:"switch", value:value, type:type, desc:desc, ep)
-}
-
-void sendBasicButtonEvent(buttonId, String name) {
-	String desc = "button ${buttonId} ${name} (digital)"
-	sendEventLog(name:name, value:buttonId, type:"digital", desc:desc, isStateChange:true)
 }
 
 

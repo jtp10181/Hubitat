@@ -468,6 +468,36 @@ void zwaveEvent(hubitat.zwave.commands.centralscenev3.CentralSceneNotification c
 
 
 /*******************************************************************
+ ***** Event Senders
+********************************************************************/
+//evt = [name, value, type, unit, desc, isStateChange]
+void sendEventLog(Map evt, Integer ep=0) {
+	//Set description if not passed in
+	evt.descriptionText = evt.desc ?: "${evt.name} set to ${evt.value}${evt.unit ?: ''}"
+
+	//Main Device Events
+	if (device.currentValue(evt.name).toString() != evt.value.toString() || evt.isStateChange) {
+		logInfo "${evt.descriptionText}"
+	} else {
+		logDebug "${evt.descriptionText} [NOT CHANGED]"
+	}
+	//Always send event to update last activity
+	sendEvent(evt)
+}
+
+void sendSwitchEvents(rawVal, String type, Integer ep=0) {
+	String value = (rawVal ? "on" : "off")
+	String desc = "switch is turned ${value}" + (type ? " (${type})" : "")
+	sendEventLog(name:"switch", value:value, type:type, desc:desc, ep)
+}
+
+void sendBasicButtonEvent(buttonId, String name) {
+	String desc = "button ${buttonId} ${name} (digital)"
+	sendEventLog(name:name, value:buttonId, type:"digital", desc:desc, isStateChange:true)
+}
+
+
+/*******************************************************************
  ***** Execute / Build Commands
 ********************************************************************/
 void executeConfigureCmds() {
@@ -569,40 +599,17 @@ String getOnOffCmds(val, Integer endPoint=0) {
 	return switchBinarySetCmd(val ? 0xFF : 0x00, endPoint)
 }
 
-/*** Parameter Helper Functions ***/
+
+/*******************************************************************
+ ***** Required for Library
+********************************************************************/
 //These have to be added in after the fact or groovy complains
 void fixParamsMap() {
 	paramsMap['settings'] = [fixed: true]
 }
 
-
-/*******************************************************************
- ***** Event Senders
-********************************************************************/
-//evt = [name, value, type, unit, desc, isStateChange]
-void sendEventLog(Map evt, Integer ep=0) {
-	//Set description if not passed in
-	evt.descriptionText = evt.desc ?: "${evt.name} set to ${evt.value}${evt.unit ?: ''}"
-
-	//Main Device Events
-	if (device.currentValue(evt.name).toString() != evt.value.toString() || evt.isStateChange) {
-		logInfo "${evt.descriptionText}"
-	} else {
-		logDebug "${evt.descriptionText} [NOT CHANGED]"
-	}
-	//Always send event to update last activity
-	sendEvent(evt)
-}
-
-void sendSwitchEvents(rawVal, String type, Integer ep=0) {
-	String value = (rawVal ? "on" : "off")
-	String desc = "switch is turned ${value}" + (type ? " (${type})" : "")
-	sendEventLog(name:"switch", value:value, type:type, desc:desc, ep)
-}
-
-void sendBasicButtonEvent(buttonId, String name) {
-	String desc = "button ${buttonId} ${name} (digital)"
-	sendEventLog(name:name, value:buttonId, type:"digital", desc:desc, isStateChange:true)
+Integer getParamValueAdj(Map param) {
+	return getParamValue(param)
 }
 
 
@@ -948,16 +955,20 @@ Number getParamValue(Map param, Boolean adjust=false) {
 }
 
 /*** Preference Helpers ***/
-String fmtDesc(String str) {
-	return "<div style='font-size: 85%; font-style: italic; padding: 1px 0px 4px 2px;'>${str}</div>"
-}
 String fmtTitle(String str) {
 	return "<strong>${str}</strong>"
 }
+String fmtDesc(String str) {
+	return "<div style='font-size: 85%; font-style: italic; padding: 1px 0px 4px 2px;'>${str}</div>"
+}
 String fmtHelpInfo(String str) {
-	String link = "<a href='${COMM_LINK}' target='_blank'>${str}</a>"
-	return "<div style='font-size: 140%; font-style: bold; padding: 2px 0; text-align: center;'>${link}</div>" +
-		"<div style='font-size: 20px; padding: 8px; text-align: center; position: absolute; top: 10px; right: 60px; border: 3px solid SlateGray;'>${link}</div>"
+	String info = "${DRIVER} v${VERSION}"
+	String prefLink = "<a href='${COMM_LINK}' target='_blank'>${str}<br><div style='font-size: 70%;'>${info}</div></a>"
+	String topStyle = "style='font-size: 18px; padding: 1px 12px; border: 2px solid Crimson; border-radius: 6px;'" //SlateGray
+	String topLink = "<a ${topStyle} href='${COMM_LINK}' target='_blank'>${str}<br><div style='font-size: 14px;'>${info}</div></a>"
+
+	return "<div style='font-size: 160%; font-style: bold; padding: 2px 0px; text-align: center;'>${prefLink}</div>" +
+		"<div style='text-align: center; position: absolute; top: 46px; right: 60px; padding: 0px;'><ul class='nav'><li>${topLink}</ul></li></div>"
 }
 
 private getTimeOptionsRange(String name, Integer multiplier, List range) {
@@ -1182,7 +1193,7 @@ preferences {
 	input name: "logLevel", type: "enum", title: fmtTitle("Logging Level"), defaultValue: 3, options: LOG_LEVELS
 	input name: "logLevelTime", type: "enum", title: fmtTitle("Logging Level Time"), description: fmtDesc("Time to enable Debug/Trace logging"),defaultValue: 30, options: LOG_TIMES
 	//Help Link
-	input name: "helpInfo", type: "hidden", title: fmtHelpInfo("Community Link<br>${DRIVER} v${VERSION}")
+	input name: "helpInfo", type: "hidden", title: fmtHelpInfo("Community Link")
 }
 
 //Call this function from within updated() and configure() with no parameters: checkLogLevel()
