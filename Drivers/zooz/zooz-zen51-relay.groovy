@@ -9,6 +9,9 @@
 
 Changelog:
 
+## [1.1.2] - 2023-05-24 (@jtp10181)
+  - Library updates and moving some functions
+
 ## [1.1.0] - 2023-05-11 (@jtp10181)
   - Refactoring to use custom library code
   - Flash command now remembers last rate for default
@@ -27,7 +30,7 @@ Changelog:
 ## [0.1.0] - 2021-08-19 (@jtp10181)
   - Initial Release of ZEN51
 
- *  Copyright 2022 Jeff Page
+ *  Copyright 2022-2023 Jeff Page
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -45,7 +48,7 @@ Changelog:
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "1.1.0"
+@Field static final String VERSION = "1.1.2"
 @Field static final String DRIVER = "Zooz-ZEN51"
 @Field static final String COMM_LINK = "https://community.hubitat.com/t/zooz-relays-advanced/98194"
 @Field static final Map deviceModelNames = ["0104:0201":"ZEN51", "0904:0201":"ZEN51"]
@@ -241,6 +244,7 @@ void configure() {
 
 	if (!pendingChanges || state.resyncAll == null) {
 		logDebug "Enabling Full Re-Sync"
+		clearVariables()
 		state.resyncAll = true
 	}
 
@@ -515,7 +519,7 @@ void executeConfigureCmds() {
 	cmds += getConfigureAssocsCmds()
 
 	configParams.each { param ->
-		Integer paramVal = getParamValue(param, true)
+		Integer paramVal = getParamValueAdj(param)
 		Integer storedVal = getParamStoredValue(param.num)
 
 		if ((paramVal != null) && (state.resyncAll || (storedVal != paramVal))) {
@@ -524,7 +528,6 @@ void executeConfigureCmds() {
 		}
 	}
 
-	if (state.resyncAll) clearVariables()
 	state.resyncAll = false
 
 	if (cmds) sendCommands(cmds)
@@ -618,7 +621,17 @@ Integer getParamValueAdj(Map param) {
  *******************************************************************
  ***** Z-Wave Driver Library by Jeff Page (@jtp10181)
  *******************************************************************
+********************************************************************
+
+Changelog:
+2023-05-10 - First version used in drivers
+2023-05-12 - Adjustments to community links
+2023-05-14 - Updates for power metering
+2023-05-18 - Adding requirement for getParamValueAdj in driver
+2023-05-24 - Fix for possible RuntimeException error due to bad cron string
+
 ********************************************************************/
+
 library (
   author: "Jeff Page (@jtp10181)",
   category: "zwave",
@@ -751,6 +764,14 @@ String switchMultilevelStartLvChCmd(Boolean upDown, Integer duration, Integer ep
 
 String switchMultilevelStopLvChCmd(Integer ep=0) {
 	return secureCmd(zwave.switchMultilevelV4.switchMultilevelStopLevelChange(), ep)
+}
+
+String meterGetCmd(meter, Integer ep=0) {
+	return secureCmd(zwave.meterV3.meterGet(scale: meter.scale), ep)
+}
+
+String meterResetCmd(Integer ep=0) {
+	return secureCmd(zwave.meterV3.meterReset(), ep)
 }
 
 String batteryGetCmd() {
@@ -936,13 +957,12 @@ Map getParam(def search) {
 }
 
 //Convert Param Value if Needed
-Integer getParamValue(String paramName) {
+BigDecimal getParamValue(String paramName) {
 	return getParamValue(getParam(paramName))
 }
-Number getParamValue(Map param, Boolean adjust=false) {
+BigDecimal getParamValue(Map param) {
 	if (param == null) return
-	Number paramVal = safeToInt(settings."configParam${param.num}", param.defaultVal)
-	if (!adjust) return paramVal
+	BigDecimal paramVal = safeToDec(settings."configParam${param.num}", param.defaultVal)
 
 	//Reset hidden parameters to default
 	if (param.hidden && settings."configParam${param.num}" != null) {
@@ -991,33 +1011,35 @@ void updateLastCheckIn() {
 	state.lastCheckInDate = convertToLocalTimeString(nowDate)
 
 	Long lastExecuted = state.lastCheckInTime ?: 0
-	Long allowedMil = 20 * 60 * 60 * 1000    //20 Hours
+	Long allowedMil = 24 * 60 * 60 * 1000   //24 Hours
 	if (lastExecuted + allowedMil <= nowDate.time) {
 		state.lastCheckInTime = nowDate.time
-		//refreshSyncStatus()
+		if (lastExecuted) runIn(4, doCheckIn)
 		scheduleCheckIn()
-		if (lastExecuted) runInMillis(100, doCheckIn)
 	}
 }
 
 void scheduleCheckIn() {
-	Integer hour = Calendar.instance[Calendar.HOUR_OF_DAY]
-	Integer minute = Calendar.instance[Calendar.MINUTE]
-	schedule( "0 ${minute-1} ${hour} * * ?", doCheckIn)
+	def cal = Calendar.getInstance()
+	cal.add(Calendar.MINUTE, -1)
+	Integer hour = cal[Calendar.HOUR_OF_DAY]
+	Integer minute = cal[Calendar.MINUTE]
+	schedule( "0 ${minute} ${hour} * * ?", doCheckIn)
 }
 
 void doCheckIn() {
-	String devModel = state.deviceModel ? "${state.deviceModel}-" : ""
-	String checkUri = "http://jtp10181.gateway.scarf.sh/${DRIVER}/chk-${devModel}${VERSION}"
+	String devModel = state.deviceModel ?: "NA"
+	String checkUri = "http://jtp10181.gateway.scarf.sh/${DRIVER}/chk-${devModel}-${VERSION}"
 
 	try {
-		httpGet(uri:checkUri, timeout:5) { logDebug "Driver ${DRIVER} v${VERSION}" }
+		httpGet(uri:checkUri, timeout:4) { logDebug "Driver ${DRIVER} v${VERSION}" }
+		state.lastCheckInTime = (new Date()).time
 	} catch (Exception e) { }
 }
 
 Integer getPendingChanges() {
 	Integer configChanges = configParams.count { param ->
-		Integer paramVal = getParamValue(param, true)
+		Integer paramVal = getParamValueAdj(param)
 		((paramVal != null) && (paramVal != getParamStoredValue(param.num)))
 	}
 	Integer pendingAssocs = Math.ceil(getConfigureAssocsCmds()?.size()/2) ?: 0
@@ -1036,6 +1058,7 @@ void clearVariables() {
 
 	//Backup
 	String devModel = state.deviceModel
+	def engTime = state.energyTime
 
 	//Clears State Variables
 	state.clear()
@@ -1050,8 +1073,8 @@ void clearVariables() {
 
 	//Restore
 	if (devModel) state.deviceModel = devModel
-	setDevModel()
-	//doCheckIn()
+	if (engTime) state.energyTime = engTime
+	//setDevModel()
 }
 
 //Stash the model in a state variable
@@ -1190,8 +1213,10 @@ command "setLogLevel", [ [name:"Select Level*", description:"Log this type of me
 //Additional Preferences
 preferences {
 	//Logging Options
-	input name: "logLevel", type: "enum", title: fmtTitle("Logging Level"), defaultValue: 3, options: LOG_LEVELS
-	input name: "logLevelTime", type: "enum", title: fmtTitle("Logging Level Time"), description: fmtDesc("Time to enable Debug/Trace logging"),defaultValue: 30, options: LOG_TIMES
+	input name: "logLevel", type: "enum", title: fmtTitle("Logging Level"),
+		description: fmtDesc("Logs selected level and above"), defaultValue: 3, options: LOG_LEVELS
+	input name: "logLevelTime", type: "enum", title: fmtTitle("Logging Level Time"),
+		description: fmtDesc("Time to enable Debug/Trace logging"),defaultValue: 30, options: LOG_TIMES
 	//Help Link
 	input name: "helpInfo", type: "hidden", title: fmtHelpInfo("Community Link")
 }
@@ -1242,6 +1267,9 @@ void logsOff() {
 }
 
 //Logging Functions
+void logErr(String msg) {
+	log.error "${device.displayName}: ${msg}"
+}
 void logWarn(String msg) {
 	if (logLevelInfo.level>=1) log.warn "${device.displayName}: ${msg}"
 }
