@@ -9,6 +9,9 @@
 
 Changelog:
 
+## [1.0.0] - 2023-05-28 (@jtp10181)
+  - Updated to current library code
+
 ## [0.2.0] - 2023-05-08 (@jtp10181)
   - Adjustments to check in functions
 
@@ -33,7 +36,7 @@ Changelog:
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "0.2.0"
+@Field static final String VERSION = "1.0.0"
 @Field static final String DRIVER = "Zooz-ZEN55"
 @Field static final String COMM_LINK = "https://community.hubitat.com/t/zooz-zen55/118449"
 @Field static final Map deviceModelNames = ["0004:0110":"ZEN55"]
@@ -229,6 +232,7 @@ void configure() {
 
 	if (!pendingChanges || state.resyncAll == null) {
 		logDebug "Enabling Full Re-Sync"
+		clearVariables()
 		state.resyncAll = true
 	}
 
@@ -252,12 +256,12 @@ void refresh() {
  ***** Driver Commands
 ********************************************************************/
 /*** Capabilities ***/
-String on() {
+def on() {
 	logDebug "on..."
 	return getOnOffCmds(0xFF)
 }
 
-String off() {
+def off() {
 	logDebug "off..."
 	return getOnOffCmds(0x00)
 }
@@ -293,8 +297,12 @@ String setParameter(paramNum, value, size = null) {
 /*******************************************************************
  ***** Z-Wave Reports
 ********************************************************************/
-void parse(String description) {zwaveParse(description)}
-void zwaveEvent(hubitat.zwave.commands.supervisionv1.SupervisionGet cmd, ep=0) {zwaveSupervision(cmd,ep)}
+void parse(String description) {
+	zwaveParse(description)
+}
+void zwaveEvent(hubitat.zwave.commands.supervisionv1.SupervisionGet cmd, ep=0) {
+	zwaveSupervision(cmd,ep)
+}
 
 void zwaveEvent(hubitat.zwave.commands.configurationv1.ConfigurationReport cmd) {
 	logTrace "${cmd}"
@@ -449,7 +457,7 @@ void executeConfigureCmds() {
 	cmds += getConfigureAssocsCmds()
 
 	configParams.each { param ->
-		Integer paramVal = getParamValue(param, true)
+		Integer paramVal = getParamValueAdj(param)
 		Integer storedVal = getParamStoredValue(param.num)
 
 		if ((paramVal != null) && (state.resyncAll || (storedVal != paramVal))) {
@@ -458,7 +466,6 @@ void executeConfigureCmds() {
 		}
 	}
 
-	if (state.resyncAll) clearVariables()
 	state.resyncAll = false
 
 	if (cmds) sendCommands(cmds)
@@ -482,11 +489,11 @@ List getConfigureAssocsCmds() {
 	List<String> cmds = []
 
 	if (!state.group1Assoc || state.resyncAll) {
-		cmds << associationSetCmd(1, [zwaveHubNodeId])
-		cmds << associationGetCmd(1)
 		if (state.group1Assoc == false) {
 			logDebug "Adding missing lifeline association..."
 		}
+		cmds << associationSetCmd(1, [zwaveHubNodeId])
+		cmds << associationGetCmd(1)
 	}
 
 	for (int i = 2; i <= maxAssocGroups; i++) {
@@ -533,11 +540,16 @@ String getOnOffCmds(val, Integer endPoint=0) {
 	return switchBinarySetCmd(val ? 0xFF : 0x00, endPoint)
 }
 
-/*** Parameter Helper Functions ***/
+/*******************************************************************
+ ***** Required for Library
+********************************************************************/
 //These have to be added in after the fact or groovy complains
 void fixParamsMap() {
-	//paramsMap.rampRate.options << rampRateOptions
 	paramsMap['settings'] = [fixed: true]
+}
+
+Integer getParamValueAdj(Map param) {
+	return getParamValue(param)
 }
 
 
@@ -546,7 +558,17 @@ void fixParamsMap() {
  *******************************************************************
  ***** Z-Wave Driver Library by Jeff Page (@jtp10181)
  *******************************************************************
+********************************************************************
+
+Changelog:
+2023-05-10 - First version used in drivers
+2023-05-12 - Adjustments to community links
+2023-05-14 - Updates for power metering
+2023-05-18 - Adding requirement for getParamValueAdj in driver
+2023-05-24 - Fix for possible RuntimeException error due to bad cron string
+
 ********************************************************************/
+
 library (
   author: "Jeff Page (@jtp10181)",
   category: "zwave",
@@ -648,6 +670,10 @@ String associationGetCmd(Integer group) {
 	return secureCmd(zwave.associationV2.associationGet(groupingIdentifier: group))
 }
 
+String mcAssociationGetCmd(Integer group) {
+	return secureCmd(zwave.multiChannelAssociationV3.multiChannelAssociationGet(groupingIdentifier: group))
+}
+
 String versionGetCmd() {
 	return secureCmd(zwave.versionV2.versionGet())
 }
@@ -675,6 +701,14 @@ String switchMultilevelStartLvChCmd(Boolean upDown, Integer duration, Integer ep
 
 String switchMultilevelStopLvChCmd(Integer ep=0) {
 	return secureCmd(zwave.switchMultilevelV4.switchMultilevelStopLevelChange(), ep)
+}
+
+String meterGetCmd(meter, Integer ep=0) {
+	return secureCmd(zwave.meterV3.meterGet(scale: meter.scale), ep)
+}
+
+String meterResetCmd(Integer ep=0) {
+	return secureCmd(zwave.meterV3.meterReset(), ep)
 }
 
 String batteryGetCmd() {
@@ -860,13 +894,12 @@ Map getParam(def search) {
 }
 
 //Convert Param Value if Needed
-Integer getParamValue(String paramName) {
+BigDecimal getParamValue(String paramName) {
 	return getParamValue(getParam(paramName))
 }
-Number getParamValue(Map param, Boolean adjust=false) {
+BigDecimal getParamValue(Map param) {
 	if (param == null) return
-	Number paramVal = safeToInt(settings."configParam${param.num}", param.defaultVal)
-	if (!adjust) return paramVal
+	BigDecimal paramVal = safeToDec(settings."configParam${param.num}", param.defaultVal)
 
 	//Reset hidden parameters to default
 	if (param.hidden && settings."configParam${param.num}" != null) {
@@ -879,16 +912,20 @@ Number getParamValue(Map param, Boolean adjust=false) {
 }
 
 /*** Preference Helpers ***/
-String fmtDesc(String str) {
-	return "<div style='font-size: 85%; font-style: italic; padding: 1px 0px 4px 2px;'>${str}</div>"
-}
 String fmtTitle(String str) {
 	return "<strong>${str}</strong>"
 }
+String fmtDesc(String str) {
+	return "<div style='font-size: 85%; font-style: italic; padding: 1px 0px 4px 2px;'>${str}</div>"
+}
 String fmtHelpInfo(String str) {
-	String link = "<a href='${COMM_LINK}' target='_blank'>${str}</a>"
-	return "<div style='font-size: 140%; font-style: bold; padding: 2px 0; text-align: center;'>${link}</div>" + 
-		"<div style='font-size: 20px; padding: 8px; text-align: center; position: absolute; top: 10px; right: 60px; border: 3px solid SlateGray;'>${link}</div>"
+	String info = "${DRIVER} v${VERSION}"
+	String prefLink = "<a href='${COMM_LINK}' target='_blank'>${str}<br><div style='font-size: 70%;'>${info}</div></a>"
+	String topStyle = "style='font-size: 18px; padding: 1px 12px; border: 2px solid Crimson; border-radius: 6px;'" //SlateGray
+	String topLink = "<a ${topStyle} href='${COMM_LINK}' target='_blank'>${str}<br><div style='font-size: 14px;'>${info}</div></a>"
+
+	return "<div style='font-size: 160%; font-style: bold; padding: 2px 0px; text-align: center;'>${prefLink}</div>" +
+		"<div style='text-align: center; position: absolute; top: 46px; right: 60px; padding: 0px;'><ul class='nav'><li>${topLink}</ul></li></div>"
 }
 
 private getTimeOptionsRange(String name, Integer multiplier, List range) {
@@ -911,33 +948,35 @@ void updateLastCheckIn() {
 	state.lastCheckInDate = convertToLocalTimeString(nowDate)
 
 	Long lastExecuted = state.lastCheckInTime ?: 0
-	Long allowedMil = 20 * 60 * 60 * 1000    //20 Hours
+	Long allowedMil = 24 * 60 * 60 * 1000   //24 Hours
 	if (lastExecuted + allowedMil <= nowDate.time) {
 		state.lastCheckInTime = nowDate.time
-		refreshSyncStatus()
+		if (lastExecuted) runIn(4, doCheckIn)
 		scheduleCheckIn()
-		if (lastExecuted) runInMillis(100, doCheckIn)
 	}
 }
 
 void scheduleCheckIn() {
-	Integer hour = Calendar.instance[Calendar.HOUR_OF_DAY]
-	Integer minute = Calendar.instance[Calendar.MINUTE]
-	schedule( "0 ${minute-1} ${hour} * * ?", doCheckIn)	
+	def cal = Calendar.getInstance()
+	cal.add(Calendar.MINUTE, -1)
+	Integer hour = cal[Calendar.HOUR_OF_DAY]
+	Integer minute = cal[Calendar.MINUTE]
+	schedule( "0 ${minute} ${hour} * * ?", doCheckIn)
 }
 
 void doCheckIn() {
-	String devModel = state.deviceModel ? "${state.deviceModel}-" : ""
-	String checkUri = "http://jtp10181.gateway.scarf.sh/${DRIVER}/chk-${devModel}${VERSION}"
+	String devModel = state.deviceModel ?: "NA"
+	String checkUri = "http://jtp10181.gateway.scarf.sh/${DRIVER}/chk-${devModel}-${VERSION}"
 
 	try {
-		httpGet(uri:checkUri, timeout:5) { logDebug "Driver ${DRIVER} v${VERSION}" } 
+		httpGet(uri:checkUri, timeout:4) { logDebug "Driver ${DRIVER} v${VERSION}" }
+		state.lastCheckInTime = (new Date()).time
 	} catch (Exception e) { }
 }
 
 Integer getPendingChanges() {
 	Integer configChanges = configParams.count { param ->
-		Integer paramVal = getParamValue(param, true)
+		Integer paramVal = getParamValueAdj(param)
 		((paramVal != null) && (paramVal != getParamStoredValue(param.num)))
 	}
 	Integer pendingAssocs = Math.ceil(getConfigureAssocsCmds()?.size()/2) ?: 0
@@ -956,6 +995,7 @@ void clearVariables() {
 
 	//Backup
 	String devModel = state.deviceModel
+	def engTime = state.energyTime
 
 	//Clears State Variables
 	state.clear()
@@ -970,7 +1010,8 @@ void clearVariables() {
 
 	//Restore
 	if (devModel) state.deviceModel = devModel
-	setDevModel()
+	if (engTime) state.energyTime = engTime
+	//setDevModel()
 }
 
 //Stash the model in a state variable
@@ -1109,10 +1150,12 @@ command "setLogLevel", [ [name:"Select Level*", description:"Log this type of me
 //Additional Preferences
 preferences {
 	//Logging Options
-	input name: "logLevel", type: "enum", title: fmtTitle("Logging Level"), defaultValue: 3, options: LOG_LEVELS
-	input name: "logLevelTime", type: "enum", title: fmtTitle("Logging Level Time"), description: fmtDesc("Time to enable Debug/Trace logging"),defaultValue: 30, options: LOG_TIMES
+	input name: "logLevel", type: "enum", title: fmtTitle("Logging Level"),
+		description: fmtDesc("Logs selected level and above"), defaultValue: 3, options: LOG_LEVELS
+	input name: "logLevelTime", type: "enum", title: fmtTitle("Logging Level Time"),
+		description: fmtDesc("Time to enable Debug/Trace logging"),defaultValue: 30, options: LOG_TIMES
 	//Help Link
-	input name: "helpInfo", type: "hidden", title: fmtHelpInfo("Community Link<br>${DRIVER} v${VERSION}")
+	input name: "helpInfo", type: "hidden", title: fmtHelpInfo("Community Link")
 }
 
 //Call this function from within updated() and configure() with no parameters: checkLogLevel()
@@ -1161,6 +1204,9 @@ void logsOff() {
 }
 
 //Logging Functions
+void logErr(String msg) {
+	log.error "${device.displayName}: ${msg}"
+}
 void logWarn(String msg) {
 	if (logLevelInfo.level>=1) log.warn "${device.displayName}: ${msg}"
 }
