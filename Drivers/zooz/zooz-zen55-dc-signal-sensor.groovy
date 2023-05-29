@@ -386,6 +386,52 @@ void zwaveEvent(hubitat.zwave.commands.notificationv8.NotificationReport cmd, ep
 
 
 /*******************************************************************
+ ***** Event Senders
+********************************************************************/
+//evt = [name, value, type, unit, desc, isStateChange]
+void sendEventLog(Map evt, Integer ep=0) {
+	//Set description if not passed in
+	evt.descriptionText = evt.desc ?: "${evt.name} set to ${evt.value}${evt.unit ?: ''}"
+
+	//Main Device Events
+	if (device.currentValue(evt.name).toString() != evt.value.toString() || evt.isStateChange) {
+		logInfo "${evt.descriptionText}"
+	} else {
+		logDebug "${evt.descriptionText} [NOT CHANGED]"
+	}
+	//Always send event to update last activity
+	sendEvent(evt)
+}
+
+void sendSwitchEvents(rawVal, String type, Integer ep=0) {
+	String value = (rawVal ? "on" : "off")
+	String desc = "switch is turned ${value}" + (type ? " (${type})" : "")
+	sendEventLog(name:"switch", value:value, type:type, desc:desc, ep)
+}
+
+void sendAlarmEvents(String name, Integer event, Integer ep=0) {
+	String eventVal
+	switch (event) {
+		case 0x00:
+			eventVal = "clear"
+			break
+		case [0x01, 0x02]:
+			eventVal = "detected"
+			break
+		case 0x03:
+			eventVal = "tested"
+			break
+		default:
+			logWarn "${name} event: ${ALARM_EVENTS[event]}"
+	}
+
+	if (eventVal) {
+		sendEventLog(name: name, value: eventVal, ep)
+	}
+}
+
+
+/*******************************************************************
  ***** Execute / Build Commands
 ********************************************************************/
 void executeConfigureCmds() {
@@ -494,51 +540,6 @@ void fixParamsMap() {
 	paramsMap['settings'] = [fixed: true]
 }
 
-
-/*******************************************************************
- ***** Event Senders
-********************************************************************/
-//evt = [name, value, type, unit, desc, isStateChange]
-void sendEventLog(Map evt, Integer ep=0) {
-	//Set description if not passed in
-	evt.descriptionText = evt.desc ?: "${evt.name} set to ${evt.value}${evt.unit ?: ''}"
-
-	//Main Device Events
-	if (device.currentValue(evt.name).toString() != evt.value.toString() || evt.isStateChange) {
-		logInfo "${evt.descriptionText}"
-	} else {
-		logDebug "${evt.descriptionText} [NOT CHANGED]"
-	}
-	//Always send event to update last activity
-	sendEvent(evt)
-}
-
-void sendSwitchEvents(rawVal, String type, Integer ep=0) {
-	String value = (rawVal ? "on" : "off")
-	String desc = "switch is turned ${value}" + (type ? " (${type})" : "")
-	sendEventLog(name:"switch", value:value, type:type, desc:desc, ep)
-}
-
-void sendAlarmEvents(String name, Integer event, Integer ep=0) {
-	String eventVal
-	switch (event) {
-		case 0x00:
-			eventVal = "clear"
-			break
-		case [0x01, 0x02]:
-			eventVal = "detected"
-			break
-		case 0x03:
-			eventVal = "tested"
-			break
-		default:
-			logWarn "${name} event: ${ALARM_EVENTS[event]}"
-	}
-
-	if (eventVal) {
-		sendEventLog(name: name, value: eventVal, ep)
-	}
-}
 
 //#include jtp10181.zwaveDriverLibrary
 /*******************************************************************

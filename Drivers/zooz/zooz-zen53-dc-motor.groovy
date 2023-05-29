@@ -449,6 +449,62 @@ void zwaveEvent(hubitat.zwave.commands.switchmultilevelv4.SwitchMultilevelReport
 
 
 /*******************************************************************
+ ***** Event Senders
+********************************************************************/
+//evt = [name, value, type, unit, desc, isStateChange]
+void sendEventLog(Map evt, Integer ep=0) {
+	//Set description if not passed in
+	evt.descriptionText = evt.desc ?: "${evt.name} set to ${evt.value}${evt.unit ?: ''}"
+
+	//Main Device Events
+	if (device.currentValue(evt.name).toString() != evt.value.toString() || evt.isStateChange) {
+		logInfo "${evt.descriptionText}"
+	} else {
+		logDebug "${evt.descriptionText} [NOT CHANGED]"
+	}
+	//Always send event to update last activity
+	sendEvent(evt)
+}
+
+void sendSwitchEvents(Map cmd, String type, Integer ep=0) {
+	Integer pos = cmd.value
+	String wShade = "unknown"
+	if (cmd.duration == null || cmd.duration == 0) {
+		//Done Moving
+		switch (cmd.value as Integer) {
+			case 0:
+				wShade = "closed"
+				break
+			case 1..98:
+				wShade = "partially open"
+				break
+			case 99:
+				wShade = "open"
+				break
+		}
+	}
+	else {
+		pos = 0 //Ignore position
+		if (cmd.targetValue > cmd.value) {
+			wShade = "opening"
+		} else {
+			wShade = "closing"
+		}
+	}
+
+	String desc = "windowShade is ${wShade}" + (type ? " (${type})" : "")
+	sendEventLog(name:"windowShade", value:wShade, type:type, desc:desc, ep)
+
+	if (pos) {
+		Integer level = (pos == 99 ? 100 : pos)
+		desc = "position is set to ${level}%"
+		if (type) desc += " (${type})"
+		sendEventLog(name:"position", value:level, type:type, unit:"%", desc:desc, ep)
+	}
+}
+
+
+/*******************************************************************
  ***** Execute / Build Commands
 ********************************************************************/
 void executeConfigureCmds() {
@@ -582,62 +638,6 @@ List getSetLevelCmds(Number level, Number duration=null, Integer endPoint=0) {
 void fixParamsMap() {
 	//paramsMap.rampRate.options << rampRateOptions
 	paramsMap['settings'] = [fixed: true]
-}
-
-
-/*******************************************************************
- ***** Event Senders
-********************************************************************/
-//evt = [name, value, type, unit, desc, isStateChange]
-void sendEventLog(Map evt, Integer ep=0) {
-	//Set description if not passed in
-	evt.descriptionText = evt.desc ?: "${evt.name} set to ${evt.value}${evt.unit ?: ''}"
-
-	//Main Device Events
-	if (device.currentValue(evt.name).toString() != evt.value.toString() || evt.isStateChange) {
-		logInfo "${evt.descriptionText}"
-	} else {
-		logDebug "${evt.descriptionText} [NOT CHANGED]"
-	}
-	//Always send event to update last activity
-	sendEvent(evt)
-}
-
-void sendSwitchEvents(Map cmd, String type, Integer ep=0) {
-	Integer pos = cmd.value
-	String wShade = "unknown"
-	if (cmd.duration == null || cmd.duration == 0) {
-		//Done Moving
-		switch (cmd.value as Integer) {
-			case 0:
-				wShade = "closed"
-				break
-			case 1..98:
-				wShade = "partially open"
-				break
-			case 99:
-				wShade = "open"
-				break
-		}
-	}
-	else {
-		pos = 0 //Ignore position
-		if (cmd.targetValue > cmd.value) {
-			wShade = "opening"
-		} else {
-			wShade = "closing"
-		}
-	}
-
-	String desc = "windowShade is ${wShade}" + (type ? " (${type})" : "")
-	sendEventLog(name:"windowShade", value:wShade, type:type, desc:desc, ep)
-
-	if (pos) {
-		Integer level = (pos == 99 ? 100 : pos)
-		desc = "position is set to ${level}%"
-		if (type) desc += " (${type})"
-		sendEventLog(name:"position", value:level, type:type, unit:"%", desc:desc, ep)
-	}
 }
 
 
