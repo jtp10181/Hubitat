@@ -9,6 +9,9 @@
 
 Changelog:
 
+## [1.1.4] - 2023-07-09 (@jtp10181)
+  - Fixed MissingMethodException (var type) issue with startLevelChange
+
 ## [1.1.2] - 2023-05-28 (@jtp10181)
   - Updated to current library code
   - Flash command now remembers last rate for default
@@ -41,7 +44,7 @@ Changelog:
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "1.1.2"
+@Field static final String VERSION = "1.1.4"
 @Field static final String DRIVER = "Zooz-ZEN54"
 @Field static final String COMM_LINK = "https://community.hubitat.com/t/zooz-zen54/114592"
 @Field static final Map deviceModelNames = ["0904:0218":"ZEN54"]
@@ -321,14 +324,14 @@ def off() {
 	return getOnOffCmds(0x00)
 }
 
-String setLevel(Number level, Number duration=null) {
+String setLevel(level, duration=null) {
 	logDebug "setLevel($level, $duration)..."
 	return getSetLevelCmds(level, duration)
 }
 
 List<String> startLevelChange(direction, duration=null) {
 	Boolean upDown = (direction == "down") ? true : false
-	Integer durationVal = validateRange(duration, getParamValue("dimSpeed"), 0, 127)
+	Integer durationVal = validateRange(duration, getParamValue("dimSpeed") as Integer, 0, 127)
 	logDebug "startLevelChange($direction) for ${durationVal}s"
 
 	List<String> cmds = [switchMultilevelStartLvChCmd(upDown, durationVal)]
@@ -620,7 +623,7 @@ String getOnOffCmds(val, Integer endPoint=0) {
 	return getSetLevelCmds(val ? 0xFF : 0x00, null, endPoint)
 }
 
-String getSetLevelCmds(Number level, Number duration=null, Integer endPoint=0) {
+String getSetLevelCmds(level, duration=null, Integer endPoint=0) {
 	Short levelVal = safeToInt(level, 99)
 	// level 0xFF tells device to use last level, 0x00 is off
 	if (levelVal != 0xFF && levelVal != 0x00) {
