@@ -9,6 +9,10 @@
 
 Changelog:
 
+## [1.0.2] - 2023-07-15 (@jtp10181)
+  - Added option to change open command behavior
+  - Fixed potential variable type issue with startPositionChange
+
 ## [1.0.0] - 2023-05-28 (@jtp10181)
   - Updated to current library code
 
@@ -36,7 +40,7 @@ Changelog:
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "1.0.0"
+@Field static final String VERSION = "1.0.2"
 @Field static final String DRIVER = "Zooz-ZEN53"
 @Field static final String COMM_LINK = "https://community.hubitat.com/t/zooz-zen53/117790"
 @Field static final Map deviceModelNames = ["0904:0219":"ZEN53"]
@@ -66,7 +70,7 @@ metadata {
 
 		attribute "syncStatus", "string"
 
-		fingerprint mfr:"027A", prod:"0904", deviceId:"0219", deviceJoinName:"Zooz ZEN53 DC Motor Controller"
+		fingerprint mfr:"027A", prod:"0904", deviceId:"0219"   //Zooz ZEN53 DC Motor Controller
 	}
 
 	preferences {
@@ -98,6 +102,10 @@ metadata {
 				description: fmtDesc("Supports up to ${maxAssocNodes} Hex Device IDs separated by commas. Check device documentation for more info. Save as blank or 0 to clear."),
 				required: false
 		}
+
+		input "openPosition", "enum", title: fmtTitle("Open Command Behavior"), defaultValue: 0xFF,
+			options: [0xFF:"Use Last Position", 99:"Always Open Fully"],
+			required: false
 	}
 }
 
@@ -291,7 +299,7 @@ void refresh() {
 /*** Capabilities ***/
 def open() {
 	logDebug "open..."
-	return getOnOffCmds(0xFF)
+	return getOnOffCmds(openPosition ?: 0xFF)
 }
 
 def close() {
@@ -299,14 +307,14 @@ def close() {
 	return getOnOffCmds(0x00)
 }
 
-def setPosition(Number level) {
+def setPosition(level) {
 	logDebug "setLevel($level)..."
 	return getSetLevelCmds(level)
 }
 
 List<String> startPositionChange(direction) {
 	Boolean upDown = (direction == "close") ? true : false
-	Integer durationVal = validateRange(duration, getParamValue("holdRampRate"), 0, 127)
+	Integer durationVal = validateRange(duration, getParamValue("holdRampRate") as Integer, 0, 127)
 	logDebug "startPositionChange($direction)"
 
 	List<String> cmds = [
@@ -604,10 +612,10 @@ List getAssocDNIsSettingNodeIds(grp) {
 }
 
 List getOnOffCmds(val, Integer endPoint=0) {
-	return getSetLevelCmds(val ? 0xFF : 0x00, null, endPoint)
+	return getSetLevelCmds(val, null, endPoint)
 }
 
-List getSetLevelCmds(Number level, Number duration=null, Integer endPoint=0) {
+List getSetLevelCmds(level, duration=null, Integer endPoint=0) {
 	Short levelVal = safeToInt(level, 99)
 	// level 0xFF tells device to use last level, 0x00 is off
 	if (levelVal != 0xFF && levelVal != 0x00) {

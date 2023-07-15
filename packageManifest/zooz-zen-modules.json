@@ -2,18 +2,18 @@
   "packageName": "Zooz Modules Advanced Drivers",
   "author": "Jeff Page (@jtp10181)",
   "minimumHEVersion": "2.3.0",
-  "dateReleased": "2023-07-09",
+  "dateReleased": "2023-07-15",
   "documentationLink": "https://github.com/jtp10181/Hubitat/tree/main/Drivers/zooz",
   "communityLink": "https://community.hubitat.com/t/zooz-zen54/114592",
-  "releaseNotes": "ZEN54 [1.1.4] - 2023-07-09 - 2023-07-09\n  - Fixed MissingMethodException (var type) issue with startLevelChange\n\nZEN53/ZEN55 Version [1.0.0] - 2023-05-28\n  - Updated to current library code",
+  "releaseNotes": "ZEN53 [1.0.2] - 2023-07-15\n  - Added option to change open command behavior\n  - Fixed potential variable type issue with startPositionChange\n\nZEN54 [1.1.4] - 2023-07-09\n  - Fixed MissingMethodException (var type) issue with startLevelChange\n\nZEN55 [1.0.0] - 2023-05-28\n  - Updated to current library code",
   "drivers": [
     {
       "id": "20e32090-b2a1-40f5-ab50-4c918e7a5cd6",
       "name": "Zooz ZEN53 DC Motor Controller",
       "namespace": "jtp10181",
-      "location": "https://jtp10181.gateway.scarf.sh/zooz-zen53-v1.0.0.groovy",
+      "location": "https://jtp10181.gateway.scarf.sh/zooz-zen53-v1.0.2.groovy",
       "required": false,
-      "version": "1.0.0"
+      "version": "1.0.2"
     },
     {
       "id": "a05b12ed-d367-435f-816c-6f268f59fd50",
