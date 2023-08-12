@@ -85,7 +85,7 @@ metadata {
 
 		attribute "syncStatus", "string"
 
-		fingerprint mfr:"027A", prod:"7000", deviceId:"E004", inClusters:"0x5E,0x55,0x9F,0x6C", deviceJoinName:"Zooz ZSE44 Temperature Humidity XS Sensor"
+		fingerprint mfr:"027A", prod:"7000", deviceId:"E004", inClusters:"0x00,0x00" //Zooz ZSE44 Temperature Humidity XS Sensor
 	}
 
 	preferences {

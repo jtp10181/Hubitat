@@ -75,8 +75,8 @@ metadata {
 
 		attribute "syncStatus", "string"
 
-		fingerprint mfr:"027A", prod:"0104", deviceId:"0202", deviceJoinName:"Zooz ZEN52 Double Relay"
-		fingerprint mfr:"027A", prod:"0904", deviceId:"0202", deviceJoinName:"Zooz ZEN52 Double Relay LR"
+		fingerprint mfr:"027A", prod:"0104", deviceId:"0202", inClusters:"0x5E,0x55,0x9F,0x6C,0x25,0x70,0x85,0x59,0x8E,0x86,0x72,0x5A,0x73,0x7A,0x60,0x22,0x5B,0x87" //Zooz ZEN52 Double Relay
+		fingerprint mfr:"027A", prod:"0904", deviceId:"0202", inClusters:"0x00,0x00" //Zooz ZEN52 Double Relay LR
 	}
 
 	preferences {

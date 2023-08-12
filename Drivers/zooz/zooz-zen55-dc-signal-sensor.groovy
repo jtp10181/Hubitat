@@ -57,16 +57,16 @@ metadata {
 
 		//command "refreshParams"
 
-		command "setParameter",[[name:"parameterNumber*",type:"NUMBER", description:"Parameter Number", constraints:["NUMBER"]],
-			[name:"value*",type:"NUMBER", description:"Parameter Value", constraints:["NUMBER"]],
-			[name:"size",type:"NUMBER", description:"Parameter Size", constraints:["NUMBER"]]]
+		command "setParameter",[[name:"parameterNumber*",type:"NUMBER", description:"Parameter Number"],
+			[name:"value*",type:"NUMBER", description:"Parameter Value"],
+			[name:"size",type:"NUMBER", description:"Parameter Size"]]
 
 		//DEBUGGING
 		//command "debugShowVars"
 
 		attribute "syncStatus", "string"
 
-		fingerprint mfr:"027A", prod:"0004", deviceId:"0110", deviceJoinName:"Zooz ZEN55 DC Signal Sensor"
+		fingerprint mfr:"027A", prod:"0004", deviceId:"0110", inClusters:"0x00,0x00" //Zooz ZEN55 DC Signal Sensor
 	}
 
 	preferences {

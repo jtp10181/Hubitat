@@ -2,7 +2,13 @@
  *  Zooz ZAC36 Titan Valve Actuator
  *    - Model: ZAC36 - MINIMUM FIRMWARE 1.10
  *
+ *  For Support: https://community.hubitat.com/t/zooz-zac36/79426
+ *  https://github.com/jtp10181/Hubitat/tree/main/Drivers/zooz
+ *
  *  Changelog:
+
+## [0.2.0] - 2023-08-11 (@jtp10181)
+  - Minor fixes
 
 ## [0.1.0] - 2021-09-12 (@jtp10181)
   ### Added
@@ -33,7 +39,7 @@ https://github.com/krlaframboise/SmartThings/tree/master/devicetypes/zooz/zooz-z
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "0.1.0" 
+@Field static final String VERSION = "0.2.0" 
 @Field static final Map deviceModelNames = ["0101:0036":"ZAC36"]
 
 metadata {
@@ -41,14 +47,13 @@ metadata {
 		name: "Zooz ZAC36 Titan Valve Actuator",
 		namespace: "jtp10181",
 		author: "Jeff Page (@jtp10181)",
-		importUrl: ""
+		importUrl: "https://raw.githubusercontent.com/jtp10181/Hubitat/main/Drivers/zooz/zooz-zac36-valve-actuator.groovy"
 	) {
 		capability "Actuator"
 		capability "Sensor"
 		capability "Switch"
 		capability "Valve"
 		capability "Water Sensor"
-		capability "Configuration"
 		capability "Temperature Measurement"
 		capability "Configuration"
 		capability "Refresh"
@@ -63,7 +68,7 @@ metadata {
 		attribute "temperatureAlarm", "string"
 		attribute "syncStatus", "string"
 
-		fingerprint mfr:"027A", prod:"0101", deviceId: "0036", deviceJoinName:"Zooz ZAC36 Titan Valve Actuator"
+		fingerprint mfr:"027A", prod:"0101", deviceId: "0036", inClusters:"0x00,0x00" //Zooz ZAC36 Titan Valve Actuator
 	}
 
 	preferences {
@@ -296,6 +301,7 @@ List<String> off() { close() }
 List<String> close() {
 	logDebug "close..."
 	state.pendingDigital = true
+	runIn(30, removePendingDigital)
 	def param = getParam("inverseReport")
 	int inverse = safeToInt(getParamStoredValue(param.num), param.defaultVal)
 
@@ -308,6 +314,7 @@ List<String> close() {
 List<String> open() {
 	logDebug "open..."
 	state.pendingDigital = true
+	runIn(30, removePendingDigital)
 	def param = getParam("inverseReport")
 	int inverse = safeToInt(getParamStoredValue(param.num), param.defaultVal)
 
@@ -594,7 +601,7 @@ String switchBinaryGetCmd() {
 
 String sensorMultilevelGetCmd(sensorType) {
 	int scale = tempUnits.toInteger()
-	return secureCmd(zwave.sensorMultilevelV11.sensorMultilevelGet(scale: tempUnits.toInteger(), sensorType: sensorType))
+	return secureCmd(zwave.sensorMultilevelV11.sensorMultilevelGet(scale: scale, sensorType: sensorType))
 }
 
 String notificationGetCmd(notificationType) {
@@ -639,8 +646,8 @@ String multiChannelEncap(hubitat.zwave.Command cmd, ep) {
 }
 
 //====== Supervision Encapsulate START ======\\
-@Field static Map<String, Map<Short, String>> supervisedPackets = [:]
-@Field static Map<String, Short> sessionIDs = [:]
+@Field static Map<String, Map<Short, String>> supervisedPackets = new java.util.concurrent.ConcurrentHashMap()
+@Field static Map<String, Short> sessionIDs = new java.util.concurrent.ConcurrentHashMap()
 
 String supervisionEncap(hubitat.zwave.Command cmd, ep=0) {
 	//logTrace "supervisionEncap: ${cmd} (ep ${ep})"
@@ -869,7 +876,7 @@ void sendEventIfNew(String name, value, boolean displayed=true, String type=null
 void sendSwitchEvent(rawVal, String type) {
 	sendEventIfNew("switch", rawVal ? "on":"off", true, type)
 
-	//To Also send open/close since the notificationGet is broken
+	//Also send open/close since the notificationGet is broken
 	def param = getParam("inverseReport")
 	int inverse = safeToInt(getParamStoredValue(param.num), param.defaultVal)
 	int valveVal = (rawVal ? 1 : 0) ^ inverse //XOR flips the bit if inverse
@@ -879,12 +886,16 @@ void sendSwitchEvent(rawVal, String type) {
 //parameter[0] 0x01 = Open, 0x00 = Closed
 void sendValveEvent(event, parameter) {
 	String type = (state.pendingDigital ? "digital" : "physical")
-	state.remove("pendingDigital")
+	removePendingDigital()
 
 	//Open/Close Event
 	if (event == 0x01) {
 		sendEventIfNew("valve", parameter ? "open":"closed", true, type)
 	}
+}
+
+void removePendingDigital() {
+	state.remove("pendingDigital")
 }
 
 void sendHeatAlarmEvent(event) {
@@ -944,7 +955,7 @@ Map getParamStoredMap() {
 //This will rebuild the list for the current model and firmware only as needed
 //paramsList Structure: MODEL:[FIRMWARE:PARAM_MAPS]
 //PARAM_MAPS [num, name, title, description, size, defaultVal, options, firmVer]
-@Field static Map<String, Map<String, List>> paramsList = [:]
+@Field static Map<String, Map<String, List>> paramsList = new java.util.concurrent.ConcurrentHashMap()
 void updateParamsList() {
 	logDebug "Update Params List"
 	String devModel = state.deviceModel

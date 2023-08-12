@@ -112,9 +112,9 @@ metadata {
 		//command "refreshParams"
 		command "resetStats"
 
-		command "setParameter",[[name:"parameterNumber*",type:"NUMBER", description:"Parameter Number", constraints:["NUMBER"]],
-			[name:"value*",type:"NUMBER", description:"Parameter Value", constraints:["NUMBER"]],
-			[name:"size",type:"NUMBER", description:"Parameter Size", constraints:["NUMBER"]]]
+		command "setParameter",[[name:"parameterNumber*",type:"NUMBER", description:"Parameter Number"],
+			[name:"value*",type:"NUMBER", description:"Parameter Value"],
+			[name:"size",type:"NUMBER", description:"Parameter Size"]]
 
 		//DEBUGGING
 		//command "debugShowVars"
@@ -130,10 +130,10 @@ metadata {
 		attribute "voltageLow", "number"
 		attribute "warnings", "number"
 
-		fingerprint mfr:"027A", prod:"7000", deviceId:"B002", deviceJoinName:"Zooz ZEN04 Plug"
-		fingerprint mfr:"027A", prod:"7000", deviceId:"B001", deviceJoinName:"Zooz ZEN05 Outdoor Plug"
-		fingerprint mfr:"027A", prod:"7000", deviceId:"B003", deviceJoinName:"Zooz ZEN14 Outdoor Double Plug"
-		fingerprint mfr:"027A", prod:"0101", deviceId:"000D", deviceJoinName:"Zooz ZEN15 Plug"
+		fingerprint mfr:"027A", prod:"7000", deviceId:"B002", inClusters:"0x5E,0x25,0x70,0x85,0x8E,0x59,0x32,0x71,0x55,0x86,0x72,0x5A,0x87,0x73,0x9F,0x6C,0x7A" //Zooz ZEN04 Plug
+		fingerprint mfr:"027A", prod:"7000", deviceId:"B001", inClusters:"0x5E,0x25,0x70,0x85,0x8E,0x59,0x55,0x86,0x72,0x5A,0x87,0x73,0x9F,0x6C,0x7A" //Zooz ZEN05 Outdoor Plug
+		fingerprint mfr:"027A", prod:"7000", deviceId:"B003", inClusters:"0x5E,0x25,0x85,0x8E,0x59,0x55,0x86,0x72,0x5A,0x87,0x73,0x9F,0x60,0x6C,0x7A,0x70" //Zooz ZEN14 Outdoor Double Plug
+		fingerprint mfr:"027A", prod:"0101", deviceId:"000D", inClusters:"0x00,0x00" //Zooz ZEN15 Plug
 	}
 
 	preferences {

@@ -61,16 +61,16 @@ metadata {
 
 		command "refreshParams"
 
-		command "setParameter",[[name:"parameterNumber*",type:"NUMBER", description:"Parameter Number", constraints:["NUMBER"]],
-			[name:"value*",type:"NUMBER", description:"Parameter Value", constraints:["NUMBER"]],
-			[name:"size",type:"NUMBER", description:"Parameter Size", constraints:["NUMBER"]]]
+		command "setParameter",[[name:"parameterNumber*",type:"NUMBER", description:"Parameter Number"],
+			[name:"value*",type:"NUMBER", description:"Parameter Value"],
+			[name:"size",type:"NUMBER", description:"Parameter Size"]]
 
 		//DEBUGGING
 		//command "debugShowVars"
 
 		attribute "syncStatus", "string"
 
-		fingerprint mfr:"027A", prod:"0904", deviceId:"0219"   //Zooz ZEN53 DC Motor Controller
+		fingerprint mfr:"027A", prod:"0904", deviceId:"0219", inClusters:"0x00,0x00" //Zooz ZEN53 DC Motor Controller
 	}
 
 	preferences {

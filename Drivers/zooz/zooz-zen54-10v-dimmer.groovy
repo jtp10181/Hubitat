@@ -67,20 +67,20 @@ metadata {
 		//Modified from default to add duration argument
 		command "startLevelChange", [
 			[name:"Direction*", description:"Direction for level change request", type: "ENUM", constraints: ["up","down"]],
-			[name:"Duration", type:"NUMBER", description:"Transition duration in seconds", constraints:["NUMBER"]] ]
+			[name:"Duration", type:"NUMBER", description:"Transition duration in seconds"] ]
 
 		//command "refreshParams"
 
-		command "setParameter",[[name:"parameterNumber*",type:"NUMBER", description:"Parameter Number", constraints:["NUMBER"]],
-			[name:"value*",type:"NUMBER", description:"Parameter Value", constraints:["NUMBER"]],
-			[name:"size",type:"NUMBER", description:"Parameter Size", constraints:["NUMBER"]]]
+		command "setParameter",[[name:"parameterNumber*",type:"NUMBER", description:"Parameter Number"],
+			[name:"value*",type:"NUMBER", description:"Parameter Value"],
+			[name:"size",type:"NUMBER", description:"Parameter Size"]]
 
 		//DEBUGGING
 		//command "debugShowVars"
 
 		attribute "syncStatus", "string"
 
-		fingerprint mfr:"027A", prod:"0904", deviceId:"0218", deviceJoinName:"Zooz ZEN54 0-10V"
+		fingerprint mfr:"027A", prod:"0904", deviceId:"0218", inClusters:"0x00,0x00" //Zooz ZEN54 0-10V
 	}
 
 	preferences {
