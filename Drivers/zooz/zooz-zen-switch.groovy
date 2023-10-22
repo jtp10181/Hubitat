@@ -239,9 +239,9 @@ metadata {
 			[name:"Select Color*", description:"Works ONLY on ZEN7x Series!", type: "ENUM", constraints: ledColorOptions] ]
 		command "setLEDMode", [
 			[name:"Select Mode*", description:"This Sets Preference (#2)*", type: "ENUM", constraints: ledModeCmdOptions] ]
-		command "setParameter",[[name:"parameterNumber*",type:"NUMBER", description:"Parameter Number", constraints:["NUMBER"]],
-			[name:"value*",type:"NUMBER", description:"Parameter Value", constraints:["NUMBER"]],
-			[name:"size",type:"NUMBER", description:"Parameter Size", constraints:["NUMBER"]]]
+		command "setParameter",[[name:"parameterNumber*",type:"NUMBER", description:"Parameter Number"],
+			[name:"value*",type:"NUMBER", description:"Parameter Value"],
+			[name:"size",type:"NUMBER", description:"Parameter Size"]]
 
 		//DEBUGGING
 		//command "debugShowVars"
@@ -251,12 +251,12 @@ metadata {
 		attribute "assocDNI4", "string"
 		attribute "syncStatus", "string"
 
-		fingerprint mfr:"027A", prod:"B111", deviceId:"1E1C", inClusters:"0x5E,0x6C,0x55,0x9F", deviceJoinName:"Zooz ZEN21 Switch"
-		fingerprint mfr:"027A", prod:"B111", deviceId:"251C", inClusters:"0x5E,0x6C,0x55,0x9F", deviceJoinName:"Zooz ZEN23 Switch"
-		fingerprint mfr:"027A", prod:"A000", deviceId:"A001", inClusters:"0x5E,0x6C,0x55,0x9F", deviceJoinName:"Zooz ZEN26 S2 Switch"
-		fingerprint mfr:"027A", prod:"7000", deviceId:"A001", inClusters:"0x5E,0x55,0x9F,0x6C", deviceJoinName:"Zooz ZEN71 Switch"
-		fingerprint mfr:"027A", prod:"7000", deviceId:"A003", inClusters:"0x5E,0x55,0x9F,0x6C", deviceJoinName:"Zooz ZEN73 Switch"
-		fingerprint mfr:"027A", prod:"7000", deviceId:"A006", inClusters:"0x5E,0x55,0x9F,0x6C", deviceJoinName:"Zooz ZEN76 S2 Switch"
+		fingerprint mfr:"027A", prod:"B111", deviceId:"1E1C", inClusters:"0x5E,0x25,0x85,0x8E,0x59,0x55,0x86,0x72,0x5A,0x73,0x70,0x5B,0x6C,0x9F,0x7A" //Zooz ZEN21 Switch
+		fingerprint mfr:"027A", prod:"B111", deviceId:"251C", inClusters:"0x5E,0x25,0x85,0x8E,0x59,0x55,0x86,0x72,0x5A,0x73,0x70,0x5B,0x6C,0x9F,0x7A" //Zooz ZEN23 Switch
+		fingerprint mfr:"027A", prod:"A000", deviceId:"A001", inClusters:"0x5E,0x25,0x85,0x8E,0x59,0x55,0x86,0x72,0x5A,0x73,0x70,0x5B,0x6C,0x9F,0x7A" //Zooz ZEN26 S2 Switch
+		fingerprint mfr:"027A", prod:"7000", deviceId:"A001", inClusters:"0x5E,0x25,0x70,0x5B,0x85,0x8E,0x59,0x55,0x86,0x72,0x5A,0x87,0x73,0x9F,0x6C,0x7A" //Zooz ZEN71 Switch
+		fingerprint mfr:"027A", prod:"7000", deviceId:"A003", inClusters:"0x5E,0x25,0x70,0x5B,0x85,0x8E,0x59,0x55,0x86,0x72,0x5A,0x87,0x73,0x9F,0x6C,0x7A" //Zooz ZEN73 Switch
+		fingerprint mfr:"027A", prod:"7000", deviceId:"A006", inClusters:"0x5E,0x25,0x70,0x5B,0x85,0x8E,0x59,0x55,0x86,0x72,0x5A,0x87,0x73,0x9F,0x6C,0x7A" //Zooz ZEN76 S2 Switch
 	}
 
 	preferences {

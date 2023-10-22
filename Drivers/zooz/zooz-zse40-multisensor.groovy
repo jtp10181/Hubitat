@@ -61,12 +61,12 @@ Changelog:
 ## [0.2.0] - 2022-01-17 (@jtp10181)
   ### Added
   - Temperature, Humidity, and Light offsets
-  - Refresh command to force full refresh next wakeup
+  - Refresh command to force full refresh next wake-up
   - Log messages with instructions when you need to wake up the device
   - Properly sending wakeUpNoMoreInfoCmd to save battery
   ### Fixed
   - Added min firmware to parameter 8 setting
-  - Wakeup only gets battery level by default
+  - Wake-up only gets battery level by default
   - parse() logTrace would fail if command could not be parsed
   
 ## [0.1.0] - 2021-09-29 (@jtp10181)
@@ -120,9 +120,7 @@ metadata {
 
 		attribute "syncStatus", "string"
 
-		fingerprint mfr:"027A", prod:"2021", deviceId:"2101", inClusters:"0x5E,0x22,0x98,0x55", deviceJoinName:"Zooz ZSE40 4-in-1 Multisensor"
-		fingerprint mfr:"027A", prod:"2021", deviceId:"2101", inClusters:"0x5E,0x86,0x72,0x5A,0x85,0x59,0x73,0x80,0x71,0x31,0x70,0x84,0x7A", deviceJoinName:"Zooz ZSE40 4-in-1 Multisensor"
-		fingerprint mfr:"027A", prod:"2021", deviceId:"2101", inClusters:"0x5E,0x22,0x98,0x9F,0x6C,0x55", deviceJoinName:"Zooz ZSE40-700 4-in-1 Multisensor"
+		fingerprint mfr:"027A", prod:"2021", deviceId:"2101", inClusters:"0x5E,0x86,0x72,0x5A,0x85,0x59,0x73,0x80,0x71,0x31,0x70,0x84,0x7A,0x98" //Zooz ZSE40 4-in-1 Multisensor
 	}
 
 	preferences {

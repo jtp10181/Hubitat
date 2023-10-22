@@ -189,7 +189,7 @@ metadata {
 		//Modified from default to add duration argument
 		command "startLevelChange", [
 			[name:"Direction*", description:"Direction for level change request", type: "ENUM", constraints: ["up","down"]],
-			[name:"Duration", type:"NUMBER", description:"Transition duration in seconds", constraints:["NUMBER"]] ]
+			[name:"Duration", type:"NUMBER", description:"Transition duration in seconds"] ]
 
 		command "refreshParams"
 		command "childDevices", [[name:"Select One*", type: "ENUM", constraints: ["Create","Remove"] ]]
@@ -199,9 +199,9 @@ metadata {
 		command "setLEDMode", [
 			[name:"Select LED*", type: "ENUM", constraints: ["Dimmer","Relay"] ],
 			[name:"Select Mode*", description:"This Sets Preference (#2)*", type: "ENUM", constraints: ledModeCmdOptions] ]
-		command "setParameter",[[name:"parameterNumber*",type:"NUMBER", description:"Parameter Number", constraints:["NUMBER"]],
-			[name:"value*",type:"NUMBER", description:"Parameter Value", constraints:["NUMBER"]],
-			[name:"size",type:"NUMBER", description:"Parameter Size", constraints:["NUMBER"]]]
+		command "setParameter",[[name:"parameterNumber*",type:"NUMBER", description:"Parameter Number"],
+			[name:"value*",type:"NUMBER", description:"Parameter Value"],
+			[name:"size",type:"NUMBER", description:"Parameter Size"]]
 
 		//DEBUGGING
 		//command "debugShowVars"
@@ -211,7 +211,7 @@ metadata {
 		attribute "assocDNI4", "string"
 		attribute "syncStatus", "string"
 
-		fingerprint mfr:"027A", prod:"A000", deviceId:"A008", inClusters:"0x5E,0x6C,0x55,0x9F", deviceJoinName:"Zooz ZEN30 Double Switch"
+		fingerprint mfr:"027A", prod:"A000", deviceId:"A008", inClusters:"0x5E,0x26,0x25,0x85,0x8E,0x59,0x55,0x86,0x72,0x5A,0x73,0x70,0x5B,0x60,0x9F,0x6C,0x7A" //Zooz ZEN30 Double Switch
 	}
 
 	preferences {

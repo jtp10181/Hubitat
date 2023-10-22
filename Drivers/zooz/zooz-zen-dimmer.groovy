@@ -239,16 +239,16 @@ metadata {
 		//Modified from default to add duration argument
 		command "startLevelChange", [
 			[name:"Direction*", description:"Direction for level change request", type: "ENUM", constraints: ["up","down"]],
-			[name:"Duration", type:"NUMBER", description:"Transition duration in seconds", constraints:["NUMBER"]] ]
+			[name:"Duration", type:"NUMBER", description:"Transition duration in seconds"] ]
 
 		command "refreshParams"
 		command "setLED", [
 			[name:"Select Color*", description:"Works ONLY on ZEN7x Series!", type: "ENUM", constraints: ledColorOptions] ]
 		command "setLEDMode", [
 			[name:"Select Mode*", description:"This Sets Preference (#2)*", type: "ENUM", constraints: ledModeCmdOptions] ]
-		command "setParameter",[[name:"parameterNumber*",type:"NUMBER", description:"Parameter Number", constraints:["NUMBER"]],
-			[name:"value*",type:"NUMBER", description:"Parameter Value", constraints:["NUMBER"]],
-			[name:"size",type:"NUMBER", description:"Parameter Size", constraints:["NUMBER"]]]
+		command "setParameter",[[name:"parameterNumber*",type:"NUMBER", description:"Parameter Number"],
+			[name:"value*",type:"NUMBER", description:"Parameter Value"],
+			[name:"size",type:"NUMBER", description:"Parameter Size"]]
 
 		//DEBUGGING
 		//command "debugShowVars"
@@ -258,12 +258,12 @@ metadata {
 		attribute "assocDNI4", "string"
 		attribute "syncStatus", "string"
 
-		fingerprint mfr:"027A", prod:"B112", deviceId:"1F1C", inClusters:"0x5E,0x6C,0x55,0x9F", deviceJoinName:"Zooz ZEN22 Dimmer"
-		fingerprint mfr:"027A", prod:"B112", deviceId:"261C", inClusters:"0x5E,0x6C,0x55,0x9F", deviceJoinName:"Zooz ZEN24 Dimmer"
-		fingerprint mfr:"027A", prod:"A000", deviceId:"A002", inClusters:"0x5E,0x6C,0x55,0x9F", deviceJoinName:"Zooz ZEN27 S2 Dimmer"
-		fingerprint mfr:"027A", prod:"7000", deviceId:"A002", inClusters:"0x5E,0x55,0x9F,0x6C", deviceJoinName:"Zooz ZEN72 Dimmer"
-		fingerprint mfr:"027A", prod:"7000", deviceId:"A004", inClusters:"0x5E,0x55,0x9F,0x6C", deviceJoinName:"Zooz ZEN74 Dimmer"
-		fingerprint mfr:"027A", prod:"7000", deviceId:"A007", inClusters:"0x5E,0x55,0x9F,0x6C", deviceJoinName:"Zooz ZEN77 S2 Dimmer"
+		fingerprint mfr:"027A", prod:"B112", deviceId:"1F1C", inClusters:"0x5E,0x26,0x70,0x85,0x8E,0x59,0x55,0x86,0x72,0x5A,0x73,0x5B,0x9F,0x6C,0x7A" //Zooz ZEN22 Dimmer
+		fingerprint mfr:"027A", prod:"B112", deviceId:"261C", inClusters:"0x5E,0x26,0x70,0x85,0x8E,0x59,0x55,0x86,0x72,0x5A,0x73,0x5B,0x9F,0x6C,0x7A" //Zooz ZEN24 Dimmer
+		fingerprint mfr:"027A", prod:"A000", deviceId:"A002", inClusters:"0x5E,0x26,0x70,0x85,0x8E,0x59,0x55,0x86,0x72,0x5A,0x73,0x5B,0x9F,0x6C,0x7A" //Zooz ZEN27 S2 Dimmer
+		fingerprint mfr:"027A", prod:"7000", deviceId:"A002", inClusters:"0x5E,0x26,0x70,0x5B,0x85,0x8E,0x59,0x55,0x86,0x72,0x5A,0x87,0x73,0x9F,0x6C,0x7A" //Zooz ZEN72 Dimmer
+		fingerprint mfr:"027A", prod:"7000", deviceId:"A004", inClusters:"0x5E,0x26,0x70,0x5B,0x85,0x8E,0x59,0x55,0x86,0x72,0x5A,0x87,0x73,0x9F,0x6C,0x7A" //Zooz ZEN74 Dimmer
+		fingerprint mfr:"027A", prod:"7000", deviceId:"A007", inClusters:"0x5E,0x26,0x70,0x5B,0x85,0x8E,0x59,0x55,0x86,0x72,0x5A,0x87,0x73,0x9F,0x6C,0x7A" //Zooz ZEN77 S2 Dimmer
 	}
 
 	preferences {
