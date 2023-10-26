@@ -37,6 +37,7 @@
       "description": "Zooz Relay drivers with advanced features and settings: <br>ZEN17, ZEN51, ZEN52",
       "descriptive": "<p><strong>Supported Models:</strong></p>\n\n<ul>\n\t<li>ZEN17 Companion ONLY -&nbsp;Min Firmware 1.04</li>\n\t<li>ZEN51 Relay - Min Firmware 1.40</li>\n\t<li>ZEN52 Double Relay -&nbsp;Min Firmware 1.40</li>\n</ul>\n\n<p><strong>NOTE:</strong> See Instructions on Community Post!</p>\n\n<p><strong>Features:</strong></p>\n\n<ul>\n\t<li>All configuration variables available with designated defaults per Zooz</li>\n\t<li>ZEN17 Sync from Device to grab existing settings as a starting point</li>\n\t<li>Scene Functions matching Zooz docs (10 unique actions)</li>\n</ul>\n\n<p>For more info on the advanced settings check the <a href=\"https://www.support.getzooz.com/kb/section/8/\">Zooz Support Documentation</a>.<br />\nSelect your model &gt; Z-Wave Questions &gt; Advanced Settings (bottom right corner)</p>",
       "tags": [
+        "Relays",
         "Garage Doors",
         "Lights & Switches",
         "Misc. Devices",
@@ -77,6 +78,33 @@
       "descriptive": "",
       "tags": [
         "Lights & Switches",
+        "Safety & Security",
+        "Window Coverings",
+        "ZWave"
+      ]
+    },
+    {
+      "id": "6598eaa9-f9d0-45c1-8b42-2479253be679",
+      "name": "Zooz ZAC36 Titan Valve Actuator",
+      "category": "Control",
+      "location": "https://raw.githubusercontent.com/jtp10181/Hubitat/main/packageManifest/zooz-zac36.json",
+      "description": "Zooz ZAC36 Titan Valve Actuator driver with all advanced features and settings",
+      "descriptive": "",
+      "tags": [
+        "Valves",
+        "Water",
+        "ZWave"
+      ]
+    },
+    {
+      "id": "c6e5a406-4e1f-4d10-8612-75eedf4e1f05",
+      "name": "Zooz ZAC38 Range Extender",
+      "category": "Control",
+      "location": "https://raw.githubusercontent.com/jtp10181/Hubitat/main/packageManifest/zooz-zac38.json",
+      "description": "Zooz ZAC38 Range Extender and Power Outage Monitor driver with all advanced features and settings",
+      "descriptive": "",
+      "tags": [
+        "Repeaters & Extenders",
         "ZWave"
       ]
     }
