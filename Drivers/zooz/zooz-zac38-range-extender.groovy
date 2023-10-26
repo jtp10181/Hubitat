@@ -9,6 +9,10 @@
 
 Changelog:
 
+## [1.0.0] - 2023-10-25 (@jtp10181)
+  - Library code updated
+  - Minor updates and code cleanup
+
 ## [0.1.0] - 2023-04-25 (@jtp10181)
   - Initial Release
 
@@ -30,7 +34,7 @@ Changelog:
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "0.1.0"
+@Field static final String VERSION = "1.0.0"
 @Field static final String DRIVER = "Zooz-ZAC38"
 @Field static final String COMM_LINK = "https://community.hubitat.com/t/zooz-zac38/122755"
 @Field static final Map deviceModelNames = ["0004:0510":"ZAC38"]
@@ -278,18 +282,6 @@ void zwaveEvent(hubitat.zwave.commands.associationv2.AssociationReport cmd) {
 		logDebug "Lifeline Association: ${cmd.nodeId}"
 		state.group1Assoc = (cmd.nodeId == [zwaveHubNodeId]) ? true : false
 	}
-	else if (grp > 1 && grp <= maxAssocGroups) {
-		logDebug "Group $grp Association: ${cmd.nodeId}"
-
-		if (cmd.nodeId.size() > 0) {
-			state["assocNodes$grp"] = cmd.nodeId
-		} else {
-			state.remove("assocNodes$grp".toString())
-		}
-
-		String dnis = convertIntListToHexList(cmd.nodeId)?.join(", ")
-		device.updateSetting("assocDNI$grp", [value:"${dnis}", type:"string"])
-	}
 	else {
 		logDebug "Unhandled Group: $cmd"
 	}
@@ -316,7 +308,7 @@ void zwaveEvent(hubitat.zwave.commands.notificationv8.NotificationReport cmd, ep
 			sendPowerEvent(cmd.event, cmd.eventParameter[0])
 			break
 		default:
-			logDebug "Unhandled NotificationReport notificationType: ${cmd}"
+			logDebug "Unhandled: ${cmd}"
 	}
 }
 
@@ -341,14 +333,15 @@ void sendEventLog(Map evt, Integer ep=0) {
 
 void sendPowerEvent(event, parameter) {
 	switch (event) {
-		case 0x02: //AC mains disconnected
+		case 0x00: break  //Idle State - ignored
+		case 0x02:  //AC mains disconnected
 			sendEventLog(name:"powerSource", value:"battery")
 			break
-		case 0x03: //AC mains re-connected
+		case 0x03:  //AC mains re-connected
 			sendEventLog(name:"powerSource", value:"mains")
 			break
 		default:
-			logDebug "Unhandled Power Management event: ${event}, ${parameter}"
+			logDebug "Unhandled Power Management: ${event}, ${parameter}"
 	}
 }
 
@@ -394,6 +387,7 @@ void executeRefreshCmds() {
 
 	cmds << batteryGetCmd()
 	cmds << notificationGetCmd(0x08, 0x00)
+	cmds << notificationGetCmd(0x08, 0x03)
 
 	sendCommands(cmds)
 }
@@ -409,44 +403,7 @@ List getConfigureAssocsCmds() {
 		cmds << associationGetCmd(1)
 	}
 
-	for (int i = 2; i <= maxAssocGroups; i++) {
-		List<String> cmdsEach = []
-		List settingNodeIds = getAssocDNIsSettingNodeIds(i)
-
-		//Need to remove first then add in case we are at limit
-		List oldNodeIds = state."assocNodes$i"?.findAll { !(it in settingNodeIds) }
-		if (oldNodeIds) {
-			logDebug "Removing Nodes: Group $i - $oldNodeIds"
-			cmdsEach << associationRemoveCmd(i, oldNodeIds)
-		}
-
-		List newNodeIds = settingNodeIds.findAll { !(it in state."assocNodes$i") }
-		if (newNodeIds) {
-			logDebug "Adding Nodes: Group $i - $newNodeIds"
-			cmdsEach << associationSetCmd(i, newNodeIds)
-		}
-
-		if (cmdsEach || state.resyncAll) {
-			cmdsEach << associationGetCmd(i)
-			cmds += cmdsEach
-		}
-	}
-
 	return cmds
-}
-
-List getAssocDNIsSettingNodeIds(grp) {
-	def dni = getAssocDNIsSetting(grp)
-	def nodeIds = convertHexListToIntList(dni.split(","))
-
-	if (dni && !nodeIds) {
-		logWarn "'${dni}' is not a valid value for the 'Device Associations - Group ${grp}' setting.  All z-wave devices have a 2 character Device Network ID and if you're entering more than 1, use commas to separate them."
-	}
-	else if (nodeIds.size() > maxAssocNodes) {
-		logWarn "The 'Device Associations - Group ${grp}' setting contains more than ${maxAssocNodes} IDs so some (or all) may not get associated."
-	}
-
-	return nodeIds
 }
 
 
@@ -476,6 +433,7 @@ Changelog:
 2023-05-14 - Updates for power metering
 2023-05-18 - Adding requirement for getParamValueAdj in driver
 2023-05-24 - Fix for possible RuntimeException error due to bad cron string
+2023-10-25 - Less savings to the configVals data, and some new functions
 
 ********************************************************************/
 
@@ -625,6 +583,11 @@ String batteryGetCmd() {
 	return secureCmd(zwave.batteryV1.batteryGet())
 }
 
+String sensorMultilevelGetCmd(sensorType) {
+	Integer scale = (temperatureScale == "F" ? 1 : 0)
+	return secureCmd(zwave.sensorMultilevelV11.sensorMultilevelGet(scale: scale, sensorType: sensorType))
+}
+
 String notificationGetCmd(notificationType, eventType) {
 	return secureCmd(zwave.notificationV3.notificationGet(notificationType: notificationType, v1AlarmType:0, event: eventType))
 }
@@ -678,7 +641,7 @@ String multiChannelEncap(hubitat.zwave.Command cmd, ep) {
 @Field static Map<String, Map> configsList = new java.util.concurrent.ConcurrentHashMap()
 Integer getParamStoredValue(Integer paramNum) {
 	//Using Data (Map) instead of State Variables
-	TreeMap configsMap = getParamStoredMap()
+	Map configsMap = getParamStoredMap()
 	return safeToInt(configsMap[paramNum], null)
 }
 
@@ -687,11 +650,11 @@ void setParamStoredValue(Integer paramNum, Integer value) {
 	TreeMap configsMap = getParamStoredMap()
 	configsMap[paramNum] = value
 	configsList[device.id][paramNum] = value
-	device.updateDataValue("configVals", configsMap.inspect())
+	//device.updateDataValue("configVals", configsMap.inspect())
 }
 
 Map getParamStoredMap() {
-	Map configsMap = configsList[device.id]
+	TreeMap configsMap = configsList[device.id]
 	if (configsMap == null) {
 		configsMap = [:]
 		if (device.getDataValue("configVals")) {
@@ -851,6 +814,7 @@ void updateSyncingStatus(Integer delay=2) {
 void refreshSyncStatus() {
 	Integer changes = pendingChanges
 	sendEvent(name:"syncStatus", value:(changes ? "${changes} Pending Changes" : "Synced"))
+	device.updateDataValue("configVals", getParamStoredMap()?.inspect())
 }
 
 void updateLastCheckIn() {
@@ -897,6 +861,20 @@ Integer getPendingChanges() {
 String getAssocDNIsSetting(grp) {
 	def val = settings."assocDNI$grp"
 	return ((val && (val.trim() != "0")) ? val : "")
+}
+
+List getAssocDNIsSettingNodeIds(grp) {
+	String dni = getAssocDNIsSetting(grp)
+	List nodeIds = convertHexListToIntList(dni.split(","))
+
+	if (dni && !nodeIds) {
+		logWarn "'${dni}' is not a valid value for the 'Device Associations - Group ${grp}' setting.  All z-wave devices have a 2 character Device Network ID and if you're entering more than 1, use commas to separate them."
+	}
+	else if (nodeIds.size() > maxAssocNodes) {
+		logWarn "The 'Device Associations - Group ${grp}' setting contains more than ${maxAssocNodes} IDs so some (or all) may not get associated."
+	}
+
+	return nodeIds
 }
 
 //Used with configure to reset variables

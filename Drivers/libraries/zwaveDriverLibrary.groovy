@@ -11,6 +11,7 @@ Changelog:
 2023-05-14 - Updates for power metering
 2023-05-18 - Adding requirement for getParamValueAdj in driver
 2023-05-24 - Fix for possible RuntimeException error due to bad cron string
+2023-10-25 - Less savings to the configVals data, and some new functions
 
 ********************************************************************/
 
@@ -160,6 +161,11 @@ String batteryGetCmd() {
 	return secureCmd(zwave.batteryV1.batteryGet())
 }
 
+String sensorMultilevelGetCmd(sensorType) {
+	Integer scale = (temperatureScale == "F" ? 1 : 0)
+	return secureCmd(zwave.sensorMultilevelV11.sensorMultilevelGet(scale: scale, sensorType: sensorType))
+}
+
 String notificationGetCmd(notificationType, eventType) {
 	return secureCmd(zwave.notificationV3.notificationGet(notificationType: notificationType, v1AlarmType:0, event: eventType))
 }
@@ -213,7 +219,7 @@ String multiChannelEncap(hubitat.zwave.Command cmd, ep) {
 @Field static Map<String, Map> configsList = new java.util.concurrent.ConcurrentHashMap()
 Integer getParamStoredValue(Integer paramNum) {
 	//Using Data (Map) instead of State Variables
-	TreeMap configsMap = getParamStoredMap()
+	Map configsMap = getParamStoredMap()
 	return safeToInt(configsMap[paramNum], null)
 }
 
@@ -222,11 +228,11 @@ void setParamStoredValue(Integer paramNum, Integer value) {
 	TreeMap configsMap = getParamStoredMap()
 	configsMap[paramNum] = value
 	configsList[device.id][paramNum] = value
-	device.updateDataValue("configVals", configsMap.inspect())
+	//device.updateDataValue("configVals", configsMap.inspect())
 }
 
 Map getParamStoredMap() {
-	Map configsMap = configsList[device.id]
+	TreeMap configsMap = configsList[device.id]
 	if (configsMap == null) {
 		configsMap = [:]
 		if (device.getDataValue("configVals")) {
@@ -386,6 +392,7 @@ void updateSyncingStatus(Integer delay=2) {
 void refreshSyncStatus() {
 	Integer changes = pendingChanges
 	sendEvent(name:"syncStatus", value:(changes ? "${changes} Pending Changes" : "Synced"))
+	device.updateDataValue("configVals", getParamStoredMap()?.inspect())
 }
 
 void updateLastCheckIn() {
@@ -432,6 +439,20 @@ Integer getPendingChanges() {
 String getAssocDNIsSetting(grp) {
 	def val = settings."assocDNI$grp"
 	return ((val && (val.trim() != "0")) ? val : "")
+}
+
+List getAssocDNIsSettingNodeIds(grp) {
+	String dni = getAssocDNIsSetting(grp)
+	List nodeIds = convertHexListToIntList(dni.split(","))
+
+	if (dni && !nodeIds) {
+		logWarn "'${dni}' is not a valid value for the 'Device Associations - Group ${grp}' setting.  All z-wave devices have a 2 character Device Network ID and if you're entering more than 1, use commas to separate them."
+	}
+	else if (nodeIds.size() > maxAssocNodes) {
+		logWarn "The 'Device Associations - Group ${grp}' setting contains more than ${maxAssocNodes} IDs so some (or all) may not get associated."
+	}
+
+	return nodeIds
 }
 
 //Used with configure to reset variables
