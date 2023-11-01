@@ -9,7 +9,7 @@
 
 Changelog:
 
-## [1.0.0.b1] - 2023-10-23 (@jtp10181)
+## [1.0.0.b2] - 2023-10-31 (@jtp10181)
   - Code refactor to new code base and library
   - Fixed on/off commands to follow Zooz docs
   - Updated all event senders to log (debug) unknown events
@@ -17,6 +17,9 @@ Changelog:
   - Added new paramaters for firmware 1.15/1.19
   - Added battery and powerSource capabilities
   - Added support for power and battery notifications
+  - Fixed Temp Units setting so it converts the defaults and settings from F<>C
+  - Removed supervision Encapsulation code (not fully working)
+  - Settings verbiage cleanup and clarification
 
 ## [0.2.0] - 2023-08-11 (@jtp10181)
   - Minor fixes
@@ -50,7 +53,7 @@ https://github.com/krlaframboise/SmartThings/tree/master/devicetypes/zooz/zooz-z
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "1.0.0.b1"
+@Field static final String VERSION = "1.0.0.b2"
 @Field static final String DRIVER = "Zooz-ZAC36"
 @Field static final String COMM_LINK = "https://community.hubitat.com/t/zooz-zac36/79426"
 @Field static final Map deviceModelNames = ["0101:0036":"ZAC36"]
@@ -91,8 +94,8 @@ metadata {
 	preferences {
 
 		input name: "tempUnits", type: "enum",
-			title: fmtTitle("Temperature Units:"),
-			description: fmtDesc("*WARNING: Does not convert existing settings"),
+			title: fmtTitle("Temperature Units for Settings:"),
+			description: fmtDesc("WARNING: When changed this will convert existing settings"),
 			defaultValue: temperatureScale == "F" ? 1 : 0,
 			options: [0:"Celsius (°C)", 1:"Fahrenheit (°F)"]
 
@@ -124,11 +127,6 @@ metadata {
 		// 		description: fmtDesc("Supports up to ${maxAssocNodes} Hex Device IDs separated by commas. Check device documentation for more info. Save as blank or 0 to clear."),
 		// 		required: false
 		// }
-
-		input "supervisionGetEncap", "bool",
-			title: fmtTitle("Supervision Encapsulation") + "<em> (Experimental)</em>",
-			description: fmtDesc("This can increase reliability when the device is paired with security, but may not work correctly on all models."),
-			defaultValue: false
 	}
 }
 
@@ -157,33 +155,39 @@ void debugShowVars() {
 @Field static Map<String, Map> paramsMap =
 [
 	tempThreshold: [ num:34, 
-		title: "Temperature Reporting Change Trigger (°C/F)",
+		title: "Temperature Reporting Change Trigger (°)",
 		size: 2, defaultVal: 4, 
 		range: "0..255", hB: true
 	],
 	tempOffset: [ num:35, 
-		title: "Temperature Sensor Offset (°C/F)", 
+		title: "Temperature Sensor Offset (°)", 
 		size: 2, defaultVal: 0,
 		range: "-255..255", hB: true
 	],
+	tempInterval: [ num:45, 
+		title: "Temperature Detection Interval (minutes)",
+		size: 1, defaultVal: 15, 
+		range: "1..60",
+		firmVer: 1.13
+	],
 	overheatAlarm: [ num:36, 
 		title: "Overheat Alarm Trigger (°C/F)", 
-		size: 2, defaultVal: 104, 
+		size: 2, defaultF: 104, 
 		range: "0..255", hB: true
 	],
 	overheatCancel: [ num:37, 
 		title: "Overheat Cancellation Trigger (°C/F)", 
-		size: 2, defaultVal: 86, 
+		size: 2, defaultF: 86, 
 		range: "0..255", hB: true
 	],
 	freezeAlarm: [ num:40, 
 		title: "Freeze Alarm Trigger (°C/F)", 
-		size: 2, defaultVal: 32, 
+		size: 2, defaultF: 32, 
 		range: "0..255", hB: true
 	],
 	freezeCancel: [ num:41, 
 		title: "Freeze Cancellation Trigger (°C/F)", 
-		size: 2, defaultVal: 36, 
+		size: 2, defaultF: 36, 
 		range: "0..255", hB: true
 	],
 	freezeControl: [ num:42, 
@@ -208,7 +212,8 @@ void debugShowVars() {
 		range: "0..99"
 	],
 	keylockProtection: [num:67, 
-		title:"Z-Wave Button Lock Protection", 
+		title:"Z-Wave Button Lock Protection",
+		description: "Enabled prevents the Z-Wave button from being locked (see manual)",
 		size: 1, defaultVal: 0, 
 		options: [1:"Enabled", 0:"Disabled"]
 	],
@@ -219,7 +224,7 @@ void debugShowVars() {
 		options: [3:"Always Enabled", 0:"Disabled"]
 	],
 	testFrequency: [ num:98, 
-		title: "Auto Test Mode Frequency (days)",
+		title: "Auto Test Frequency (days)",
 		size: 1, defaultVal: 14, 
 		range: "1..30"
 	],
@@ -230,8 +235,8 @@ void debugShowVars() {
 		firmVer: 1.19
 	],
 	powerReports: [num:85, 
-		title:"Power Reports", 
-		size: 1, defaultVal: 1,
+		title:"Power Source Reports", 
+		size: 1, defaultVal: 0,
 		options: [1:"Enabled", 0:"Disabled"],
 		firmVer: 1.19
 	],
@@ -242,13 +247,13 @@ void debugShowVars() {
 		firmVer: 1.19
 	],
 	openOffset: [ num:99, 
-		title: "Motor Full Open Calibration Offset", 
+		title: "Manual Calibration Offset (Open Angle %)", 
 		size: 1, defaultVal: 9, 
 		range: "1..10",
 		firmVer: 1.15
 	],
 	closeOffset: [ num:100, 
-		title: "Motor Full Close Calibration Offset", 
+		title: "Manual Calibration Offset (Close Angle %)", 
 		size: 1, defaultVal: 4, 
 		range: "1..10",
 		firmVer: 1.15
@@ -260,7 +265,6 @@ void debugShowVars() {
 		options: [1:"Enabled", 0:"Disabled"],
 		hidden: false
 	],
-	// Hidden Parameters to Set Defaults
 	valveReports: [num:81, 
 		title:"Open / Close Reports", 
 		size: 1, defaultVal: 1,
@@ -299,6 +303,7 @@ CommandClassReport - class:0x9F, version:1   (Security 2)
 	0x70: 1,	// Configuration
 	0x71: 8,	// Notification
 	0x72: 2,	// ManufacturerSpecific
+	0X80: 1,	// Battery
 	0x85: 2,	// Association
 	0x86: 2,	// Version
 	0x8E: 3,	// Multi Channel Association
@@ -321,14 +326,6 @@ void initialize() {
 void configure() {
 	logWarn "configure..."
 
-	//Set some defaults if not set
-	if (device.currentValue("temperatureAlarm") == null) {
-		sendEvent(name: "temperatureAlarm", value: "normal")
-	}
-	if (device.currentValue("water") == null) {
-		sendEvent(name: "water", value: "dry")
-	}
-
 	if (!pendingChanges || state.resyncAll == null) {
 		logDebug "Enabling Full Re-Sync"
 		clearVariables()
@@ -342,6 +339,36 @@ void configure() {
 
 void updated() {
 	logDebug "updated..."
+
+	if (!getParamValue("leakReports")) {
+		device.deleteCurrentState("water")
+	}
+	if (!getParamValue("batteryReports")) {
+		device.deleteCurrentState("battery")
+	}
+	if (!getParamValue("powerReports")) {
+		device.deleteCurrentState("powerSource")
+	}
+	if ((tempUnits.toInteger() ? "F" : "C") != state.tempUnits) {
+		logDebug "Setting Temperature Defaults for Preferences"
+		paramsList = [:]
+		paramsMap['settings'] = [:]
+		verifyParamsList()
+
+		if (state.tempUnits != null) {
+			logDebug "Converting Temperature Settings to new Units"
+			["overheatAlarm","overheatCancel","freezeAlarm","freezeCancel"].each {
+				Map param = getParam(it)
+				Integer paramVal = getParamValue(param)
+				Integer newValue = (tempUnits as Integer) ? celsiusToFahrenheit(paramVal) : fahrenheitToCelsius(paramVal)
+				device.updateSetting("configParam${param.num}",[value:newValue, type:"number"])
+			}
+		}
+
+		//Save the new setting for comparison
+		state.tempUnits = (tempUnits.toInteger() ? "F" : "C")
+	}
+
 	runIn(1, executeConfigureCmds)
 }
 
@@ -371,15 +398,13 @@ def off() {
 
 def close() {
 	logDebug "close..."
-	def param = getParam("inverseReport")
-	int inverse = safeToInt(getParamStoredValue(param.num), param.defaultVal)
+	Integer inverse = getParamValue("inverseReport")
 	return (inverse ? on() : off())
 }
 
 def open() {
 	logDebug "open..."
-	def param = getParam("inverseReport")
-	int inverse = safeToInt(getParamStoredValue(param.num), param.defaultVal)
+	Integer inverse = getParamValue("inverseReport")
 	return (inverse ? off() : on())
 }
 
@@ -422,23 +447,6 @@ void zwaveEvent(hubitat.zwave.commands.multichannelv3.MultiChannelCmdEncap cmd) 
 }
 void zwaveEvent(hubitat.zwave.commands.supervisionv1.SupervisionGet cmd, ep=0) {
 	zwaveSupervision(cmd,ep)
-}
-
-//Reports back from Supervision Encapsulated Commands
-void zwaveEvent(hubitat.zwave.commands.supervisionv1.SupervisionReport cmd, ep=0 ) {
-	logDebug "Supervision Report - SessionID: ${cmd.sessionID}, Status: ${cmd.status}"
-	if (supervisedPackets["${device.id}"] == null) { supervisedPackets["${device.id}"] = [:] }
-
-	switch (cmd.status as Integer) {
-		case 0x00: // "No Support" 
-		case 0x01: // "Working"
-		case 0x02: // "Failed"
-			logWarn "Supervision NOT Successful - SessionID: ${cmd.sessionID}, Status: ${cmd.status}"
-			break
-		case 0xFF: // "Success"
-			supervisedPackets["${device.id}"].remove(cmd.sessionID)
-			break
-	}
 }
 
 void zwaveEvent(hubitat.zwave.commands.configurationv1.ConfigurationReport cmd) {
@@ -514,7 +522,7 @@ void zwaveEvent(hubitat.zwave.commands.switchbinaryv1.SwitchBinaryReport cmd, ep
 	sendSwitchEvents(cmd.value, "binary")
 }
 
-void zwaveEvent(hubitat.zwave.commands.sensorbinaryv1.SensorBinaryReport cmd, ep=0) {
+void zwaveEvent(hubitat.zwave.commands.sensorbinaryv2.SensorBinaryReport cmd, ep=0) {
 	logDebug "${cmd} (ep ${ep})"	
 }
 
@@ -589,19 +597,18 @@ void sendSwitchEvents(rawVal, String type, Integer ep=0) {
 		sendEventLog(name:"switch", value:(rawVal ? "on":"off"), type:type, ep)
 
 		//Also send open/close to be safe
-		def param = getParam("inverseReport")
-		int inverse = safeToInt(getParamStoredValue(param.num), param.defaultVal)
+		Integer inverse = getParamValue("inverseReport")
 		int valveVal = (rawVal ? 1 : 0) ^ inverse //XOR flips the bit if inverse
 		sendEventLog(name:"valve", value:(valveVal ? "open":"closed"), type:type, ep)
 	}
 	else {
-		sendEventLog(name:"valve", value:"adjusting", type:type, ep)
+		sendEventLog(name:"valve", value:"working", type:type, ep)
 	}
 }
 
 //parameter[0] 0x01 = Open, 0x00 = Closed
-void sendValveEvent(event, parameter) {
-	switch (event) {
+void sendValveEvent(Integer event, Integer parameter) {
+	switch (event as Integer) {
 		case 0x01:  //Valve operation
 			String type = (state.pendingDigital ? "digital" : "physical")
 			sendEventLog(name:"valve", value:(parameter ? "open":"closed"), type:type)
@@ -615,15 +622,15 @@ void switchDigitalRemove() {
 	state.remove("pendingDigital")
 }
 
-void sendHeatAlarmEvent(event, parameter) {
-	switch (event) {
+void sendHeatAlarmEvent(Integer event, Integer parameter) {
+	switch (event as Integer) {
 		case 0x00:  //Idle
 			sendEventLog(name:"temperatureAlarm", value:"normal")
 			break
-		case 0x01..0x02:  //Overheat detected
+		case [0x01, 0x02]:  //Overheat detected
 			sendEventLog(name:"temperatureAlarm", value:"high")
 			break
-		case 0x05..0x06:  //Under heat detected
+		case [0x05, 0x06]:  //Under heat detected
 			sendEventLog(name:"temperatureAlarm", value:"low")
 			break
 		default:			
@@ -631,30 +638,30 @@ void sendHeatAlarmEvent(event, parameter) {
 	}
 }
 
-void sendWaterAlarmEvent(event, parameter) {
-	switch (event) {
+void sendWaterAlarmEvent(Integer event, Integer parameter) {
+	switch (event as Integer) {
 		case 0x00:  //Idle
 			sendEventLog(name:"water", value:"dry")
 			break
-		case 0x01..0x02:  //Water leak detected
+		case [0x01, 0x02]:  //Water leak detected
 			sendEventLog(name:"water", value:"wet")
 			break
 		default:
-			logDebug "Unhandled Valve Event: ${event}, ${parameter}"
+			logDebug "Unhandled Water Alarm: ${event}, ${parameter}"
 	}
 }
 
-void sendPowerEvent(event, parameter) {
-	switch (event) {
-		case 0x02: //AC mains disconnected
+void sendPowerEvent(Integer event, Integer parameter) {
+	switch (event as Integer) {
+		case 0x00: break  //Idle State - ignored
+		case 0x02:  //AC mains disconnected
 			sendEventLog(name:"powerSource", value:"battery")
 			break
-		//case 0x00: //Idle State (no battery pack)
-		case 0x03: //AC mains re-connected
+		case 0x03:  //AC mains re-connected
 			sendEventLog(name:"powerSource", value:"mains")
 			break
 		default:
-			logDebug "Unhandled Power Management event: ${event}, ${parameter}"
+			logDebug "Unhandled Power Management: ${event}, ${parameter}"
 	}
 }
 
@@ -673,6 +680,9 @@ void executeConfigureCmds() {
 	if (!firmwareVersion || !state.deviceModel) {
 		cmds << versionGetCmd()
 	}
+
+	//Set Temp Reporting based on hub temp scale setting
+	cmds += configSetGetCmd([num:33,size:1], temperatureScale == "F" ? 2 : 1)
 
 	cmds += getConfigureAssocsCmds()
 
@@ -698,15 +708,18 @@ void executeRefreshCmds() {
 		cmds << versionGetCmd()
 	}
 
-	cmds << switchBinaryGetCmd()
-	cmds << sensorMultilevelGetCmd(tempSensor)
+	cmds << switchBinaryGetCmd() //Switch
+	cmds << sensorMultilevelGetCmd(tempSensor)  //Temperature
+	cmds << notificationGetCmd(waterValve, 0x01)  //Valve
 	cmds << notificationGetCmd(heatAlarm, 0x00)
-	cmds << notificationGetCmd(waterAlarm, 0x00)
-	cmds << notificationGetCmd(waterValve, 0x01)
+	if (getParamValue("leakReports")) { cmds << notificationGetCmd(waterAlarm, 0x00) }
 
 	//Battery and Power
-	cmds << batteryGetCmd()
-	cmds << notificationGetCmd(0x08, 0x00)
+	if (getParamValue("batteryReports")) { cmds << batteryGetCmd() }
+	if (getParamValue("powerReports")) {
+		cmds << notificationGetCmd(powerManagement, 0x02)
+		cmds << notificationGetCmd(powerManagement, 0x03)
+	}
 
 	sendCommands(cmds,300)
 }
@@ -754,6 +767,10 @@ List getConfigureAssocsCmds() {
 ********************************************************************/
 //These have to be added in after the fact or groovy complains
 void fixParamsMap() {
+	paramsMap.overheatAlarm.defaultVal = fahrenheitToCelsiusIfNeeded(paramsMap.overheatAlarm.defaultF)
+	paramsMap.overheatCancel.defaultVal = fahrenheitToCelsiusIfNeeded(paramsMap.overheatCancel.defaultF)
+	paramsMap.freezeAlarm.defaultVal = fahrenheitToCelsiusIfNeeded(paramsMap.freezeAlarm.defaultF)
+	paramsMap.freezeCancel.defaultVal = fahrenheitToCelsiusIfNeeded(paramsMap.freezeCancel.defaultF)
 	paramsMap['settings'] = [fixed: true]
 }
 
@@ -786,6 +803,10 @@ Integer addHighBytes(Integer val) {
 	return newVal
 }
 
+Integer fahrenheitToCelsiusIfNeeded(Integer val) {
+	return ((tempUnits as Integer) ? val : fahrenheitToCelsius(val)).toInteger()
+}
+
 
 //#include jtp10181.zwaveDriverLibrary
 /*******************************************************************
@@ -800,6 +821,8 @@ Changelog:
 2023-05-14 - Updates for power metering
 2023-05-18 - Adding requirement for getParamValueAdj in driver
 2023-05-24 - Fix for possible RuntimeException error due to bad cron string
+2023-10-25 - Less savings to the configVals data, and some new functions
+2023-10-26 - Added some battery shortcut functions
 
 ********************************************************************/
 
@@ -836,7 +859,7 @@ void zwaveParse(String description) {
 
 //Decodes Multichannel Encapsulated Commands
 void zwaveMultiChannel(hubitat.zwave.commands.multichannelv3.MultiChannelCmdEncap cmd) {
-	def encapsulatedCmd = cmd.encapsulatedCommand(commandClassVersions)
+	hubitat.zwave.Command encapsulatedCmd = cmd.encapsulatedCommand(commandClassVersions)
 	logTrace "${cmd} --ENCAP-- ${encapsulatedCmd}"
 
 	if (encapsulatedCmd) {
@@ -848,7 +871,7 @@ void zwaveMultiChannel(hubitat.zwave.commands.multichannelv3.MultiChannelCmdEnca
 
 //Decodes Supervision Encapsulated Commands (and replies to device)
 void zwaveSupervision(hubitat.zwave.commands.supervisionv1.SupervisionGet cmd, ep=0) {
-	def encapsulatedCmd = cmd.encapsulatedCommand(commandClassVersions)
+	hubitat.zwave.Command encapsulatedCmd = cmd.encapsulatedCommand(commandClassVersions)
 	logTrace "${cmd} --ENCAP-- ${encapsulatedCmd}"
 
 	if (encapsulatedCmd) {
@@ -883,14 +906,6 @@ void zwaveEvent(hubitat.zwave.Command cmd, ep=0) {
 ********************************************************************/
 //These send commands to the device either a list or a single command
 void sendCommands(List<String> cmds, Long delay=200) {
-	//Calculate supervisionCheck delay based on how many commands
-	Integer packetsCount = supervisedPackets?."${device.id}"?.size()
-	if (packetsCount > 0) {
-		Integer delayTotal = (cmds.size() * delay) + 2000
-		logDebug "Setting supervisionCheck to ${delayTotal}ms | ${packetsCount} | ${cmds.size()} | ${delay}"
-		runInMillis(delayTotal, supervisionCheck, [data:1])
-	}
-
 	sendHubCommand(new hubitat.device.HubMultiAction(delayBetween(cmds, delay), hubitat.device.Protocol.ZWAVE))
 }
 
@@ -901,11 +916,11 @@ void sendCommands(String cmd) {
 
 //Consolidated zwave command functions so other code is easier to read
 String associationSetCmd(Integer group, List<Integer> nodes) {
-	return supervisionEncap(zwave.associationV2.associationSet(groupingIdentifier: group, nodeId: nodes))
+	return secureCmd(zwave.associationV2.associationSet(groupingIdentifier: group, nodeId: nodes))
 }
 
 String associationRemoveCmd(Integer group, List<Integer> nodes) {
-	return supervisionEncap(zwave.associationV2.associationRemove(groupingIdentifier: group, nodeId: nodes))
+	return secureCmd(zwave.associationV2.associationRemove(groupingIdentifier: group, nodeId: nodes))
 }
 
 String associationGetCmd(Integer group) {
@@ -921,7 +936,7 @@ String versionGetCmd() {
 }
 
 String switchBinarySetCmd(Integer value, Integer ep=0) {
-	return supervisionEncap(zwave.switchBinaryV1.switchBinarySet(switchValue: value), ep)
+	return secureCmd(zwave.switchBinaryV1.switchBinarySet(switchValue: value), ep)
 }
 
 String switchBinaryGetCmd(Integer ep=0) {
@@ -953,17 +968,29 @@ String meterResetCmd(Integer ep=0) {
 	return secureCmd(zwave.meterV3.meterReset(), ep)
 }
 
+String wakeUpIntervalGetCmd() {
+	return secureCmd(zwave.wakeUpV2.wakeUpIntervalGet())
+}
+
+String wakeUpIntervalSetCmd(val) {
+	return secureCmd(zwave.wakeUpV2.wakeUpIntervalSet(seconds:val, nodeid:zwaveHubNodeId))
+}
+
+String wakeUpNoMoreInfoCmd() {
+	return secureCmd(zwave.wakeUpV2.wakeUpNoMoreInformation())
+}
+
 String batteryGetCmd() {
 	return secureCmd(zwave.batteryV1.batteryGet())
 }
 
 String sensorMultilevelGetCmd(sensorType) {
-	int scale = tempUnits.toInteger()
+	Integer scale = (temperatureScale == "F" ? 1 : 0)
 	return secureCmd(zwave.sensorMultilevelV11.sensorMultilevelGet(scale: scale, sensorType: sensorType))
 }
 
-String notificationGetCmd(notificationType, eventType) {
-	return secureCmd(zwave.notificationV3.notificationGet(notificationType: notificationType, v1AlarmType:0, event: eventType))
+String notificationGetCmd(notificationType, eventType, Integer ep=0) {
+	return secureCmd(zwave.notificationV3.notificationGet(notificationType: notificationType, v1AlarmType:0, event: eventType), ep)
 }
 
 String configSetCmd(Map param, Integer value) {
@@ -971,7 +998,7 @@ String configSetCmd(Map param, Integer value) {
 	Long sizeFactor = Math.pow(256,param.size).round()
 	if (value >= sizeFactor/2) { value -= sizeFactor }
 
-	return supervisionEncap(zwave.configurationV1.configurationSet(parameterNumber: param.num, size: param.size, scaledConfigurationValue: value))
+	return secureCmd(zwave.configurationV1.configurationSet(parameterNumber: param.num, size: param.size, scaledConfigurationValue: value))
 }
 
 String configGetCmd(Map param) {
@@ -1006,70 +1033,6 @@ String multiChannelEncap(hubitat.zwave.Command cmd, ep) {
 	}
 	return cmd.format()
 }
-
-//====== Supervision Encapsulate START ======\\
-@Field static Map<String, Map<Short, String>> supervisedPackets = new java.util.concurrent.ConcurrentHashMap()
-@Field static Map<String, Short> sessionIDs = new java.util.concurrent.ConcurrentHashMap()
-
-String supervisionEncap(hubitat.zwave.Command cmd, ep=0) {
-	//logTrace "supervisionEncap: ${cmd} (ep ${ep})"
-
-	if (settings.supervisionGetEncap) {
-		//Encap with SupervisionGet
-		Short sessId = getSessionId()
-		def cmdEncap = zwave.supervisionV1.supervisionGet(sessionID: sessId).encapsulate(cmd)
-
-		//Encap that with MultiChannel now so it is cached that way below
-		cmdEncap = multiChannelEncap(cmdEncap, ep)
-
-		logDebug "New Supervised Packet for Session: ${sessId}"
-		if (supervisedPackets["${device.id}"] == null) { supervisedPackets["${device.id}"] = [:] }
-		supervisedPackets["${device.id}"][sessId] = cmdEncap
-
-		//Calculate supervisionCheck delay based on how many cached packets
-		Integer packetsCount = supervisedPackets?."${device.id}"?.size()
-		Integer delayTotal = (packetsCount * 500) + 2000
-		runInMillis(delayTotal, supervisionCheck, [data:1])
-
-		//Already handled MC so don't send endpoint here
-		return secureCmd(cmdEncap)
-	}
-	else {
-		//If supervision disabled just multichannel and secure
-		return secureCmd(cmd, ep)
-	}
-}
-
-Short getSessionId() {
-	Short sessId = sessionIDs["${device.id}"] ?: state.lastSupervision ?: 0
-	sessId = (sessId + 1) % 64  // Will always will return between 0-63
-	state.lastSupervision = sessId
-	sessionIDs["${device.id}"] = sessId
-
-	return sessId
-}
-
-void supervisionCheck(Integer num) {
-	Integer packetsCount = supervisedPackets?."${device.id}"?.size()
-	logDebug "Supervision Check #${num} - Packet Count: ${packetsCount}"
-
-	if (packetsCount > 0 ) {
-		supervisedPackets["${device.id}"].each { k, v ->
-			logWarn "Re-Sending Supervised Session: ${k} (Retry #${num})"
-			sendCommands(secureCmd(v))
-		}
-
-		if (num >= 2) { //Clear after this many attempts
-			logWarn "Supervision MAX RETIES (${num}) Reached"
-			supervisedPackets["${device.id}"].clear()
-		}
-		else { //Otherwise keep trying
-			Integer delayTotal = (packetsCount * 500) + 2000
-			runInMillis(delayTotal, supervisionCheck, [data:num+1])
-		}
-	}
-}
-//====== Supervision Encapsulate END ======\\
 
 
 /*******************************************************************
@@ -1190,18 +1153,13 @@ List<Map> getConfigParams() {
 }
 
 //Get a single param by name or number
-Map getParam(def search) {
-	//logDebug "Get Param (${search} | ${search.class})"
-	Map param = [:]
-
+Map getParam(String search) {
 	verifyParamsList()
-	if (search instanceof String) {
-		param = configParams.find{ it.name == search }
-	} else {
-		param = configParams.find{ it.num == search }
-	}
-
-	return param
+	return configParams.find{ it.name == search }
+}
+Map getParam(Integer search) {
+	verifyParamsList()
+	return configParams.find{ it.num == search }
 }
 
 //Convert Param Value if Needed
@@ -1297,7 +1255,7 @@ Integer getPendingChanges() {
 
 //iOS app has no way of clearing string input so workaround is to have users enter 0.
 String getAssocDNIsSetting(grp) {
-	def val = settings."assocDNI$grp"
+	String val = settings."assocDNI$grp"
 	return ((val && (val.trim() != "0")) ? val : "")
 }
 
@@ -1427,7 +1385,7 @@ BigDecimal safeToDec(val, defaultVal=0, roundTo=-1) {
 	return decVal
 }
 
-boolean isDuplicateCommand(Long lastExecuted, Long allowedMil) {
+Boolean isDuplicateCommand(Long lastExecuted, Long allowedMil) {
 	!lastExecuted ? false : (lastExecuted + allowedMil > new Date().time)
 }
 
@@ -1480,8 +1438,8 @@ void setLogLevel(String levelName, String timeName=null) {
 }
 
 Map getLogLevelInfo() {
-	Integer level = settings.logLevel as Integer
-	Integer time = settings.logLevelTime as Integer
+	Integer level = settings.logLevel as Integer ?: 3
+	Integer time = settings.logLevelTime as Integer ?: 0
 	return [level: level, time: time]
 }
 
