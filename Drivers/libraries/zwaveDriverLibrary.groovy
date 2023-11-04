@@ -12,6 +12,7 @@ Changelog:
 2023-05-18 - Adding requirement for getParamValueAdj in driver
 2023-05-24 - Fix for possible RuntimeException error due to bad cron string
 2023-10-25 - Less savings to the configVals data, and some new functions
+2023-10-26 - Added some battery shortcut functions
 
 ********************************************************************/
 
@@ -48,7 +49,7 @@ void zwaveParse(String description) {
 
 //Decodes Multichannel Encapsulated Commands
 void zwaveMultiChannel(hubitat.zwave.commands.multichannelv3.MultiChannelCmdEncap cmd) {
-	def encapsulatedCmd = cmd.encapsulatedCommand(commandClassVersions)
+	hubitat.zwave.Command encapsulatedCmd = cmd.encapsulatedCommand(commandClassVersions)
 	logTrace "${cmd} --ENCAP-- ${encapsulatedCmd}"
 
 	if (encapsulatedCmd) {
@@ -60,7 +61,7 @@ void zwaveMultiChannel(hubitat.zwave.commands.multichannelv3.MultiChannelCmdEnca
 
 //Decodes Supervision Encapsulated Commands (and replies to device)
 void zwaveSupervision(hubitat.zwave.commands.supervisionv1.SupervisionGet cmd, ep=0) {
-	def encapsulatedCmd = cmd.encapsulatedCommand(commandClassVersions)
+	hubitat.zwave.Command encapsulatedCmd = cmd.encapsulatedCommand(commandClassVersions)
 	logTrace "${cmd} --ENCAP-- ${encapsulatedCmd}"
 
 	if (encapsulatedCmd) {
@@ -157,6 +158,18 @@ String meterResetCmd(Integer ep=0) {
 	return secureCmd(zwave.meterV3.meterReset(), ep)
 }
 
+String wakeUpIntervalGetCmd() {
+	return secureCmd(zwave.wakeUpV2.wakeUpIntervalGet())
+}
+
+String wakeUpIntervalSetCmd(val) {
+	return secureCmd(zwave.wakeUpV2.wakeUpIntervalSet(seconds:val, nodeid:zwaveHubNodeId))
+}
+
+String wakeUpNoMoreInfoCmd() {
+	return secureCmd(zwave.wakeUpV2.wakeUpNoMoreInformation())
+}
+
 String batteryGetCmd() {
 	return secureCmd(zwave.batteryV1.batteryGet())
 }
@@ -166,8 +179,8 @@ String sensorMultilevelGetCmd(sensorType) {
 	return secureCmd(zwave.sensorMultilevelV11.sensorMultilevelGet(scale: scale, sensorType: sensorType))
 }
 
-String notificationGetCmd(notificationType, eventType) {
-	return secureCmd(zwave.notificationV3.notificationGet(notificationType: notificationType, v1AlarmType:0, event: eventType))
+String notificationGetCmd(notificationType, eventType, Integer ep=0) {
+	return secureCmd(zwave.notificationV3.notificationGet(notificationType: notificationType, v1AlarmType:0, event: eventType), ep)
 }
 
 String configSetCmd(Map param, Integer value) {
@@ -330,18 +343,13 @@ List<Map> getConfigParams() {
 }
 
 //Get a single param by name or number
-Map getParam(def search) {
-	//logDebug "Get Param (${search} | ${search.class})"
-	Map param = [:]
-
+Map getParam(String search) {
 	verifyParamsList()
-	if (search instanceof String) {
-		param = configParams.find{ it.name == search }
-	} else {
-		param = configParams.find{ it.num == search }
-	}
-
-	return param
+	return configParams.find{ it.name == search }
+}
+Map getParam(Integer search) {
+	verifyParamsList()
+	return configParams.find{ it.num == search }
 }
 
 //Convert Param Value if Needed
@@ -437,7 +445,7 @@ Integer getPendingChanges() {
 
 //iOS app has no way of clearing string input so workaround is to have users enter 0.
 String getAssocDNIsSetting(grp) {
-	def val = settings."assocDNI$grp"
+	String val = settings."assocDNI$grp"
 	return ((val && (val.trim() != "0")) ? val : "")
 }
 
@@ -596,7 +604,7 @@ BigDecimal safeToDec(val, defaultVal=0, roundTo=-1) {
 	return decVal
 }
 
-boolean isDuplicateCommand(Long lastExecuted, Long allowedMil) {
+Boolean isDuplicateCommand(Long lastExecuted, Long allowedMil) {
 	!lastExecuted ? false : (lastExecuted + allowedMil > new Date().time)
 }
 
@@ -649,8 +657,8 @@ void setLogLevel(String levelName, String timeName=null) {
 }
 
 Map getLogLevelInfo() {
-	Integer level = settings.logLevel as Integer
-	Integer time = settings.logLevelTime as Integer
+	Integer level = settings.logLevel as Integer ?: 3
+	Integer time = settings.logLevelTime as Integer ?: 0
 	return [level: level, time: time]
 }
 

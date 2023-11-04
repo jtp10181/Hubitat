@@ -5,8 +5,16 @@
   "dateReleased": "2023-05-24",
   "documentationLink": "https://github.com/jtp10181/Hubitat/tree/main/Drivers/zooz",
   "communityLink": "https://community.hubitat.com/t/zooz-relays-advanced/98194",
-  "releaseNotes": "**MUST RUN CONFIGURE AFTER UPDATING From Prior to 1.1.0**\nZEN51/ZEN52 Version [1.1.2] - 2023-05-24\n  - Library updates and moving some functions\n  - Multichannel endpoint handling updates (ZEN52)\n\nZEN51/ZEN52 Version [1.1.0] - 2023-05-11\n  - Refactoring to use custom library code\n  - Flash command now remembers last rate for default\n  - Fixed on/off handling for ZEN52 FW 1.60\n  - Changed to new logging engine / options\",\n",
+  "releaseNotes": "ZEN16 Version [0.1.0] ALPHA - 2023-11-04\n  - Initial alpha release\n\nZEN51/ZEN52 Version [1.1.2] - 2023-05-24\n  - Library updates and moving some functions\n  - Multichannel endpoint handling updates (ZEN52)",
   "drivers": [
+    {
+      "id": "1d6b0bc9-b3bb-4f57-880f-dcf97ff54395",
+      "name": "Zooz ZEN16 MultiRelay Advanced",
+      "namespace": "jtp10181",
+      "location": "https://jtp10181.gateway.scarf.sh/zooz-zen16-v0.1.0.groovy",
+      "required": false,
+      "version": "0.1.0"
+    },
     {
       "id": "446b0cae-c749-447f-9655-3e3463e9f01a",
       "name": "Zooz ZEN17 Companion Driver",
