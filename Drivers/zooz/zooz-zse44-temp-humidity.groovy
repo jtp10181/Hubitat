@@ -9,6 +9,9 @@
 
 Changelog:
 
+## [1.1.0] - 2023-XX-XX (@jtp10181)
+  -Rearranged functions to get ready for library code
+
 ## [1.0.5] - 2022-08-06 (@jtp10181)
   ### Fixed
   - Put in proper scalable signed/unsigned parameter value conversion
@@ -43,7 +46,7 @@ Changelog:
 NOTICE: This file has been created by *Jeff Page* with some code used 
 	from the original work of *Zooz* and *Kevin LaFramboise* under compliance with the Apache 2.0 License.
 
- *  Copyright 2022 Jeff Page
+ *  Copyright 2022-2023 Jeff Page
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -61,7 +64,7 @@ NOTICE: This file has been created by *Jeff Page* with some code used
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "1.0.5" 
+@Field static final String VERSION = "1.1.0" 
 @Field static final Map deviceModelNames = ["7000:E004":"ZSE44"]
 
 metadata {
@@ -118,19 +121,25 @@ metadata {
 	}
 }
 
-//Preference Helpers
-String fmtDesc(String str) {
-	return "<div style='font-size: 85%; font-style: italic; padding: 1px 0px 4px 2px;'>${str}</div>"
-}
-String fmtTitle(String str) {
-	return "<strong>${str}</strong>"
-}
-
 void debugShowVars() {
 	log.warn "paramsList ${paramsList.hashCode()} ${paramsList}"
 	log.warn "paramsMap ${paramsMap.hashCode()} ${paramsMap}"
 	log.warn "settings ${settings.hashCode()} ${settings}"
 }
+
+//Association Settings
+@Field static final int maxAssocGroups = 1
+@Field static final int maxAssocNodes = 1
+
+/*** Static Lists and Settings ***/
+//Sensor Types
+@Field static Short SENSOR_TYPE_TEMPERATURE = 0x01
+@Field static Short SENSOR_TYPE_LUMINANCE = 0x03
+@Field static Short SENSOR_TYPE_HUMIDITY = 0x05
+//Notification Types
+@Field static Short NOTIFICATION_TYPE_SECURITY = 0x07
+@Field static Short NOTIFICATION_TYPE_HEAT = 0x04
+@Field static Short NOTIFICATION_TYPE_WEATHER = 0x10 //16
 
 //Main Parameters Listing
 @Field static Map<String, Map> paramsMap =
@@ -181,29 +190,20 @@ void debugShowVars() {
 	],
 ]
 
+/* ZSE44
+CommandClassReport
+*/
+
 //Set Command Class Versions
 @Field static final Map commandClassVersions = [
 	0x31: 5,	// Sensor Multilevel (sensormultilevelv5) (11)
-	0x6C: 1,	// Supervision (supervisionv1)
 	0x70: 2,	// Configuration (configurationv2) (4)
 	0x71: 8,	// Notification (notificationv8) (8)
-	0x72: 2,	// Manufacturer Specific (manufacturerspecificv2)
 	0x80: 1,	// Battery (batteryv1)
 	0x84: 2,	// Wakeup (wakeupv2)
 	0x85: 2,	// Association (associationv2) (3)
 	0x86: 2,	// Version (versionv2) (3)
-	0x87: 3,	// Indicator (indicatorv3)
 ]
-
-/*** Static Lists and Settings ***/
-//Sensor Types
-@Field static Short SENSOR_TYPE_TEMPERATURE = 0x01
-@Field static Short SENSOR_TYPE_LUMINANCE = 0x03
-@Field static Short SENSOR_TYPE_HUMIDITY = 0x05
-//Notification Types
-@Field static Short NOTIFICATION_TYPE_SECURITY = 0x07
-@Field static Short NOTIFICATION_TYPE_HEAT = 0x04
-@Field static Short NOTIFICATION_TYPE_WEATHER = 0x10 //16
 
 
 /*******************************************************************
@@ -256,22 +256,20 @@ void forceRefresh() {
 	logForceWakeupMessage "Sensor Info Refresh"
 }
 
+
+/*******************************************************************
+ ***** Driver Commands
+********************************************************************/
+/*** Capabilities ***/
+
+/*** Custom Commands ***/
+
 /*******************************************************************
  ***** Z-Wave Reports
 ********************************************************************/
-void parse(String description) {
-	hubitat.zwave.Command cmd = zwave.parse(description, commandClassVersions)
-	
-	if (cmd) {
-		logTrace "parse: ${description} --PARSED-- ${cmd}"
-		zwaveEvent(cmd)
-	} else {
-		logWarn "Unable to parse: ${description}"
-	}
-
-	//Update Last Activity
-	updateLastCheckIn()
-}
+//void parse(String description) {zwaveParse(description)}
+//void zwaveEvent(hubitat.zwave.commands.multichannelv3.MultiChannelCmdEncap cmd) {zwaveMultiChannel(cmd)}
+//void zwaveEvent(hubitat.zwave.commands.supervisionv1.SupervisionGet cmd, ep=0) {zwaveSupervision(cmd,ep)}
 
 void zwaveEvent(hubitat.zwave.commands.securityv1.SecurityMessageEncapsulation cmd) {
 	def encapsulatedCmd = cmd.encapsulatedCommand(commandClassVersions)
@@ -282,42 +280,6 @@ void zwaveEvent(hubitat.zwave.commands.securityv1.SecurityMessageEncapsulation c
 	} else {
 		logWarn "Unable to extract encapsulated cmd from $cmd"
 	}
-}
-
-//Decodes Multichannel Encapsulated Commands
-void zwaveEvent(hubitat.zwave.commands.multichannelv3.MultiChannelCmdEncap cmd) {
-	def encapsulatedCmd = cmd.encapsulatedCommand(commandClassVersions)
-	logTrace "${cmd} --ENCAP-- ${encapsulatedCmd}"
-	
-	if (encapsulatedCmd) {
-		zwaveEvent(encapsulatedCmd, cmd.sourceEndPoint as Integer)
-	} else {
-		logWarn "Unable to extract encapsulated cmd from $cmd"
-	}
-}
-
-//Decodes Supervision Encapsulated Commands (and replies to device)
-void zwaveEvent(hubitat.zwave.commands.supervisionv1.SupervisionGet cmd, ep=0) {
-	def encapsulatedCmd = cmd.encapsulatedCommand(commandClassVersions)
-	logTrace "${cmd} --ENCAP-- ${encapsulatedCmd}"
-	
-	if (encapsulatedCmd) {
-		zwaveEvent(encapsulatedCmd, ep)
-	} else {
-		logWarn "Unable to extract encapsulated cmd from $cmd"
-	}
-
-	sendCommands(secureCmd(zwave.supervisionV1.supervisionReport(sessionID: cmd.sessionID, reserved: 0, moreStatusUpdates: false, status: 0xFF, duration: 0), ep))
-}
-
-void zwaveEvent(hubitat.zwave.commands.versionv2.VersionReport cmd) {
-	logTrace "${cmd}"
-
-	String fullVersion = String.format("%d.%02d",cmd.firmware0Version,cmd.firmware0SubVersion)
-	device.updateDataValue("firmwareVersion", fullVersion)
-
-	logDebug "Received Version Report - Firmware: ${fullVersion}"
-	setDevModel(new BigDecimal(fullVersion))
 }
 
 void zwaveEvent(hubitat.zwave.commands.configurationv2.ConfigurationReport cmd) {
@@ -411,7 +373,7 @@ void zwaveEvent(hubitat.zwave.commands.sensormultilevelv5.SensorMultilevelReport
 			sendEventLog(name:"humidity", value:(safeToDec(humid,0,Math.min(cmd.precision,1))), unit:"%")
 			break
 		default:
-			logDebug "Unhandled SensorMultilevelReport sensorType: ${cmd}"
+			logDebug "Unhandled sensorType: ${cmd}"
 	}
 }
 
@@ -427,8 +389,155 @@ void zwaveEvent(hubitat.zwave.commands.notificationv8.NotificationReport cmd, ep
 			//sendSecurityEvent(cmd.event, cmd.eventParameter[0])
 			break
 		default:
-			logDebug "Unhandled NotificationReport notificationType: ${cmd}"
+			logDebug "Unhandled notificationType: ${cmd}"
 	}
+}
+
+
+/*******************************************************************
+ ***** Event Senders
+********************************************************************/
+//evt = [name, value, type, unit, desc, isStateChange]
+void sendEventLog(Map evt, Integer ep=0) {
+	//Set description if not passed in
+	evt.descriptionText = evt.desc ?: "${evt.name} set to ${evt.value}${evt.unit ?: ''}"
+
+	//Main Device Events
+	if (evt.name != "syncStatus") {
+		if (device.currentValue(evt.name).toString() != evt.value.toString()) {
+			logInfo "${evt.descriptionText}"
+		} else {
+			logDebug "${evt.descriptionText} [NOT CHANGED]"
+		}
+	}
+	//Always send event to update last activity
+	sendEvent(evt)
+}
+
+
+/*******************************************************************
+ ***** Execute / Build Commands
+********************************************************************/
+List<String> getConfigureCmds() {
+	logDebug "getConfigureCmds..."
+
+	List<String> cmds = []
+
+	if (state.resyncAll || !firmwareVersion || !state.deviceModel) {
+		cmds << versionGetCmd()
+		cmds << wakeUpIntervalSetCmd(43200)
+		cmds << wakeUpIntervalGetCmd()
+	}
+
+	cmds += getConfigureAssocsCmds()
+
+	configParams.each { param ->
+		Integer paramVal = getParamValue(param, true)
+		Integer storedVal = getParamStoredValue(param.num)
+
+		if ((paramVal != null) && (state.resyncAll || (storedVal != paramVal))) {
+			logDebug "Changing ${param.name} (#${param.num}) from ${storedVal} to ${paramVal}"
+			cmds += configSetGetCmd(param, paramVal)
+		}
+	}
+
+	if (state.resyncAll) clearVariables()
+	state.resyncAll = false
+
+	if (cmds) updateSyncingStatus(6)
+
+	return cmds ?: []
+}
+
+List<String> getRefreshCmds() {
+	List<String> cmds = []
+	cmds << versionGetCmd()
+	cmds << wakeUpIntervalGetCmd()
+	cmds << sensorMultilevelGetCmd(SENSOR_TYPE_TEMPERATURE)
+	cmds << sensorMultilevelGetCmd(SENSOR_TYPE_HUMIDITY)
+
+	return cmds ?: []
+}
+
+List getConfigureAssocsCmds() {
+	List<String> cmds = []
+
+	if (!state.group1Assoc || state.resyncAll) {
+		if (state.group1Assoc == false) {
+			logDebug "Adding missing lifeline association..."
+		}
+		cmds << associationSetCmd(1, [zwaveHubNodeId])
+		cmds << associationGetCmd(1)
+	}
+
+	return cmds
+}
+
+private logForceWakeupMessage(msg) {
+	String helpText = "You can force a wake up by pressing the Z-Wave button 4 times."
+	logWarn "${msg} will execute the next time the device wakes up.  ${helpText}"
+	state.INFO = "*** ${msg} *** Waiting for device to wake up.  ${helpText}"
+}
+
+
+/*******************************************************************/
+//These have to be added in after the fact or groovy complains
+void fixParamsMap() {
+	paramsMap['settings'] = [fixed: true]
+}
+
+
+/*******************************************************************
+ ***** Z-Wave Reports (COMMON)
+********************************************************************/
+void parse(String description) {
+	hubitat.zwave.Command cmd = zwave.parse(description, commandClassVersions)
+	
+	if (cmd) {
+		logTrace "parse: ${description} --PARSED-- ${cmd}"
+		zwaveEvent(cmd)
+	} else {
+		logWarn "Unable to parse: ${description}"
+	}
+
+	//Update Last Activity
+	updateLastCheckIn()
+}
+
+//Decodes Multichannel Encapsulated Commands
+void zwaveEvent(hubitat.zwave.commands.multichannelv3.MultiChannelCmdEncap cmd) {
+	def encapsulatedCmd = cmd.encapsulatedCommand(commandClassVersions)
+	logTrace "${cmd} --ENCAP-- ${encapsulatedCmd}"
+	
+	if (encapsulatedCmd) {
+		zwaveEvent(encapsulatedCmd, cmd.sourceEndPoint as Integer)
+	} else {
+		logWarn "Unable to extract encapsulated cmd from $cmd"
+	}
+}
+
+//Decodes Supervision Encapsulated Commands (and replies to device)
+void zwaveEvent(hubitat.zwave.commands.supervisionv1.SupervisionGet cmd, ep=0) {
+	def encapsulatedCmd = cmd.encapsulatedCommand(commandClassVersions)
+	logTrace "${cmd} --ENCAP-- ${encapsulatedCmd}"
+	
+	if (encapsulatedCmd) {
+		zwaveEvent(encapsulatedCmd, ep)
+	} else {
+		logWarn "Unable to extract encapsulated cmd from $cmd"
+	}
+
+	sendCommands(secureCmd(zwave.supervisionV1.supervisionReport(sessionID: cmd.sessionID, reserved: 0, moreStatusUpdates: false, status: 0xFF, duration: 0), ep))
+}
+
+void zwaveEvent(hubitat.zwave.commands.versionv2.VersionReport cmd) {
+	logTrace "${cmd}"
+
+	String fullVersion = String.format("%d.%02d",cmd.firmware0Version,cmd.firmware0SubVersion)
+	device.updateDataValue("firmwareVersion", fullVersion)
+
+	logDebug "Received Version Report - Firmware: ${fullVersion}"
+	setDevModel(new BigDecimal(fullVersion))
 }
 
 void zwaveEvent(hubitat.zwave.Command cmd, ep=0) {
@@ -537,116 +646,6 @@ String multiChannelEncap(hubitat.zwave.Command cmd, ep) {
 
 
 /*******************************************************************
- ***** Execute / Build Commands
-********************************************************************/
-List<String> getConfigureCmds() {
-	logDebug "getConfigureCmds..."
-
-	List<String> cmds = []
-
-	if (state.resyncAll || !firmwareVersion || !state.deviceModel) {
-		cmds << versionGetCmd()
-		cmds << wakeUpIntervalSetCmd(43200)
-		cmds << wakeUpIntervalGetCmd()
-	}
-
-	cmds += getConfigureAssocsCmds()
-
-	configParams.each { param ->
-		Integer paramVal = getParamValue(param, true)
-		Integer storedVal = getParamStoredValue(param.num)
-
-		if ((paramVal != null) && (state.resyncAll || (storedVal != paramVal))) {
-			logDebug "Changing ${param.name} (#${param.num}) from ${storedVal} to ${paramVal}"
-			cmds += configSetGetCmd(param, paramVal)
-		}
-	}
-
-	if (state.resyncAll) clearVariables()
-	state.resyncAll = false
-
-	if (cmds) updateSyncingStatus(6)
-
-	return cmds ?: []
-}
-
-List<String> getRefreshCmds() {
-	List<String> cmds = []
-	cmds << versionGetCmd()
-	cmds << wakeUpIntervalGetCmd()
-	cmds << sensorMultilevelGetCmd(SENSOR_TYPE_TEMPERATURE)
-	cmds << sensorMultilevelGetCmd(SENSOR_TYPE_HUMIDITY)
-
-	return cmds ?: []
-}
-
-void clearVariables() {
-	logWarn "Clearing state variables and data..."
-
-	//Backup
-	String devModel = state.deviceModel 
-
-	//Clears State Variables
-	state.clear()
-
-	//Clear Data from other Drivers
-	device.removeDataValue("configVals")
-	device.removeDataValue("protocolVersion")
-	device.removeDataValue("hardwareVersion")
-	device.removeDataValue("zwaveAssociationG1")
-	device.removeDataValue("zwaveAssociationG2")
-	device.removeDataValue("zwaveAssociationG3")
-
-	//Restore
-	if (devModel) state.deviceModel = devModel
-}
-
-List getConfigureAssocsCmds() {
-	List<String> cmds = []
-
-	if (!state.group1Assoc || state.resyncAll) {
-		if (state.group1Assoc == false) {
-			logDebug "Adding missing lifeline association..."
-		}
-		cmds << associationSetCmd(1, [zwaveHubNodeId])
-		cmds << associationGetCmd(1)
-	}
-
-	return cmds
-}
-
-Integer getPendingChanges() {
-	Integer configChanges = configParams.count { param ->
-		Integer paramVal = getParamValue(param, true)
-		((paramVal != null) && (paramVal != getParamStoredValue(param.num)))
-	}
-	Integer pendingAssocs = Math.ceil(getConfigureAssocsCmds()?.size()/2) ?: 0
-	return (!state.resyncAll ? (configChanges + pendingAssocs) : configChanges)
-}
-
-
-/*******************************************************************
- ***** Event Senders
-********************************************************************/
-//evt = [name, value, type, unit, desc, isStateChange]
-void sendEventLog(Map evt, Integer ep=0) {
-	//Set description if not passed in
-	evt.descriptionText = evt.desc ?: "${evt.name} set to ${evt.value}${evt.unit ?: ''}"
-
-	//Main Device Events
-	if (evt.name != "syncStatus") {
-		if (device.currentValue(evt.name).toString() != evt.value.toString()) {
-			logInfo "${evt.descriptionText}"
-		} else {
-			logDebug "${evt.descriptionText} [NOT CHANGED]"
-		}
-	}
-	//Always send event to update last activity
-	sendEvent(evt)
-}
-
-
-/*******************************************************************
  ***** Common Functions
 ********************************************************************/
 /*** Parameter Store Map Functions ***/
@@ -746,10 +745,6 @@ void verifyParamsList() {
 	if (paramsList[devModel] == null) updateParamsList()
 	if (paramsList[devModel][firmware] == null) updateParamsList()
 }
-//These have to be added in after the fact or groovy complains
-void fixParamsMap() {
-	paramsMap['settings'] = [fixed: true]
-}
 
 //Gets full list of params
 List<Map> getConfigParams() {
@@ -810,6 +805,14 @@ BigDecimal getParamValue(Map param, Boolean adjust=false) {
 	return paramVal
 }
 
+//Preference Helpers
+String fmtDesc(String str) {
+	return "<div style='font-size: 85%; font-style: italic; padding: 1px 0px 4px 2px;'>${str}</div>"
+}
+String fmtTitle(String str) {
+	return "<strong>${str}</strong>"
+}
+
 /*** Other Helper Functions ***/
 void updateSyncingStatus(Integer delay=2) {
 	runIn(delay, refreshSyncStatus)
@@ -826,6 +829,36 @@ void updateLastCheckIn() {
 		state.lastCheckInTime = new Date().time
 		state.lastCheckInDate = convertToLocalTimeString(new Date())
 	}
+}
+
+Integer getPendingChanges() {
+	Integer configChanges = configParams.count { param ->
+		Integer paramVal = getParamValue(param, true)
+		((paramVal != null) && (paramVal != getParamStoredValue(param.num)))
+	}
+	Integer pendingAssocs = Math.ceil(getConfigureAssocsCmds()?.size()/2) ?: 0
+	return (!state.resyncAll ? (configChanges + pendingAssocs) : configChanges)
+}
+
+void clearVariables() {
+	logWarn "Clearing state variables and data..."
+
+	//Backup
+	String devModel = state.deviceModel 
+
+	//Clears State Variables
+	state.clear()
+
+	//Clear Data from other Drivers
+	device.removeDataValue("configVals")
+	device.removeDataValue("protocolVersion")
+	device.removeDataValue("hardwareVersion")
+	device.removeDataValue("zwaveAssociationG1")
+	device.removeDataValue("zwaveAssociationG2")
+	device.removeDataValue("zwaveAssociationG3")
+
+	//Restore
+	if (devModel) state.deviceModel = devModel
 }
 
 //Stash the model in a state variable
@@ -910,12 +943,6 @@ boolean isDuplicateCommand(lastExecuted, allowedMil) {
 /*******************************************************************
  ***** Logging Functions
 ********************************************************************/
-private logForceWakeupMessage(msg) {
-	String helpText = "You can force a wake up by pressing the Z-Wave button 4 times."
-	logWarn "${msg} will execute the next time the device wakes up.  ${helpText}"
-	state.INFO = "*** ${msg} *** Waiting for device to wake up.  ${helpText}"
-}
-
 void logsOff() {}
 void debugLogsOff() {
 	logWarn "Debug logging disabled..."
