@@ -1,28 +1,40 @@
 {
   "packageName": "Zooz Sensors Advanced Drivers",
   "author": "Jeff Page (@jtp10181)",
-  "minimumHEVersion": "2.3.0",
-  "dateReleased": "2022-08-06",
+  "minimumHEVersion": "2.3.5",
+  "dateReleased": "2022-11-08",
   "documentationLink": "https://github.com/jtp10181/Hubitat/tree/main/Drivers/zooz",
   "communityLink": "https://community.hubitat.com/t/driver-zooz-sensors-advanced-zse40-zse44/81074",
-  "releaseNotes": "Version [1.0.5] - 2022-08-06 (@jtp10181)\n Check community post for full details.",
-  "version": "1.0.5",
+  "releaseNotes": "Version [1.1.0] - 2023-11-08\n  - Rearranged functions to get ready for library code\n  - Merged new code base and library\n  - Added ZSE41 and ZSE42 to package\n  - Added driver-side temp and humidity offsets for ZSE44",
+  "version": "1.1.0",
   "drivers": [
     {
       "id": "cbe3bb01-e8cd-416e-9af6-cc18fd451444",
       "name": "Zooz ZSE40 4-in-1 Multisensor",
       "namespace": "jtp10181",
-      "location": "https://jtp10181.gateway.scarf.sh/zooz-zse40-multisensor.groovy",
-      "required": false,
-      "version": "1.0.5"
+      "location": "https://jtp10181.gateway.scarf.sh/zooz-zse40-v1.1.0.groovy",
+      "required": false
+    },
+    {
+      "id": "5972223b-d3b5-4d65-94e6-749b06b0aeeb",
+      "name": "Zooz ZSE41 Open-Close XS Sensor",
+      "namespace": "jtp10181",
+      "location": "https://jtp10181.gateway.scarf.sh/zooz-zse41-v1.1.0.groovy",
+      "required": false
+    },
+    {
+      "id": "124da3c3-d01e-43fc-b51b-c80f3816ebce",
+      "name": "Zooz ZSE42 Water Leak XS Sensor",
+      "namespace": "jtp10181",
+      "location": "https://jtp10181.gateway.scarf.sh/zooz-zse42-v1.1.0.groovy",
+      "required": false
     },
     {
       "id": "e6498052-92e9-4eb8-bfa4-024c5c1e3f36",
       "name": "Zooz ZSE44 Temperature Humidity XS Sensor",
       "namespace": "jtp10181",
-      "location": "https://jtp10181.gateway.scarf.sh/zooz-zse44-temp-humidity.groovy",
-      "required": false,
-      "version": "1.0.5"
+      "location": "https://jtp10181.gateway.scarf.sh/zooz-zse44-v1.1.0.groovy",
+      "required": false
     }
   ]
 }

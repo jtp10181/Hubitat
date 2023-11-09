@@ -1,6 +1,6 @@
 /*  
- *  Zooz ZSE44 Temperature Humidity XS Sensor
- *    - Model: ZSE44 - MINIMUM FIRMWARE 1.10
+ *  ZSE42 Water Leak XS Sensor
+ *    - Model: ZSE42 - ALL FIRMWARE
  *
  *  For Support, Information, and Updates:
  *  https://community.hubitat.com/t/zooz-sensors/81074
@@ -10,41 +10,7 @@
 Changelog:
 
 ## [1.1.0] - 2023-11-08 (@jtp10181)
-  - Rearranged functions to get ready for library code
-  - Merged new code base and library
-  - Added ZSE41 and ZSE42 to package
-  - Added driver-side temp and humidity offsets for ZSE44
-
-## [1.0.5] - 2022-08-06 (@jtp10181)
-  ### Fixed
-  - Put in proper scalable signed/unsigned parameter value conversion
-
-## [1.0.4] - 2022-08-02 (@jtp10181)
-  ### Fixed
-  - Race condition with configVals (now keeping copy in static var)
-  - Various fixes in common functions merged from other drivers
-  - The deviceModel checking should be even better now, with page refresh
-  ### Removed
-  - Supervision encapsulation code, not being used
-  
-## [1.0.2] - 2022-07-25 (@jtp10181)
-  ### Fixed
-  - Fixed issue handling decimal parameters introduced in 1.0.1
-  
-## [1.0.1] - 2022-07-25 (@jtp10181)
-  ### Added
-  - Set deviceModel in device data (press refresh)
-  ### Changed
-  - Description text loging enabled by default
-  - Removed getParam.value and replaced with separate function
-  - Adding HTML styling to the Preferences
-  - Cleaned up some logging functions
-  - Other minor function updates synced from other drivers
-  
-## [0.1.0] - 2021-05-23 (@jtp10181)
-  ### Added
-  - Initial Release, from ZSE40 1.0.0 codebase
-  - Supports all known settings and features except associations (and related settings)
+  -Initial Release, from ZSE40 1.1.0 codebase
 
 NOTICE: This file has been created by *Jeff Page* with some code used 
 	from the original work of *Zooz* and *Kevin LaFramboise* under compliance with the Apache 2.0 License.
@@ -70,20 +36,18 @@ import groovy.transform.Field
 @Field static final String VERSION = "1.1.0"
 @Field static final String DRIVER = "Zooz-Sensors"
 @Field static final String COMM_LINK = "https://community.hubitat.com/t/zooz-sensors/81074"
-@Field static final Map deviceModelNames = ["7000:E004":"ZSE44"]
+@Field static final Map deviceModelNames = ["7000:E002":"ZSE42"]
 
 metadata {
 	definition (
-		name: "Zooz ZSE44 Temperature Humidity XS Sensor",
+		name: "Zooz ZSE42 Water Leak XS Sensor",
 		namespace: "jtp10181",
 		author: "Jeff Page (@jtp10181)",
-		importUrl: "https://raw.githubusercontent.com/jtp10181/Hubitat/main/Drivers/zooz/zooz-zse44-temp-humidity.groovy"
+		importUrl: "https://raw.githubusercontent.com/jtp10181/Hubitat/main/Drivers/zooz/zooz-zse42-water-leak.groovy"
 	) {
 		capability "Sensor"
-		capability "Relative Humidity Measurement"
-		capability "Temperature Measurement"
+		capability "WaterSensor"
 		capability "Battery"
-		capability "Tamper Alert"
 
 		command "fullConfigure"
 		command "forceRefresh"
@@ -93,7 +57,7 @@ metadata {
 
 		attribute "syncStatus", "string"
 
-		fingerprint mfr:"027A", prod:"7000", deviceId:"E004", inClusters:"0x00,0x00" //Zooz ZSE44 Temperature Humidity XS Sensor
+		fingerprint mfr:"027A", prod:"7000", deviceId:"E002", inClusters:"0x5E,0x85,0x8E,0x59,0x55,0x86,0x72,0x5A,0x73,0x80,0x9F,0x71,0x87,0x30,0x70,0x84,0x6C,0x7A" //Zooz ZSE42 Water Leak Sensor
 	}
 
 	preferences {
@@ -118,16 +82,6 @@ metadata {
 				}
 			}
 		}
-
-		input "tempOffset", "decimal",
-			title: fmtTitle("Temperature Offset (Driver):"),
-			description: fmtDesc("Range: -25.0..25.0, DEFAULT: 0"),
-			defaultValue: 0, range: "-25..25", required: false
-
-		input "humidityOffset", "decimal",
-			title: fmtTitle("Humidity Offset (Driver):"),
-			description: fmtDesc("Range: -25.0..25.0, DEFAULT: 0"),
-			defaultValue: 0, range: "-25..25", required: false
 	}
 }
 
@@ -142,77 +96,45 @@ void debugShowVars() {
 @Field static final int maxAssocNodes = 1
 
 /*** Static Lists and Settings ***/
-//Sensor Types
-@Field static Short SENSOR_TYPE_TEMPERATURE = 0x01
-@Field static Short SENSOR_TYPE_LUMINANCE = 0x03
-@Field static Short SENSOR_TYPE_HUMIDITY = 0x05
-//Notification Types
-@Field static Short NOTIFICATION_TYPE_SECURITY = 0x07
-@Field static Short NOTIFICATION_TYPE_HEAT = 0x04
-@Field static Short NOTIFICATION_TYPE_WEATHER = 0x10 //16
+//None
 
 //Main Parameters Listing
 @Field static Map<String, Map> paramsMap =
 [
-	batteryLow: [ num:2, 
+	ledMode: [ num:1, 
+		title: "LED Indicator Mode", 
+		size: 1, defaultVal: 1, 
+		options: [1:"LED Blinks when Wet", 0:"LED Disabled"]
+	],
+	clearDelay: [ num:2,
+		title: "Leak Alert Clear Delay (seconds)",
+		size: 4, defaultVal: 0,
+		range: 0..3600
+	],
+	batteryThreshold: [ num:3,
+		title: "Battery Level Report Threshold",
+		size: 1, defaultVal: 10,
+		range: 1..50
+	],
+	batteryLow: [ num:4, 
 		title: "Low Battery Report (%)",
 		size: 1, defaultVal: 10,
-		range: "10..50"
-	],
-	tempTrigger: [ num:3,
-		title: "Temperature Change Report Trigger (1 = 0.1° / 10 = 1°)",
-		size: 1, defaultVal: 20,
-		range: "10..100"
-	],
-	humidityTrigger: [ num:4,
-		title: "Humidity Change Report Trigger (%)",
-		size: 1, defaultVal: 5,
-		range: "1..50"
-	],
-	//TEMP ALERTS
-	//HUMIDITY ALERTS
-	tempOffset: [ num:14,
-		title: "Temperature Offset (Hardware)",
-		size: 1, defaultVal: 0,
-		range: "-10.0..10.0"
-	],
-	humidOffset: [ num:15,
-		title: "Humidity Offset (Hardware)",
-		size: 1, defaultVal: 0,
-		range: "-10.0..10.0"
-	],
-	tempInterval: [ num:16,
-		title: "Temperature Reporting Interval (mins)",
-		description: "Set to 0 to Disable",
-		size: 2, defaultVal: 240,
-		range: "0..480"
-	],
-	humidInterval: [ num:17,
-		title: "Humidity Reporting Interval (mins)",
-		description: "Set to 0 to Disable",
-		size: 2, defaultVal: 240,
-		range: "0..480"
-	],
-	tempUnits: [ num:13,
-		title: "Temperature Units:",
-		size: 1, defaultVal: 1,
-		options: [0:"Celsius (°C)", 1:"Fahrenheit (°F)"]
-	],
+		range: 10..50
+	]
 ]
 
-/* ZSE44
+/* ZSE42
 CommandClassReport
 */
 
 //Set Command Class Versions
 @Field static final Map commandClassVersions = [
-	0x31: 5,	// Sensor Multilevel (sensormultilevelv5) (11)
-	0x70: 1,	// Configuration (configurationv1) (4)
-	0x71: 8,	// Notification (notificationv8) (8)
-	0x80: 1,	// Battery (batteryv1)
-	0x84: 2,	// Wakeup (wakeupv2)
-	0x85: 2,	// Association (associationv2) (3)
-	0x86: 2,	// Version (versionv2) (3)
+	0x70: 1,	// configuration
+	0x71: 3,	// notification
+	0x80: 1,	// battery
+	0x84: 2,	// wakeup
+	0x85: 2,	// association
+	0x86: 2,	// version
 ]
 
 
@@ -359,37 +281,19 @@ void zwaveEvent(hubitat.zwave.commands.wakeupv2.WakeUpNotification cmd, ep=0) {
 	sendCommands(cmds, 400)
 }
 
-void zwaveEvent(hubitat.zwave.commands.sensormultilevelv5.SensorMultilevelReport cmd, ep=0) {
-	logTrace "${cmd} (ep ${ep})"	
-	switch (cmd.sensorType) {
-		case SENSOR_TYPE_TEMPERATURE: //0x01
-			def temp = convertTemperatureIfNeeded(cmd.scaledSensorValue, (cmd.scale ? "F" : "C"), cmd.precision)
-			def offset = safeToDec(settings?.tempOffset,0)
-			def tempOS = safeToDec(temp,0) + offset
-			logDebug "Temperature Offset by ${offset} from ${temp} to ${tempOS}"
-			sendEventLog(name:"temperature", value:(safeToDec(tempOS,0,Math.min(cmd.precision,1))), unit:"°${temperatureScale}")
-			break
-		case SENSOR_TYPE_HUMIDITY:  //0x05
-			def offset = safeToDec(settings?.humidityOffset,0)
-			def humidOS = safeToDec(cmd.scaledSensorValue,0) + offset
-			logDebug "Humidity Offset by ${offset} from ${cmd.scaledSensorValue} to ${humidOS}"
-			sendEventLog(name:"humidity", value:(safeToDec(humidOS,0,Math.min(cmd.precision,1))), unit:"%")
-			break
-		default:
-			logDebug "Unhandled sensorType: ${cmd}"
-	}
+void zwaveEvent(hubitat.zwave.commands.sensorbinaryv2.SensorBinaryReport cmd, ep=0) {
+	logTrace "${cmd} (ep ${ep})"
+	//Ignoring these, handled by NotificationReport
 }
 
-void zwaveEvent(hubitat.zwave.commands.notificationv8.NotificationReport cmd, ep=0) {
+void zwaveEvent(hubitat.zwave.commands.notificationv3.NotificationReport cmd, ep=0) {
 	logTrace "${cmd} (ep ${ep})"
-	switch (cmd.notificationType) {
-		case NOTIFICATION_TYPE_HEAT: //Temp Alarm 0x04
-			logDebug "NOTIFICATION_TYPE_HEAT ${cmd.event}, ${cmd.eventParameter[0]}"
-			//sendSecurityEvent(cmd.event, cmd.eventParameter[0])
-			break
-		case NOTIFICATION_TYPE_WEATHER: //Humidity Alarm 0x10 (16)
-			logDebug "NOTIFICATION_TYPE_WEATHER ${cmd.event}, ${cmd.eventParameter[0]}"
-			//sendSecurityEvent(cmd.event, cmd.eventParameter[0])
+
+	switch (cmd.notificationType as Integer) {
+		case 0x05:  //Water Alarm
+			if      (cmd.event == 0x00) sendEventLog(name:"water", value:"dry", ep)
+			else if (cmd.event == 0x02) sendEventLog(name:"water", value:"wet", ep)
+			else    logDebug "Unhandled event: ${cmd}"
 			break
 		default:
 			logDebug "Unhandled notificationType: ${cmd}"
@@ -457,8 +361,7 @@ List<String> getRefreshCmds() {
 
 	cmds << versionGetCmd()
 	cmds << wakeUpIntervalGetCmd()
-	cmds << sensorMultilevelGetCmd(SENSOR_TYPE_TEMPERATURE)
-	cmds << sensorMultilevelGetCmd(SENSOR_TYPE_HUMIDITY)
+	cmds << notificationGetCmd(0x05, 0x00)  //Water Alarm
 
 	return cmds ?: []
 }
@@ -478,7 +381,7 @@ List getConfigureAssocsCmds() {
 }
 
 private logForceWakeupMessage(msg) {
-	String helpText = "You can force a wake up by pressing the Z-Wave button 4 times."
+	String helpText = "Quickly press the internal button 4 times to wake the device."
 	logWarn "${msg} will execute the next time the device wakes up.  ${helpText}"
 	state.INFO = "*** ${msg} *** Waiting for device to wake up.  ${helpText}"
 }
@@ -493,18 +396,7 @@ void fixParamsMap() {
 }
 
 Integer getParamValueAdj(Map param) {
-	Integer paramVal = getParamValue(param)
-
-	switch(param.name) {
-		case "tempOffset":
-		case "humidOffset":
-			//Convert -10.0..10.0 range to 0..200
-			paramVal = (paramVal * 10) + 100
-			paramVal = validateRange(paramVal, 100, 0, 200)
-			break
-	}
-
-	return paramVal
+	return getParamValue(param)
 }
 
 
@@ -687,7 +579,7 @@ String batteryGetCmd() {
 
 String sensorMultilevelGetCmd(sensorType) {
 	Integer scale = (temperatureScale == "F" ? 1 : 0)
-	return secureCmd(zwave.sensorMultilevelV5.sensorMultilevelGet(scale: scale, sensorType: sensorType))
+	return secureCmd(zwave.sensorMultilevelV11.sensorMultilevelGet(scale: scale, sensorType: sensorType))
 }
 
 String notificationGetCmd(notificationType, eventType, Integer ep=0) {

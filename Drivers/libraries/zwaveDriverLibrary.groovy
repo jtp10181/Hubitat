@@ -13,6 +13,7 @@ Changelog:
 2023-05-24 - Fix for possible RuntimeException error due to bad cron string
 2023-10-25 - Less savings to the configVals data, and some new functions
 2023-10-26 - Added some battery shortcut functions
+2023-11-08 - Added ability to adjust settings on firmware range
 
 ********************************************************************/
 
@@ -289,8 +290,15 @@ void updateParamsList() {
 				if (changes.options) { tmpMap.options = changes.options.clone() }
 			}
 		}
+		tmpMap.changesFR.each { m, changes ->
+			if (firmware >= m.getFrom() && firmware <= m.getTo()) {
+				tmpMap.putAll(changes)
+				if (changes.options) { tmpMap.options = changes.options.clone() }
+			}
+		}
 		//Don't need this anymore
 		tmpMap.remove("changes")
+		tmpMap.remove("changesFR")
 
 		//Set DEFAULT tag on the default
 		tmpMap.options.each { k, val ->
@@ -425,11 +433,11 @@ void scheduleCheckIn() {
 }
 
 void doCheckIn() {
-	String devModel = state.deviceModel ?: "NA"
-	String checkUri = "http://jtp10181.gateway.scarf.sh/${DRIVER}/chk-${devModel}-${VERSION}"
+	String devModel = (state.deviceModel ?: "NA") + (state.subModel ? ".${state.subModel}" : "")
+	String checkUri = "http://jtp10181.gateway.scarf.sh/${DRIVER}/chk-${devModel}-v${VERSION}"
 
 	try {
-		httpGet(uri:checkUri, timeout:4) { logDebug "Driver ${DRIVER} v${VERSION}" }
+		httpGet(uri:checkUri, timeout:4) { logDebug "Driver ${DRIVER} ${devModel} v${VERSION}" }
 		state.lastCheckInTime = (new Date()).time
 	} catch (Exception e) { }
 }

@@ -2,15 +2,17 @@
  *  Zooz ZSE40 4-in-1 Multisensor
  *    - Model: ZSE40 - MINIMUM FIRMWARE 32.02
  *
- *  For Support, Information and Updates:
+ *  For Support, Information, and Updates:
  *  https://community.hubitat.com/t/zooz-sensors/81074
  *  https://github.com/jtp10181/Hubitat/tree/main/Drivers/zooz
  *
 
 Changelog:
 
-## [1.1.0] - 2023-XX-XX (@jtp10181)
-  -Rearranged functions to get ready for library code
+## [1.1.0] - 2023-11-08 (@jtp10181)
+  - Rearranged functions to get ready for library code
+  - Merged new code base and library
+  - Added ZSE41 and ZSE42 to package
 
 ## [1.0.5] - 2022-08-06 (@jtp10181)
   ### Fixed
@@ -97,7 +99,9 @@ NOTICE: This file has been created by *Jeff Page* with some code used
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "1.1.0" 
+@Field static final String VERSION = "1.1.0"
+@Field static final String DRIVER = "Zooz-Sensors"
+@Field static final String COMM_LINK = "https://community.hubitat.com/t/zooz-sensors/81074"
 @Field static final Map deviceModelNames = ["2021:2101":"ZSE40"]
 
 metadata {
@@ -150,20 +154,19 @@ metadata {
 		}
 
 		input "tempOffset", "decimal",
-			title: fmtTitle("Temperature Offset [-25.0 to 25.0]:"),
+			title: fmtTitle("Temperature Offset:"),
+			description: fmtDesc("Range: -25.0..25.0, DEFAULT: 0"),
 			defaultValue: 0, range: "-25..25", required: false
 
 		input "humidityOffset", "decimal",
-			title: fmtTitle("Humidity Offset [-25.0 to 25.0]:"),
+			title: fmtTitle("Humidity Offset:"),
+			description: fmtDesc("Range: -25.0..25.0, DEFAULT: 0"),
 			defaultValue: 0, range: "-25..25", required: false
 
 		input "lightOffset", "decimal",
-			title: fmtTitle("Light % Offset [-25.0 to 25.0]:"),
+			title: fmtTitle("Light % Offset:"),
+			description: fmtDesc("Range: -25.0..25.0, DEFAULT: 0"),
 			defaultValue: 0, range: "-25..25", required: false
-
-		//Logging options similar to other Hubitat drivers
-		input "txtEnable", "bool", title: fmtTitle("Enable Description Text Logging?"), defaultValue: true
-		input "debugEnable", "bool", title: fmtTitle("Enable Debug Logging?"), defaultValue: true
 	}
 }
 
@@ -219,15 +222,15 @@ void debugShowVars() {
 	],
 	ledMode: [ num:7, 
 		title: "LED Indicator Mode", 
-		size: 1, defaultVal: 4, 
-		options: [1:"LED Disabled", 2:"Motion Flash / Temp Pulse", 3:"Motion Flash / Temp Flash (every 3 mins)", 4:"Motion Flash / Temp None"],
-		changes: ['ZSE40-700':[defaultVal: 3, options: [1:"LED Disabled", 2:"Motion Flash / Temp Flash (every 3 mins)", 3:"Motion Flash / Temp None"]]],
+		size: 1, defaultVal: 3, 
+		options: [1:"LED Disabled", 2:"Motion Flash / Temp Flash (every 3 mins)", 3:"Motion Flash / Temp None"],
+		changesFR: [(16..32.30):[defaultVal:4, options:[1:"LED Disabled", 2:"Motion Flash / Temp Pulse", 3:"Motion Flash / Temp Flash (every 3 mins)", 4:"Motion Flash / Temp None"]]],
 	],
 	group1Report: [ num:8, 
 		title: "Group 1 (Hub) Reporting", 
 		size: 1, defaultVal: 255, 
 		options: [0:"Notification Reports Only", 255:"Notification AND Basic Reports"],
-		changes: ['ZSE40':[firmVer: 32.00]]
+		changesFR: [(16..30):[num:null]],
 	],
 	tempUnits: [ num:1,
 		title: "Temperature Units:",
@@ -243,7 +246,7 @@ CommandClassReport
 //Set Command Class Versions
 @Field static final Map commandClassVersions = [
 	0x31: 5,	// Sensor Multilevel (sensormultilevelv5)
-	0x70: 2,	// Configuration (configurationv2)
+	0x70: 1,	// Configuration (configurationv1)
 	0x71: 3,	// Notification (notificationv3) (8)
 	0x80: 1,	// Battery (batteryv1)
 	0x84: 2,	// Wakeup (wakeupv2)
@@ -261,7 +264,6 @@ void installed() {
 
 void fullConfigure() {
 	logWarn "configure..."
-	if (debugEnable) runIn(1800, debugLogsOff)
 
 	if (!pendingChanges || state.resyncAll == null) {
 		logForceWakeupMessage "Full Re-Configure"
@@ -275,10 +277,7 @@ void fullConfigure() {
 
 void updated() {
 	logDebug "updated..."
-	logDebug "Debug logging is: ${debugEnable == true}"
-	logDebug "Description logging is: ${txtEnable == true}"
-
-	if (debugEnable) runIn(1800, debugLogsOff)
+	checkLogLevel()
 
 	if (!firmwareVersion || !state.deviceModel) {
 		state.resyncAll = true
@@ -293,6 +292,8 @@ void updated() {
 		state.remove("INFO")
 	}
 
+	setSubModel()
+
 	updateSyncingStatus(1)
 }
 
@@ -301,6 +302,7 @@ void forceRefresh() {
 	state.pendingRefresh = true
 	logForceWakeupMessage "Sensor Info Refresh"
 }
+
 
 /*******************************************************************
  ***** Driver Commands
@@ -312,27 +314,19 @@ void forceRefresh() {
 /*******************************************************************
  ***** Z-Wave Reports
 ********************************************************************/
-//void parse(String description) {zwaveParse(description)}
-//void zwaveEvent(hubitat.zwave.commands.multichannelv3.MultiChannelCmdEncap cmd) {zwaveMultiChannel(cmd)}
-//void zwaveEvent(hubitat.zwave.commands.supervisionv1.SupervisionGet cmd, ep=0) {zwaveSupervision(cmd,ep)}
-
-void zwaveEvent(hubitat.zwave.commands.securityv1.SecurityMessageEncapsulation cmd) {
-	def encapsulatedCmd = cmd.encapsulatedCommand(commandClassVersions)
-	logTrace "${cmd} --ENCAP-- ${encapsulatedCmd}"
-	
-	if (encapsulatedCmd) {
-		zwaveEvent(encapsulatedCmd)
-	} else {
-		logWarn "Unable to extract encapsulated cmd from $cmd"
-	}
+void parse(String description) {
+	zwaveParse(description)
+}
+void zwaveEvent(hubitat.zwave.commands.supervisionv1.SupervisionGet cmd, ep=0) {
+	zwaveSupervision(cmd,ep)
 }
 
-void zwaveEvent(hubitat.zwave.commands.configurationv2.ConfigurationReport cmd) {
+void zwaveEvent(hubitat.zwave.commands.configurationv1.ConfigurationReport cmd) {
 	logTrace "${cmd}"
 	updateSyncingStatus()
 
 	Map param = getParam(cmd.parameterNumber)
-	Number val = cmd.scaledConfigurationValue
+	Integer val = cmd.scaledConfigurationValue
 
 	if (param) {
 		//Convert scaled signed integer to unsigned
@@ -377,17 +371,17 @@ void zwaveEvent(hubitat.zwave.commands.batteryv1.BatteryReport cmd, ep=0) {
 }
 
 void zwaveEvent(hubitat.zwave.commands.wakeupv2.WakeUpIntervalReport cmd) {
-   logTrace "${cmd}"
-   BigDecimal wakeHrs = safeToDec(cmd.seconds/3600,0,2)
-   logDebug "WakeUp Interval is $cmd.seconds seconds ($wakeHrs hours)"
-   device.updateDataValue("zwWakeupInterval", "${cmd.seconds}")
+	logTrace "${cmd}"
+	BigDecimal wakeHrs = safeToDec(cmd.seconds/3600,0,2)
+	logDebug "WakeUp Interval is $cmd.seconds seconds ($wakeHrs hours)"
+	device.updateDataValue("zwWakeupInterval", "${cmd.seconds}")
 }
 
 void zwaveEvent(hubitat.zwave.commands.wakeupv2.WakeUpNotification cmd, ep=0) {
 	logTrace "${cmd} (ep ${ep})"
 	logDebug "WakeUp Notification Received"
 
-	List<String> cmds = []
+	List<String> cmds = ["delay 0"]
 	cmds << batteryGetCmd()
 
 	//Refresh all if requested
@@ -396,12 +390,13 @@ void zwaveEvent(hubitat.zwave.commands.wakeupv2.WakeUpNotification cmd, ep=0) {
 	cmds += getConfigureCmds()
 
 	//This needs a longer delay
-	cmds << "delay 1000" << wakeUpNoMoreInfoCmd()
+	cmds << "delay 1400" << wakeUpNoMoreInfoCmd()
 
 	//Clear pending status
 	state.resyncAll = false
 	state.pendingRefresh = false
 	state.remove("INFO")
+	setSubModel()
 	
 	sendCommands(cmds, 400)
 }
@@ -459,12 +454,10 @@ void sendEventLog(Map evt, Integer ep=0) {
 	evt.descriptionText = evt.desc ?: "${evt.name} set to ${evt.value}${evt.unit ?: ''}"
 
 	//Main Device Events
-	if (evt.name != "syncStatus") {
-		if (device.currentValue(evt.name).toString() != evt.value.toString()) {
-			logInfo "${evt.descriptionText}"
-		} else {
-			logDebug "${evt.descriptionText} [NOT CHANGED]"
-		}
+	if (device.currentValue(evt.name).toString() != evt.value.toString() || evt.isStateChange) {
+		logInfo "${evt.descriptionText}"
+	} else {
+		logDebug "${evt.descriptionText} [NOT CHANGED]"
 	}
 	//Always send event to update last activity
 	sendEvent(evt)
@@ -499,16 +492,19 @@ List<String> getConfigureCmds() {
 
 	List<String> cmds = []
 
-	if (state.resyncAll || !firmwareVersion || !state.deviceModel) {
-		cmds << versionGetCmd()
+	if (state.resyncAll) {
+		clearVariables()
 		cmds << wakeUpIntervalSetCmd(43200)
 		cmds << wakeUpIntervalGetCmd()
+	}
+	if (state.resyncAll || !firmwareVersion || !state.deviceModel) {
+		cmds << versionGetCmd()
 	}
 
 	cmds += getConfigureAssocsCmds()
 
 	configParams.each { param ->
-		Integer paramVal = getParamValue(param, true)
+		Integer paramVal = getParamValueAdj(param)
 		Integer storedVal = getParamStoredValue(param.num)
 
 		if ((paramVal != null) && (state.resyncAll || (storedVal != paramVal))) {
@@ -517,7 +513,6 @@ List<String> getConfigureCmds() {
 		}
 	}
 
-	if (state.resyncAll) clearVariables()
 	state.resyncAll = false
 
 	if (cmds) updateSyncingStatus(6)
@@ -527,6 +522,7 @@ List<String> getConfigureCmds() {
 
 List<String> getRefreshCmds() {
 	List<String> cmds = []
+
 	cmds << versionGetCmd()
 	cmds << wakeUpIntervalGetCmd()
 	cmds << sensorMultilevelGetCmd(SENSOR_TYPE_TEMPERATURE)
@@ -560,20 +556,69 @@ private logForceWakeupMessage(msg) {
 	state.INFO = "*** ${msg} *** Waiting for device to wake up.  ${helpText}"
 }
 
+private setSubModel() {
+	String devModel = state.deviceModel
+	if (devModel == "ZSE40-700") { devModel = setDevModel() }
+	if (!state.subModel) {
+		if (devModel == "ZSE40" && getDataValue("inClusters").contains("0x9F")) {
+			state.subModel = "v700"
+		}
+	}
+}
 
-/*******************************************************************/
+
+/*******************************************************************
+ ***** Required for Library
+********************************************************************/
 //These have to be added in after the fact or groovy complains
 void fixParamsMap() {
 	paramsMap['settings'] = [fixed: true]
 }
 
+Integer getParamValueAdj(Map param) {
+	return getParamValue(param)
+}
+
+
+//#include jtp10181.zwaveDriverLibrary
+/*******************************************************************
+ *******************************************************************
+ ***** Z-Wave Driver Library by Jeff Page (@jtp10181)
+ *******************************************************************
+********************************************************************
+
+Changelog:
+2023-05-10 - First version used in drivers
+2023-05-12 - Adjustments to community links
+2023-05-14 - Updates for power metering
+2023-05-18 - Adding requirement for getParamValueAdj in driver
+2023-05-24 - Fix for possible RuntimeException error due to bad cron string
+2023-10-25 - Less savings to the configVals data, and some new functions
+2023-10-26 - Added some battery shortcut functions
+2023-11-08 - Added ability to adjust settings on firmware range
+
+********************************************************************/
+
+library (
+  author: "Jeff Page (@jtp10181)",
+  category: "zwave",
+  description: "Z-Wave Driver Library",
+  name: "zwaveDriverLibrary",
+  namespace: "jtp10181",
+  documentationLink: ""
+)
 
 /*******************************************************************
  ***** Z-Wave Reports (COMMON)
 ********************************************************************/
-void parse(String description) {
+//Include these in Driver
+//void parse(String description) {zwaveParse(description)}
+//void zwaveEvent(hubitat.zwave.commands.multichannelv3.MultiChannelCmdEncap cmd) {zwaveMultiChannel(cmd)}
+//void zwaveEvent(hubitat.zwave.commands.supervisionv1.SupervisionGet cmd, ep=0) {zwaveSupervision(cmd,ep)}
+
+void zwaveParse(String description) {
 	hubitat.zwave.Command cmd = zwave.parse(description, commandClassVersions)
-	
+
 	if (cmd) {
 		logTrace "parse: ${description} --PARSED-- ${cmd}"
 		zwaveEvent(cmd)
@@ -586,10 +631,10 @@ void parse(String description) {
 }
 
 //Decodes Multichannel Encapsulated Commands
-void zwaveEvent(hubitat.zwave.commands.multichannelv3.MultiChannelCmdEncap cmd) {
-	def encapsulatedCmd = cmd.encapsulatedCommand(commandClassVersions)
+void zwaveMultiChannel(hubitat.zwave.commands.multichannelv3.MultiChannelCmdEncap cmd) {
+	hubitat.zwave.Command encapsulatedCmd = cmd.encapsulatedCommand(commandClassVersions)
 	logTrace "${cmd} --ENCAP-- ${encapsulatedCmd}"
-	
+
 	if (encapsulatedCmd) {
 		zwaveEvent(encapsulatedCmd, cmd.sourceEndPoint as Integer)
 	} else {
@@ -598,10 +643,10 @@ void zwaveEvent(hubitat.zwave.commands.multichannelv3.MultiChannelCmdEncap cmd) 
 }
 
 //Decodes Supervision Encapsulated Commands (and replies to device)
-void zwaveEvent(hubitat.zwave.commands.supervisionv1.SupervisionGet cmd, ep=0) {
-	def encapsulatedCmd = cmd.encapsulatedCommand(commandClassVersions)
+void zwaveSupervision(hubitat.zwave.commands.supervisionv1.SupervisionGet cmd, ep=0) {
+	hubitat.zwave.Command encapsulatedCmd = cmd.encapsulatedCommand(commandClassVersions)
 	logTrace "${cmd} --ENCAP-- ${encapsulatedCmd}"
-	
+
 	if (encapsulatedCmd) {
 		zwaveEvent(encapsulatedCmd, ep)
 	} else {
@@ -615,7 +660,10 @@ void zwaveEvent(hubitat.zwave.commands.versionv2.VersionReport cmd) {
 	logTrace "${cmd}"
 
 	String fullVersion = String.format("%d.%02d",cmd.firmware0Version,cmd.firmware0SubVersion)
+	String zwaveVersion = String.format("%d.%02d",cmd.zWaveProtocolVersion,cmd.zWaveProtocolSubVersion)
 	device.updateDataValue("firmwareVersion", fullVersion)
+	device.updateDataValue("protocolVersion", zwaveVersion)
+	device.updateDataValue("hardwareVersion", "${cmd.hardwareVersion}")
 
 	logDebug "Received Version Report - Firmware: ${fullVersion}"
 	setDevModel(new BigDecimal(fullVersion))
@@ -624,6 +672,7 @@ void zwaveEvent(hubitat.zwave.commands.versionv2.VersionReport cmd) {
 void zwaveEvent(hubitat.zwave.Command cmd, ep=0) {
 	logDebug "Unhandled zwaveEvent: $cmd (ep ${ep})"
 }
+
 
 /*******************************************************************
  ***** Z-Wave Command Shortcuts
@@ -635,7 +684,7 @@ void sendCommands(List<String> cmds, Long delay=200) {
 
 //Single Command
 void sendCommands(String cmd) {
-    sendHubCommand(new hubitat.device.HubAction(cmd, hubitat.device.Protocol.ZWAVE))
+	sendHubCommand(new hubitat.device.HubAction(cmd, hubitat.device.Protocol.ZWAVE))
 }
 
 //Consolidated zwave command functions so other code is easier to read
@@ -651,8 +700,45 @@ String associationGetCmd(Integer group) {
 	return secureCmd(zwave.associationV2.associationGet(groupingIdentifier: group))
 }
 
+String mcAssociationGetCmd(Integer group) {
+	return secureCmd(zwave.multiChannelAssociationV3.multiChannelAssociationGet(groupingIdentifier: group))
+}
+
 String versionGetCmd() {
 	return secureCmd(zwave.versionV2.versionGet())
+}
+
+String switchBinarySetCmd(Integer value, Integer ep=0) {
+	return secureCmd(zwave.switchBinaryV1.switchBinarySet(switchValue: value), ep)
+}
+
+String switchBinaryGetCmd(Integer ep=0) {
+	return secureCmd(zwave.switchBinaryV1.switchBinaryGet(), ep)
+}
+
+String switchMultilevelSetCmd(Integer value, Integer duration, Integer ep=0) {
+	return secureCmd(zwave.switchMultilevelV4.switchMultilevelSet(dimmingDuration: duration, value: value), ep)
+}
+
+String switchMultilevelGetCmd(Integer ep=0) {
+	return secureCmd(zwave.switchMultilevelV4.switchMultilevelGet(), ep)
+}
+
+String switchMultilevelStartLvChCmd(Boolean upDown, Integer duration, Integer ep=0) {
+	//upDown: false=up, true=down
+	return secureCmd(zwave.switchMultilevelV4.switchMultilevelStartLevelChange(upDown: upDown, ignoreStartLevel:1, dimmingDuration: duration), ep)
+}
+
+String switchMultilevelStopLvChCmd(Integer ep=0) {
+	return secureCmd(zwave.switchMultilevelV4.switchMultilevelStopLevelChange(), ep)
+}
+
+String meterGetCmd(meter, Integer ep=0) {
+	return secureCmd(zwave.meterV3.meterGet(scale: meter.scale), ep)
+}
+
+String meterResetCmd(Integer ep=0) {
+	return secureCmd(zwave.meterV3.meterReset(), ep)
 }
 
 String wakeUpIntervalGetCmd() {
@@ -671,28 +757,25 @@ String batteryGetCmd() {
 	return secureCmd(zwave.batteryV1.batteryGet())
 }
 
-String sensorBinaryGetCmd() {
-	return secureCmd(zwave.sensorBinaryV1.sensorBinaryGet())
-}
-
 String sensorMultilevelGetCmd(sensorType) {
-	return secureCmd(zwave.sensorMultilevelV5.sensorMultilevelGet(scale: 0x00, sensorType: sensorType))
+	Integer scale = (temperatureScale == "F" ? 1 : 0)
+	return secureCmd(zwave.sensorMultilevelV5.sensorMultilevelGet(scale: scale, sensorType: sensorType))
 }
 
-String notificationGetCmd(notificationType, eventType) {
-	return secureCmd(zwave.notificationV3.notificationGet(notificationType: notificationType, v1AlarmType:0, event: eventType))
+String notificationGetCmd(notificationType, eventType, Integer ep=0) {
+	return secureCmd(zwave.notificationV3.notificationGet(notificationType: notificationType, v1AlarmType:0, event: eventType), ep)
 }
 
-String configSetCmd(Map param, Number value) {
+String configSetCmd(Map param, Integer value) {
 	//Convert from unsigned to signed for scaledConfigurationValue
 	Long sizeFactor = Math.pow(256,param.size).round()
 	if (value >= sizeFactor/2) { value -= sizeFactor }
 
-	return secureCmd(zwave.configurationV2.configurationSet(parameterNumber: param.num, size: param.size, scaledConfigurationValue: value))
+	return secureCmd(zwave.configurationV1.configurationSet(parameterNumber: param.num, size: param.size, scaledConfigurationValue: value))
 }
 
 String configGetCmd(Map param) {
-	return secureCmd(zwave.configurationV2.configurationGet(parameterNumber: param.num))
+	return secureCmd(zwave.configurationV1.configurationGet(parameterNumber: param.num))
 }
 
 List configSetGetCmd(Map param, Integer value) {
@@ -732,7 +815,7 @@ String multiChannelEncap(hubitat.zwave.Command cmd, ep) {
 @Field static Map<String, Map> configsList = new java.util.concurrent.ConcurrentHashMap()
 Integer getParamStoredValue(Integer paramNum) {
 	//Using Data (Map) instead of State Variables
-	TreeMap configsMap = getParamStoredMap()
+	Map configsMap = getParamStoredMap()
 	return safeToInt(configsMap[paramNum], null)
 }
 
@@ -741,11 +824,11 @@ void setParamStoredValue(Integer paramNum, Integer value) {
 	TreeMap configsMap = getParamStoredMap()
 	configsMap[paramNum] = value
 	configsList[device.id][paramNum] = value
-	device.updateDataValue("configVals", configsMap.inspect())
+	//device.updateDataValue("configVals", configsMap.inspect())
 }
 
 Map getParamStoredMap() {
-	Map configsMap = configsList[device.id]
+	TreeMap configsMap = configsList[device.id]
 	if (configsMap == null) {
 		configsMap = [:]
 		if (device.getDataValue("configVals")) {
@@ -789,8 +872,15 @@ void updateParamsList() {
 				if (changes.options) { tmpMap.options = changes.options.clone() }
 			}
 		}
+		tmpMap.changesFR.each { m, changes ->
+			if (firmware >= m.getFrom() && firmware <= m.getTo()) {
+				tmpMap.putAll(changes)
+				if (changes.options) { tmpMap.options = changes.options.clone() }
+			}
+		}
 		//Don't need this anymore
 		tmpMap.remove("changes")
+		tmpMap.remove("changesFR")
 
 		//Set DEFAULT tag on the default
 		tmpMap.options.each { k, val ->
@@ -806,7 +896,7 @@ void updateParamsList() {
 	//Remove invalid or not supported by firmware
 	tmpList.removeAll { it.num == null }
 	tmpList.removeAll { firmware < (it.firmVer ?: 0) }
-	tmpList.removeAll { 
+	tmpList.removeAll {
 		if (it.firmVerM) {
 			(firmware-(int)firmware)*100 < it.firmVerM[(int)firmware]
 		}
@@ -832,7 +922,7 @@ List<Map> getConfigParams() {
 	if (!device) return []
 	String devModel = state.deviceModel
 	BigDecimal firmware = firmwareVersion
-	
+
 	//Try to get device model if not set
 	if (devModel) { verifyParamsList() }
 	else          { runInMillis(200, setDevModel) }
@@ -843,28 +933,22 @@ List<Map> getConfigParams() {
 }
 
 //Get a single param by name or number
-Map getParam(def search) {
-	//logDebug "Get Param (${search} | ${search.class})"
-	Map param = [:]
-
+Map getParam(String search) {
 	verifyParamsList()
-	if (search instanceof String) {
-		param = configParams.find{ it.name == search }
-	} else {
-		param = configParams.find{ it.num == search }
-	}
-
-	return param
+	return configParams.find{ it.name == search }
+}
+Map getParam(Integer search) {
+	verifyParamsList()
+	return configParams.find{ it.num == search }
 }
 
 //Convert Param Value if Needed
 BigDecimal getParamValue(String paramName) {
 	return getParamValue(getParam(paramName))
 }
-BigDecimal getParamValue(Map param, Boolean adjust=false) {
+BigDecimal getParamValue(Map param) {
 	if (param == null) return
 	BigDecimal paramVal = safeToDec(settings."configParam${param.num}", param.defaultVal)
-	if (!adjust) return paramVal
 
 	//Reset hidden parameters to default
 	if (param.hidden && settings."configParam${param.num}" != null) {
@@ -876,60 +960,122 @@ BigDecimal getParamValue(Map param, Boolean adjust=false) {
 	return paramVal
 }
 
-//Preference Helpers
+/*** Preference Helpers ***/
+String fmtTitle(String str) {
+	return "<strong>${str}</strong>"
+}
 String fmtDesc(String str) {
 	return "<div style='font-size: 85%; font-style: italic; padding: 1px 0px 4px 2px;'>${str}</div>"
 }
-String fmtTitle(String str) {
-	return "<strong>${str}</strong>"
+String fmtHelpInfo(String str) {
+	String info = "${DRIVER} v${VERSION}"
+	String prefLink = "<a href='${COMM_LINK}' target='_blank'>${str}<br><div style='font-size: 70%;'>${info}</div></a>"
+	String topStyle = "style='font-size: 18px; padding: 1px 12px; border: 2px solid Crimson; border-radius: 6px;'" //SlateGray
+	String topLink = "<a ${topStyle} href='${COMM_LINK}' target='_blank'>${str}<br><div style='font-size: 14px;'>${info}</div></a>"
+
+	return "<div style='font-size: 160%; font-style: bold; padding: 2px 0px; text-align: center;'>${prefLink}</div>" +
+		"<div style='text-align: center; position: absolute; top: 46px; right: 60px; padding: 0px;'><ul class='nav'><li>${topLink}</ul></li></div>"
+}
+
+private getTimeOptionsRange(String name, Integer multiplier, List range) {
+	return range.collectEntries{ [(it*multiplier): "${it} ${name}${it == 1 ? '' : 's'}"] }
 }
 
 /*** Other Helper Functions ***/
 void updateSyncingStatus(Integer delay=2) {
 	runIn(delay, refreshSyncStatus)
-	sendEventLog(name:"syncStatus", value:"Syncing...")
+	sendEvent(name:"syncStatus", value:"Syncing...")
 }
 
 void refreshSyncStatus() {
 	Integer changes = pendingChanges
-	sendEventLog(name:"syncStatus", value:(changes ? "${changes} Pending Changes" : "Synced"))
+	sendEvent(name:"syncStatus", value:(changes ? "${changes} Pending Changes" : "Synced"))
+	device.updateDataValue("configVals", getParamStoredMap()?.inspect())
 }
 
 void updateLastCheckIn() {
-	if (!isDuplicateCommand(state.lastCheckInTime, 60000)) {
-		state.lastCheckInTime = new Date().time
-		state.lastCheckInDate = convertToLocalTimeString(new Date())
+	def nowDate = new Date()
+	state.lastCheckInDate = convertToLocalTimeString(nowDate)
+
+	Long lastExecuted = state.lastCheckInTime ?: 0
+	Long allowedMil = 24 * 60 * 60 * 1000   //24 Hours
+	if (lastExecuted + allowedMil <= nowDate.time) {
+		state.lastCheckInTime = nowDate.time
+		if (lastExecuted) runIn(4, doCheckIn)
+		scheduleCheckIn()
 	}
+}
+
+void scheduleCheckIn() {
+	def cal = Calendar.getInstance()
+	cal.add(Calendar.MINUTE, -1)
+	Integer hour = cal[Calendar.HOUR_OF_DAY]
+	Integer minute = cal[Calendar.MINUTE]
+	schedule( "0 ${minute} ${hour} * * ?", doCheckIn)
+}
+
+void doCheckIn() {
+	String devModel = (state.deviceModel ?: "NA") + (state.subModel ? ".${state.subModel}" : "")
+	String checkUri = "http://jtp10181.gateway.scarf.sh/${DRIVER}/chk-${devModel}-v${VERSION}"
+
+	try {
+		httpGet(uri:checkUri, timeout:4) { logDebug "Driver ${DRIVER} ${devModel} v${VERSION}" }
+		state.lastCheckInTime = (new Date()).time
+	} catch (Exception e) { }
 }
 
 Integer getPendingChanges() {
 	Integer configChanges = configParams.count { param ->
-		Integer paramVal = getParamValue(param, true)
+		Integer paramVal = getParamValueAdj(param)
 		((paramVal != null) && (paramVal != getParamStoredValue(param.num)))
 	}
 	Integer pendingAssocs = Math.ceil(getConfigureAssocsCmds()?.size()/2) ?: 0
 	return (!state.resyncAll ? (configChanges + pendingAssocs) : configChanges)
 }
 
+//iOS app has no way of clearing string input so workaround is to have users enter 0.
+String getAssocDNIsSetting(grp) {
+	String val = settings."assocDNI$grp"
+	return ((val && (val.trim() != "0")) ? val : "")
+}
+
+List getAssocDNIsSettingNodeIds(grp) {
+	String dni = getAssocDNIsSetting(grp)
+	List nodeIds = convertHexListToIntList(dni.split(","))
+
+	if (dni && !nodeIds) {
+		logWarn "'${dni}' is not a valid value for the 'Device Associations - Group ${grp}' setting.  All z-wave devices have a 2 character Device Network ID and if you're entering more than 1, use commas to separate them."
+	}
+	else if (nodeIds.size() > maxAssocNodes) {
+		logWarn "The 'Device Associations - Group ${grp}' setting contains more than ${maxAssocNodes} IDs so some (or all) may not get associated."
+	}
+
+	return nodeIds
+}
+
+//Used with configure to reset variables
 void clearVariables() {
 	logWarn "Clearing state variables and data..."
 
 	//Backup
-	String devModel = state.deviceModel 
+	String devModel = state.deviceModel
+	def engTime = state.energyTime
 
 	//Clears State Variables
 	state.clear()
 
-	//Clear Data from other Drivers
+	//Clear Config Data
+	configsList["${device.id}"] = [:]
 	device.removeDataValue("configVals")
-	device.removeDataValue("protocolVersion")
-	device.removeDataValue("hardwareVersion")
+	//Clear Data from other Drivers
 	device.removeDataValue("zwaveAssociationG1")
 	device.removeDataValue("zwaveAssociationG2")
 	device.removeDataValue("zwaveAssociationG3")
 
 	//Restore
 	if (devModel) state.deviceModel = devModel
+	if (engTime) state.energyTime = engTime
+	//setDevModel()
 }
 
 //Stash the model in a state variable
@@ -938,11 +1084,6 @@ String setDevModel(BigDecimal firmware) {
 	def devTypeId = convertIntListToHexList([safeToInt(device.getDataValue("deviceType")),safeToInt(device.getDataValue("deviceId"))],4)
 	String devModel = deviceModelNames[devTypeId.join(":")] ?: "UNK00"
 	if (!firmware) { firmware = firmwareVersion }
-
-	//Extra check for ZSE40 (700 Series)
-	if (devModel == "ZSE40" && getDataValue("inClusters").contains("0x9F")) {
-		devModel = "ZSE40-700"
-	}
 
 	state.deviceModel = devModel
 	device.updateDataValue("deviceModel", devModel)
@@ -986,6 +1127,19 @@ List convertIntListToHexList(intList, pad=2) {
 	return hexList
 }
 
+List convertHexListToIntList(String[] hexList) {
+	def intList = []
+
+	hexList?.each {
+		try {
+			it = it.trim()
+			intList.add(Integer.parseInt(it, 16))
+		}
+		catch (e) { }
+	}
+	return intList
+}
+
 Integer validateRange(val, Integer defaultVal, Integer lowVal, Integer highVal) {
 	Integer intVal = safeToInt(val, defaultVal)
 	if (intVal > highVal) {
@@ -998,7 +1152,7 @@ Integer validateRange(val, Integer defaultVal, Integer lowVal, Integer highVal) 
 }
 
 Integer safeToInt(val, defaultVal=0) {
-	if ("${val}"?.isInteger())		{ return "${val}".toInteger() } 
+	if ("${val}"?.isInteger())		{ return "${val}".toInteger() }
 	else if ("${val}"?.isNumber())	{ return "${val}".toDouble()?.round() }
 	else { return defaultVal }
 }
@@ -1011,7 +1165,7 @@ BigDecimal safeToDec(val, defaultVal=0, roundTo=-1) {
 	return decVal
 }
 
-boolean isDuplicateCommand(lastExecuted, allowedMil) {
+Boolean isDuplicateCommand(Long lastExecuted, Long allowedMil) {
 	!lastExecuted ? false : (lastExecuted + allowedMil > new Date().time)
 }
 
@@ -1019,26 +1173,84 @@ boolean isDuplicateCommand(lastExecuted, allowedMil) {
 /*******************************************************************
  ***** Logging Functions
 ********************************************************************/
-void logsOff() {}
+//Logging Level Options
+@Field static final Map LOG_LEVELS = [0:"Error", 1:"Warn", 2:"Info", 3:"Debug", 4:"Trace"]
+@Field static final Map LOG_TIMES = [0:"Indefinitely", 30:"30 Minutes", 60:"1 Hour", 120:"2 Hours", 180:"3 Hours", 360:"6 Hours", 720:"12 Hours", 1440:"24 Hours"]
+
+/*//Command to set log level, OPTIONAL. Can be copied to driver or uncommented here
+command "setLogLevel", [ [name:"Select Level*", description:"Log this type of message and above", type: "ENUM", constraints: LOG_LEVELS],
+	[name:"Debug/Trace Time", description:"Timer for Debug/Trace logging", type: "ENUM", constraints: LOG_TIMES] ]
+*/
+
+//Additional Preferences
+preferences {
+	//Logging Options
+	input name: "logLevel", type: "enum", title: fmtTitle("Logging Level"),
+		description: fmtDesc("Logs selected level and above"), defaultValue: 3, options: LOG_LEVELS
+	input name: "logLevelTime", type: "enum", title: fmtTitle("Logging Level Time"),
+		description: fmtDesc("Time to enable Debug/Trace logging"),defaultValue: 30, options: LOG_TIMES
+	//Help Link
+	input name: "helpInfo", type: "hidden", title: fmtHelpInfo("Community Link")
+}
+
+//Call this function from within updated() and configure() with no parameters: checkLogLevel()
+void checkLogLevel(Map levelInfo = [level:null, time:null]) {
+	unschedule(logsOff)
+	//Set Defaults
+	if (settings.logLevel == null) device.updateSetting("logLevel",[value:"3", type:"enum"])
+	if (settings.logLevelTime == null) device.updateSetting("logLevelTime",[value:"30", type:"enum"])
+	//Schedule turn off and log as needed
+	if (levelInfo.level == null) levelInfo = getLogLevelInfo()
+	String logMsg = "Logging Level is: ${LOG_LEVELS[levelInfo.level]} (${levelInfo.level})"
+	if (levelInfo.level >= 3 && levelInfo.time > 0) {
+		logMsg += " for ${LOG_TIMES[levelInfo.time]}"
+		runIn(60*levelInfo.time, logsOff)
+	}
+	logInfo(logMsg)
+}
+
+//Function for optional command
+void setLogLevel(String levelName, String timeName=null) {
+	Integer level = LOG_LEVELS.find{ levelName.equalsIgnoreCase(it.value) }.key
+	Integer time = LOG_TIMES.find{ timeName.equalsIgnoreCase(it.value) }.key
+	device.updateSetting("logLevel",[value:"${level}", type:"enum"])
+	checkLogLevel(level: level, time: time)
+}
+
+Map getLogLevelInfo() {
+	Integer level = settings.logLevel as Integer ?: 3
+	Integer time = settings.logLevelTime as Integer ?: 0
+	return [level: level, time: time]
+}
+
+//Legacy Support
 void debugLogsOff() {
-	logWarn "Debug logging disabled..."
+	logWarn "Debug logging toggle disabled..."
+	device.removeSetting("logEnable")
 	device.updateSetting("debugEnable",[value:"false",type:"bool"])
 }
 
+//Current Support
+void logsOff() {
+	logWarn "Debug and Trace logging disabled..."
+	if (logLevelInfo.level >= 3) {
+		device.updateSetting("logLevel",[value:"2", type:"enum"])
+	}
+}
+
+//Logging Functions
+void logErr(String msg) {
+	log.error "${device.displayName}: ${msg}"
+}
 void logWarn(String msg) {
-	log.warn "${device.displayName}: ${msg}"
+	if (logLevelInfo.level>=1) log.warn "${device.displayName}: ${msg}"
 }
-
 void logInfo(String msg) {
-	if (txtEnable) log.info "${device.displayName}: ${msg}"
+	if (logLevelInfo.level>=2) log.info "${device.displayName}: ${msg}"
 }
-
 void logDebug(String msg) {
-	if (debugEnable) log.debug "${device.displayName}: ${msg}"
+	if (logLevelInfo.level>=3) log.debug "${device.displayName}: ${msg}"
 }
-
-//For Extreme Code Debugging - tracing commands
 void logTrace(String msg) {
-	//Uncomment to Enable
-	//log.trace "${device.displayName}: ${msg}"
+	if (logLevelInfo.level>=4) log.trace "${device.displayName}: ${msg}"
 }
