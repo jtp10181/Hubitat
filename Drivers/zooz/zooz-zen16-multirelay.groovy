@@ -10,6 +10,10 @@
 
 Changelog:
 
+## [0.2.0] - 2023-11-09 (@jtp10181)
+  - Fixed issue with settings if both v1 and v2 in use on same hub
+  - Added subModel state
+
 ## [0.1.0] - 2023-11-03 (@jtp10181)
   - Initial alpha release
 
@@ -31,7 +35,7 @@ Changelog:
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "0.1.0"
+@Field static final String VERSION = "0.2.0"
 @Field static final String DRIVER = "Zooz-ZEN16"
 @Field static final String COMM_LINK = "https://community.hubitat.com/t/zooz-relays-advanced/98194"
 @Field static final Map deviceModelNames = ["A000:A00A":"ZEN16"]
@@ -116,7 +120,7 @@ void debugShowVars() {
 	0:"Momentary (for lights only)",
 	1:"Toggle Switch On/Off",
 	2:"Toggle Switch State Change",
-	3:"Garage Door Momentary (for Z-Wave control)",
+	3:"Garage Door Momentary (Z-Wave control)",
 	4:"Water Sensor",
 	5:"Heat Sensor",
 	6:"Motion Sensor",
@@ -124,7 +128,7 @@ void debugShowVars() {
 	8:"Carbon Monoxide (CO) Sensor",
 	9:"Carbon Dioxide (CO₂) Sensor",
 	10:"Dry Contact Switch/Sensor",
-	11:"Relay: Garage Door / Input: Contact Sensor"
+	11:"R: Garage Door / Sw: Contact Sensor"
 ]
 @Field static final Map inputCapabilities = [			
 	4:"WaterSensor",
@@ -406,10 +410,9 @@ void updated() {
 			}
 		}
 	}
-
-
 	device.updateSetting("childCleanup",[value:"false",type:"bool"])
 
+	setSubModel()
 	executeProbeCmds()
 	runIn(1, executeConfigureCmds)
 	runIn(3, createChildDevices)
@@ -417,6 +420,7 @@ void updated() {
 
 void refresh() {
 	logDebug "refresh..."
+	setSubModel()
 	executeRefreshCmds()
 }
 
@@ -579,34 +583,28 @@ void zwaveEvent(hubitat.zwave.commands.multichannelv3.MultiChannelEndPointReport
 void zwaveEvent(hubitat.zwave.commands.sensorbinaryv2.SensorBinaryReport cmd, ep=0) {
 	logTrace "${cmd} (ep ${ep})"
 	
+	//SensorBinary is depreciated so using NotificationReport
 	/*String sensorEp = "${ep}S"
 	switch (cmd.sensorType as Integer) {
 		case 0x01:  //General Purpose (ZEN16 Dry Contact)
-			logDebug "${cmd} (ep ${ep}) -- Dry Contact Switch"
 			sendEventLog(name:"switch", value:(cmd.sensorValue ? "on" : "off"), sensorEp)
 			break
 		case 0x03:  //CO
-			logDebug "${cmd} (ep ${ep}) -- CO"
 			sendEventLog(name:"carbonMonoxide", value:(cmd.sensorValue ? "detected" : "clear"), sensorEp)
 			break
 		case 0x04:  //CO2
-			logDebug "${cmd} (ep ${ep}) -- CO2"
 			sendEventLog(name:"carbonDioxide", value:(cmd.sensorValue ? "detected" : "clear"), sensorEp)
 			break
 		case 0x05:  //Heat
-			logDebug "${cmd} (ep ${ep}) -- Heat"
 			sendEventLog(name:"switch", value:(cmd.sensorValue ? "on" : "off"), sensorEp)
 			break
 		case 0x06:  //Water
-			logDebug "${cmd} (ep ${ep}) -- Water"
 			sendEventLog(name:"water", value:(cmd.sensorValue ? "wet" : "dry"), sensorEp)
 			break
 		case 0x0A:  //Door/Window
-			logDebug "${cmd} (ep ${ep}) -- Contact"
 			sendEventLog(name:"contact", value:(cmd.sensorValue ? "open" : "closed"), sensorEp)
 			break
 		case 0x0C:  //Motion
-			logDebug "${cmd} (ep ${ep}) -- Motion"
 			sendEventLog(name:"motion", value:(cmd.sensorValue ? "active" : "inactive"), sensorEp)
 			break
 		default:
@@ -808,26 +806,31 @@ String getOnOffCmds(val, Integer endPoint=0) {
 List getChildRefreshCmds(Integer endPoint) {
 	List<String> cmds = []
 	cmds << switchBinaryGetCmd(endPoint)
-	//cmds << secureCmd(zwave.sensorBinaryV2.sensorBinaryGet(sensorType:0xFF), endPoint)
 	cmds << notificationGetCmd(0xFF, 0x00, endPoint)
+	//cmds << secureCmd(zwave.sensorBinaryV2.sensorBinaryGet(sensorType:0xFF), endPoint)
 	return cmds
 }
 
+private setSubModel() {
+	String devModel = state.deviceModel
+	if (!state.subModel) {
+		if (devModel == "ZEN16" && firmwareVersion >= 2.0) {
+			state.subModel = "v2"
+		}
+	}
+}
 
 /*******************************************************************
  ***** Required for Library
 ********************************************************************/
 //These have to be added in after the fact or groovy complains
 void fixParamsMap() {
-	if (firmwareVersion >= 2) {
-		paramsMap.inputSw1.options << inputTypes
-		paramsMap.inputSw2.options << inputTypes
-		paramsMap.inputSw3.options << inputTypes
-	} else {
-		paramsMap.inputSw1.options << inputTypes.findAll { it.key <= 3 }
-		paramsMap.inputSw2.options << inputTypes.findAll { it.key <= 3 }
-		paramsMap.inputSw3.options << inputTypes.findAll { it.key <= 3 }
-	}
+	paramsMap.inputSw1.options = inputTypes.findAll { it.key <= 3 }
+	paramsMap.inputSw2.options = inputTypes.findAll { it.key <= 3 }
+	paramsMap.inputSw3.options = inputTypes.findAll { it.key <= 3 }
+	paramsMap.inputSw1.changesFR = [(2..99):[options: inputTypes]]
+	paramsMap.inputSw2.changesFR = [(2..99):[options: inputTypes]]
+	paramsMap.inputSw3.changesFR = [(2..99):[options: inputTypes]]
 	paramsMap['settings'] = [fixed: true]
 }
 
@@ -981,6 +984,7 @@ Changelog:
 2023-05-24 - Fix for possible RuntimeException error due to bad cron string
 2023-10-25 - Less savings to the configVals data, and some new functions
 2023-10-26 - Added some battery shortcut functions
+2023-11-08 - Added ability to adjust settings on firmware range
 
 ********************************************************************/
 
@@ -1257,8 +1261,15 @@ void updateParamsList() {
 				if (changes.options) { tmpMap.options = changes.options.clone() }
 			}
 		}
+		tmpMap.changesFR.each { m, changes ->
+			if (firmware >= m.getFrom() && firmware <= m.getTo()) {
+				tmpMap.putAll(changes)
+				if (changes.options) { tmpMap.options = changes.options.clone() }
+			}
+		}
 		//Don't need this anymore
 		tmpMap.remove("changes")
+		tmpMap.remove("changesFR")
 
 		//Set DEFAULT tag on the default
 		tmpMap.options.each { k, val ->
@@ -1393,11 +1404,11 @@ void scheduleCheckIn() {
 }
 
 void doCheckIn() {
-	String devModel = state.deviceModel ?: "NA"
-	String checkUri = "http://jtp10181.gateway.scarf.sh/${DRIVER}/chk-${devModel}-${VERSION}"
+	String devModel = (state.deviceModel ?: "NA") + (state.subModel ? ".${state.subModel}" : "")
+	String checkUri = "http://jtp10181.gateway.scarf.sh/${DRIVER}/chk-${devModel}-v${VERSION}"
 
 	try {
-		httpGet(uri:checkUri, timeout:4) { logDebug "Driver ${DRIVER} v${VERSION}" }
+		httpGet(uri:checkUri, timeout:4) { logDebug "Driver ${DRIVER} ${devModel} v${VERSION}" }
 		state.lastCheckInTime = (new Date()).time
 	} catch (Exception e) { }
 }
