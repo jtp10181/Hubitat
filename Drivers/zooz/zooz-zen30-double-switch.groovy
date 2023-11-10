@@ -9,9 +9,13 @@
 
 Changelog:
 
+## [2.0.0.b1] - 2023-XX-XX (@jtp10181)
+  - Removed unnecessary association attrbiutes
+  - Put in proper multichannel lifeline association
+  - Depreciated the childDevices command
+
 ## [1.6.4] - 2022-12-13 (@jtp10181)
-  ### Added
-  - Command to set any parameter (can be used in RM)
+  - Added Command to set any parameter (can be used in RM)
 
 ## [1.6.3] - 2022-11-22 (@jtp10181)
   ### Changed
@@ -121,7 +125,7 @@ Changelog:
   - Was running configure twice at install
   - Added initialize to the install function
 
-## 1.3.2 - 2021-01-09 (@jtp10181) ZEN30 ONLY
+## [1.3.2] - 2021-01-09 (@jtp10181) ZEN30 ONLY
   ### Added
   - Merged changes into ZEN30 ST driver and ported
   - Param number to title for easy match up to manufacturer docs
@@ -133,19 +137,11 @@ Changelog:
 NOTICE: This file has been modified by *Jeff Page* under compliance with
 	the Apache 2.0 License from the original work of *Kevin LaFramboise*.
 
-Below link and changes are for original source (Kevin LaFramboise @krlaframboise)
+Below link is for original source (Kevin LaFramboise @krlaframboise)
 https://github.com/krlaframboise/SmartThings/blob/master/devicetypes/krlaframboise/zooz-double-switch.src/zooz-double-switch.groovy
 
- *    1.0.2 (10/15/2020)
- *      - Changed icon from dimmer to light.
  *
- *    1.0.1 (08/10/2020)
- *      - Added ST workaround for S2 Supervision bug with MultiChannel Devices.
- *
- *    1.0 (06/23/2020)
- *      - Initial Release
- *
- *  Copyright 2020-2022 Jeff Page
+ *  Copyright 2020-2023 Jeff Page
  *  Copyright 2020 Kevin LaFramboise
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -164,7 +160,7 @@ https://github.com/krlaframboise/SmartThings/blob/master/devicetypes/krlaframboi
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "1.6.4"
+@Field static final String VERSION = "2.0.0.b1"
 @Field static final Map deviceModelNames = ["A000:A008":"ZEN30"]
 
 metadata {
@@ -192,7 +188,7 @@ metadata {
 			[name:"Duration", type:"NUMBER", description:"Transition duration in seconds"] ]
 
 		command "refreshParams"
-		command "childDevices", [[name:"Select One*", type: "ENUM", constraints: ["Create","Remove"] ]]
+		//command "childDevices", [[name:"Select One*", type: "ENUM", constraints: ["Create","Remove"] ]]
 		command "setLED", [
 			[name:"Select LED*", type: "ENUM", constraints: ["Dimmer","Relay"] ],
 			[name:"Select Color*", type: "ENUM", constraints: ledColorOptions] ]
@@ -206,9 +202,6 @@ metadata {
 		//DEBUGGING
 		//command "debugShowVars"
 
-		attribute "assocDNI2", "string"
-		attribute "assocDNI3", "string"
-		attribute "assocDNI4", "string"
 		attribute "syncStatus", "string"
 
 		fingerprint mfr:"027A", prod:"A000", deviceId:"A008", inClusters:"0x5E,0x26,0x25,0x85,0x8E,0x59,0x55,0x86,0x72,0x5A,0x73,0x70,0x5B,0x60,0x9F,0x6C,0x7A" //Zooz ZEN30 Double Switch
@@ -520,7 +513,7 @@ String setLevel(Number level, Number duration=null) {
 
 List<String> startLevelChange(direction, duration=null) {
 	Boolean upDown = (direction == "down") ? true : false
-	Integer durationVal = validateRange(duration, getParamValue("holdRampRate"), 0, 127)
+	Integer durationVal = validateRange(duration, getParamValue("holdRampRate") as Integer, 0, 127)
 	logDebug "startLevelChange($direction) for ${durationVal}s"
 
 	List<String> cmds = [switchMultilevelStartLvChCmd(upDown, durationVal)]
@@ -620,6 +613,7 @@ void setLEDMode(String which, String modeName) {
 
 void refreshParams() {
 	List<String> cmds = []
+	cmds << mcAssociationGetCmd(1)
 	for (int i = 1; i <= maxAssocGroups; i++) {
 		cmds << associationGetCmd(i)
 	}
@@ -817,7 +811,7 @@ void zwaveEvent(hubitat.zwave.commands.associationv2.AssociationReport cmd) {
 
 	if (grp == 1) {
 		logDebug "Lifeline Association: ${cmd.nodeId}"
-		state.group1Assoc = (cmd.nodeId == [zwaveHubNodeId]) ? true : false
+		//state.group1Assoc = (cmd.nodeId == [zwaveHubNodeId]) ? true : false
 	}
 	else if (grp > 1 && grp <= maxAssocGroups) {
 		logDebug "Group $grp Association: ${cmd.nodeId}"
@@ -829,7 +823,7 @@ void zwaveEvent(hubitat.zwave.commands.associationv2.AssociationReport cmd) {
 		}
 
 		String dnis = convertIntListToHexList(cmd.nodeId)?.join(", ")
-		sendEventLog(name:"assocDNI$grp", value:(dnis ?: "none"))
+		//sendEventLog(name:"assocDNI$grp", value:(dnis ?: "none"))
 		device.updateSetting("assocDNI$grp", [value:"${dnis}", type:"string"])
 	}
 	else {
@@ -837,13 +831,13 @@ void zwaveEvent(hubitat.zwave.commands.associationv2.AssociationReport cmd) {
 	}
 }
 
-void zwaveEvent(hubitat.zwave.commands.multichannelassociationv2.MultiChannelAssociationReport cmd) {
+void zwaveEvent(hubitat.zwave.commands.multichannelassociationv3.MultiChannelAssociationReport cmd) {
 	logTrace "${cmd}"
 	updateSyncingStatus()
 
 	if (cmd.groupingIdentifier == 1) {
-		logDebug "Lifeline Association (MC): ${cmd.multiChannelNodeIds}"
-		state.group1McAssoc = (cmd.multiChannelNodeIds == [[nodeId:zwaveHubNodeId, bitAddress:0, endPointId:0]] ? true : false)
+		logDebug "Lifeline Association: ${cmd.nodeId} | MC: ${cmd.multiChannelNodeIds}"
+		state.group1Assoc = (cmd.multiChannelNodeIds == [[nodeId:zwaveHubNodeId, bitAddress:0, endPointId:0]] ? true : false)
 	}
 	else {
 		logDebug "Unhandled Group: $cmd"
@@ -865,7 +859,10 @@ void zwaveEvent(hubitat.zwave.commands.switchbinaryv1.SwitchBinaryReport cmd, ep
 		sendSwitchEvents(cmd.value, type, ep)
 	}
 	else {
-		logDebug "Unexpected: ${cmd} (endPoint ${ep})"
+		logDebug "Unexpected (Ignored): ${cmd} (endPoint ${ep})"
+
+		//Check on Relay Status
+		sendCommands(switchBinaryGetCmd(endPoints.relay))
 	}
 
 }
@@ -971,7 +968,7 @@ String associationGetCmd(Integer group) {
 }
 
 String mcAssociationGetCmd(Integer group) {
-	return secureCmd(zwave.multiChannelAssociationV2.multiChannelAssociationGet(groupingIdentifier: group))
+	return secureCmd(zwave.multiChannelAssociationV3.multiChannelAssociationGet(groupingIdentifier: group))
 }
 
 String versionGetCmd() {
@@ -1180,21 +1177,14 @@ void clearVariables() {
 List getConfigureAssocsCmds() {
 	List<String> cmds = []
 
-	if ((!state.group1Assoc && !state.group1McAssoc) || state.resyncAll) {
-		cmds << associationSetCmd(1, [zwaveHubNodeId])
-		cmds << associationGetCmd(1)
-		if (state.group1Assoc == false) {
-			logDebug "Adding missing lifeline association..."
-			//Check MultiChannel Association
-			cmds << mcAssociationGetCmd(1)
-		}
+	if (!state.group1Assoc || state.resyncAll) {
+		logDebug "Need to set lifeline association..."
+		cmds << secureCmd(zwave.multiChannelAssociationV3.multiChannelAssociationRemove(groupingIdentifier: 1, nodeId:[], multiChannelNodeIds:[]))
+		cmds << secureCmd(zwave.multiChannelAssociationV3.multiChannelAssociationSet(groupingIdentifier: 1, multiChannelNodeIds: [[nodeId: zwaveHubNodeId, bitAddress:0, endPointId: 0]]))
+		cmds << mcAssociationGetCmd(1)
 	}
 
 	for (int i = 2; i <= maxAssocGroups; i++) {
-		if (!device.currentValue("assocDNI$i")) {
-			sendEventLog(name:"assocDNI$i", value:"none")
-		}
-
 		List<String> cmdsEach = []
 		List settingNodeIds = getAssocDNIsSettingNodeIds(i)
 

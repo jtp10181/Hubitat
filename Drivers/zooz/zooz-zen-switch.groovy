@@ -11,9 +11,11 @@
 
 Changelog:
 
+## [2.0.0.b1] - 2023-XX-XX (@jtp10181)
+  - Added paramters 16 and 17 to ZEN21 for fw 4.05
+
 ## [1.6.4] - 2022-12-13 (@jtp10181)
-  ### Added
-  - Command to set any parameter (can be used in RM)
+  - Added Command to set any parameter (can be used in RM)
 
 ## [1.6.3] - 2022-11-22 (@jtp10181)
   ### Changed
@@ -125,7 +127,7 @@ Changelog:
   - Was running configure twice at install
   - Added initialize to the install function
 
-## 1.3.2 - 2021-01-09 (@jtp10181) ZEN30 ONLY
+## [1.3.2] - 2021-01-09 (@jtp10181) ZEN30 ONLY
   ### Added
   - Merged changes into ZEN30 ST driver and ported
   - Param number to title for easy match up to manufacturer docs
@@ -186,14 +188,11 @@ Changelog:
 NOTICE: This file has been modified by *Jeff Page* under compliance with
 	the Apache 2.0 License from the original work of *Zooz*.
 
-Below link and changes are for original source (Kevin LaFramboise @krlaframboise)
+Below link is for original source (Kevin LaFramboise @krlaframboise)
 https://github.com/krlaframboise/SmartThings/tree/master/devicetypes/zooz/
 
-## 3.0 / 4.0 - 2020-09-16 (@krlaframboise / Zooz)
-  - Initial Release (for SmartThings)
-
  *
- *  Copyright 2020-2022 Jeff Page
+ *  Copyright 2020-2023 Jeff Page
  *  Copyright 2020 Zooz
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -212,7 +211,7 @@ https://github.com/krlaframboise/SmartThings/tree/master/devicetypes/zooz/
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "1.6.4"
+@Field static final String VERSION = "2.0.0.b1"
 @Field static final Map deviceModelNames =
 	["B111:1E1C":"ZEN21", "B111:251C":"ZEN23", "A000:A001":"ZEN26",
 	"7000:A001":"ZEN71", "7000:A003":"ZEN73", "7000:A006":"ZEN76"]
@@ -403,7 +402,7 @@ void debugShowVars() {
 		title: "Programming from the Paddle",
 		size: 1, defaultVal: 0,
 		options: [0:"Enabled", 1:"Disabled"],
-		changes: [21:[num: null, firmVer:null], 23:[num: 15, firmVer:4.04], 26:[num: 15, firmVer:3.41],
+		changes: [21:[num: 17, firmVer:4.05], 23:[num: 15, firmVer:4.04], 26:[num: 15, firmVer:3.41],
 			22:[num: 24, firmVer:4.04], 24:[num: 24, firmVer:4.04], 27:[num: 24, firmVer:3.04],
 			71:[num: 17, firmVer:2.0], 73:[num: 17, firmVer:2.0], 76:[num: 17, firmVer:2.0],
 			72:[num: 26, firmVer:2.0], 74:[num: 26, firmVer:2.0], 77:[num: 26, firmVer:2.0]
@@ -426,7 +425,7 @@ void debugShowVars() {
 		size: 1, defaultVal: 0,
 		options: [0:"Up is Scene 2, Down is Scene 1", 1:"Up is Scene 1, Down is Scene 2"],
 		hidden: true,
-		changes: [21:[num: null, firmVer:null], 23:[num: 14, firmVer:4.04], 26:[num: 14, firmVer:3.41],
+		changes: [21:[num: 16, firmVer:4.05], 23:[num: 14, firmVer:4.04], 26:[num: 14, firmVer:3.41],
 			22:[num: 23, firmVer:4.04], 24:[num: 23, firmVer:4.04], 27:[num: 23, firmVer:3.04],
 		],
 	],

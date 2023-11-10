@@ -11,9 +11,11 @@
 
 Changelog:
 
+## [2.0.0.b1] - 2023-XX-XX (@jtp10181)
+  - Added possible workaround for Homekit integration issues
+
 ## [1.6.4] - 2022-12-13 (@jtp10181)
-  ### Added
-  - Command to set any parameter (can be used in RM)
+  - Added Command to set any parameter (can be used in RM)
 
 ## [1.6.3] - 2022-11-22 (@jtp10181)
   ### Changed
@@ -125,7 +127,7 @@ Changelog:
   - Was running configure twice at install
   - Added initialize to the install function
 
-## 1.3.2 - 2021-01-09 (@jtp10181) ZEN30 ONLY
+## [1.3.2] - 2021-01-09 (@jtp10181) ZEN30 ONLY
   ### Added
   - Merged changes into ZEN30 ST driver and ported
   - Param number to title for easy match up to manufacturer docs
@@ -186,14 +188,11 @@ Changelog:
 NOTICE: This file has been modified by *Jeff Page* under compliance with
 	the Apache 2.0 License from the original work of *Zooz*.
 
-Below link and changes are for original source (Kevin LaFramboise @krlaframboise)
+Below link is for original source (Kevin LaFramboise @krlaframboise)
 https://github.com/krlaframboise/SmartThings/tree/master/devicetypes/zooz/
 
-## 3.0 / 4.0 - 2020-09-16 (@krlaframboise / Zooz)
-  - Initial Release (for SmartThings)
-
  *
- *  Copyright 2020-2022 Jeff Page
+ *  Copyright 2020-2023 Jeff Page
  *  Copyright 2020 Zooz
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -212,7 +211,7 @@ https://github.com/krlaframboise/SmartThings/tree/master/devicetypes/zooz/
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "1.6.4"
+@Field static final String VERSION = "2.0.0.b1"
 @Field static final Map deviceModelNames =
 	["B112:1F1C":"ZEN22", "B112:261C":"ZEN24", "A000:A002":"ZEN27",
 	"7000:A002":"ZEN72", "7000:A004":"ZEN74", "7000:A007":"ZEN77"]
@@ -616,6 +615,10 @@ void refresh() {
 String on() {
 	logDebug "on..."
 	flashStop()
+	if (state.turningOn) {
+		logDebug "on() blocked due to turningOn: true"
+		return
+	}
 	return getOnOffCmds(0xFF)
 }
 
@@ -627,12 +630,13 @@ String off() {
 
 String setLevel(Number level, Number duration=null) {
 	logDebug "setLevel($level, $duration)..."
+	state.turningOn = true
 	return getSetLevelCmds(level, duration)
 }
 
 List<String> startLevelChange(direction, duration=null) {
 	Boolean upDown = (direction == "down") ? true : false
-	Integer durationVal = validateRange(duration, getParamValue("holdRampRate"), 0, 127)
+	Integer durationVal = validateRange(duration, getParamValue("holdRampRate") as Integer, 0, 127)
 	logDebug "startLevelChange($direction) for ${durationVal}s"
 
 	List<String> cmds = [switchMultilevelStartLvChCmd(upDown, durationVal)]
@@ -1327,6 +1331,7 @@ void sendSwitchEvents(rawVal, String type, Integer ep=0) {
 	String value = (rawVal ? "on" : "off")
 	String desc = "switch is turned ${value}" + (type ? " (${type})" : "")
 	sendEventLog(name:"switch", value:value, type:type, desc:desc, ep)
+	state.remove("turningOn")
 
 	if (rawVal) {
 		Integer level = (rawVal == 99 ? 100 : rawVal)
