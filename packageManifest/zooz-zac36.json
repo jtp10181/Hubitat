@@ -1,18 +1,18 @@
 {
   "packageName": "Zooz ZAC36 Titan Valve Actuator",
   "author": "Jeff Page (@jtp10181)",
-  "minimumHEVersion": "2.3.5",
-  "dateReleased": "2023-10-31",
+  "minimumHEVersion": "2.3.4",
+  "dateReleased": "2023-11-11",
   "documentationLink": "https://github.com/jtp10181/Hubitat/tree/main/Drivers/zooz",
-  "communityLink": "https://community.hubitat.com/t/zooz-zac38/122755",
-  "releaseNotes": "Version [1.0.0.b2] - 2023-10-31\n  - Fixed unhandled power source debug messages\n  - Fixed Temp Units setting so it converts the defaults and settings from F<>C\n  - Removed supervision Encapsulation code (not fully working)\n  - Settings verbiage cleanup and clarification\n\nVersion [1.0.0.b1] - 2023-10-23\n  - Code refactor to new code base and library\n  - Fixed on/off commands to follow Zooz docs\n  - Updated all event senders to log (debug) unknown events\n  - Added setParamater command\n  - Added new paramaters for firmware 1.15/1.19\n  - Added battery and powerSource capabilities\n  - Added support for power and battery notifications",
-  "version": "1.0.0.b2",
+  "communityLink": "https://community.hubitat.com/t/zooz-zac36/79426",
+  "releaseNotes": "Version [1.0.0] - 2023-11-11\n  - Code refactor to new code base and library\n  - Fixed on/off commands to follow Zooz docs\n  - Updated all event senders to log (debug) unknown events\n  - Added setParamater command\n  - Added new paramaters for firmware 1.15/1.19\n  - Added battery and powerSource capabilities\n  - Added support for power and battery notifications\n  - Fixed Temp Units setting so it converts the defaults and settings from F<>C\n  - Removed supervision Encapsulation code (not fully working)\n  - Settings verbiage cleanup and clarification",
+  "version": "1.0.0.4",
   "drivers": [
     {
       "id": "f514baca-a796-4f7e-90cc-7f29132a0e0d",
       "name": "Zooz ZAC36 Titan Valve Actuator",
       "namespace": "jtp10181",
-      "location": "https://jtp10181.gateway.scarf.sh/zooz-zac36-v1.0.0.b2.groovy",
+      "location": "https://jtp10181.gateway.scarf.sh/zooz-zac36-v1.0.0.groovy",
       "required": true
     }
   ]

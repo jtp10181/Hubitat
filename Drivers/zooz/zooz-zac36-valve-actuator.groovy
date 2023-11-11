@@ -9,7 +9,7 @@
 
 Changelog:
 
-## [1.0.0.b2] - 2023-10-31 (@jtp10181)
+## [1.0.0] - 2023-11-11 (@jtp10181)
   - Code refactor to new code base and library
   - Fixed on/off commands to follow Zooz docs
   - Updated all event senders to log (debug) unknown events
@@ -53,7 +53,7 @@ https://github.com/krlaframboise/SmartThings/tree/master/devicetypes/zooz/zooz-z
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "1.0.0.b2"
+@Field static final String VERSION = "1.0.0"
 @Field static final String DRIVER = "Zooz-ZAC36"
 @Field static final String COMM_LINK = "https://community.hubitat.com/t/zooz-zac36/79426"
 @Field static final Map deviceModelNames = ["0101:0036":"ZAC36"]
@@ -191,7 +191,8 @@ void debugShowVars() {
 		range: "0..255", hB: true
 	],
 	freezeControl: [ num:42, 
-		title: "Valve Control during Freeze Alarm", 
+		title: "Valve Control during Freeze Alarm",
+		description: "Disabled prevents ANY valve movement during a freeze alarm",
 		size: 1, defaultVal: 1, 
 		options: [1:"Allowed", 0:"Disabled"]
 	],
@@ -212,10 +213,10 @@ void debugShowVars() {
 		range: "0..99"
 	],
 	keylockProtection: [num:67, 
-		title:"Z-Wave Button Lock Protection",
-		description: "Enabled prevents the Z-Wave button from being locked (see manual)",
+		title:"Z-Wave Button Lock",
+		description: "When enabled the button no longer controls the valve",
 		size: 1, defaultVal: 0, 
-		options: [1:"Enabled", 0:"Disabled"]
+		options: [0:"Disabled", 1:"Enabled"]
 	],
 	testMode: [ num:97, 
 		title: "Auto Test Mode",
@@ -554,7 +555,7 @@ void zwaveEvent(hubitat.zwave.commands.batteryv1.BatteryReport cmd, ep=0) {
 
 void zwaveEvent(hubitat.zwave.commands.notificationv8.NotificationReport cmd, ep=0) {
 	logTrace "${cmd} (ep ${ep})"
-	switch (cmd.notificationType) {
+	switch (cmd.notificationType as Integer) {
 		case heatAlarm:
 			sendHeatAlarmEvent(cmd.event, cmd.eventParameter[0])
 			break
@@ -823,6 +824,7 @@ Changelog:
 2023-05-24 - Fix for possible RuntimeException error due to bad cron string
 2023-10-25 - Less savings to the configVals data, and some new functions
 2023-10-26 - Added some battery shortcut functions
+2023-11-08 - Added ability to adjust settings on firmware range
 
 ********************************************************************/
 
@@ -1099,8 +1101,15 @@ void updateParamsList() {
 				if (changes.options) { tmpMap.options = changes.options.clone() }
 			}
 		}
+		tmpMap.changesFR.each { m, changes ->
+			if (firmware >= m.getFrom() && firmware <= m.getTo()) {
+				tmpMap.putAll(changes)
+				if (changes.options) { tmpMap.options = changes.options.clone() }
+			}
+		}
 		//Don't need this anymore
 		tmpMap.remove("changes")
+		tmpMap.remove("changesFR")
 
 		//Set DEFAULT tag on the default
 		tmpMap.options.each { k, val ->
@@ -1235,11 +1244,11 @@ void scheduleCheckIn() {
 }
 
 void doCheckIn() {
-	String devModel = state.deviceModel ?: "NA"
-	String checkUri = "http://jtp10181.gateway.scarf.sh/${DRIVER}/chk-${devModel}-${VERSION}"
+	String devModel = (state.deviceModel ?: "NA") + (state.subModel ? ".${state.subModel}" : "")
+	String checkUri = "http://jtp10181.gateway.scarf.sh/${DRIVER}/chk-${devModel}-v${VERSION}"
 
 	try {
-		httpGet(uri:checkUri, timeout:4) { logDebug "Driver ${DRIVER} v${VERSION}" }
+		httpGet(uri:checkUri, timeout:4) { logDebug "Driver ${DRIVER} ${devModel} v${VERSION}" }
 		state.lastCheckInTime = (new Date()).time
 	} catch (Exception e) { }
 }
