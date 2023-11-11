@@ -12,7 +12,8 @@ Changelog:
 ## [2.0.0.b1] - 2023-XX-XX (@jtp10181)
   - Removed unnecessary association attrbiutes
   - Put in proper multichannel lifeline association
-  - Depreciated the childDevices command
+  - Depreciated the childDevices and refreshParams commands
+  - Fix for new firmware using different endpoint numbers
 
 ## [1.6.4] - 2022-12-13 (@jtp10181)
   - Added Command to set any parameter (can be used in RM)
@@ -187,7 +188,7 @@ metadata {
 			[name:"Direction*", description:"Direction for level change request", type: "ENUM", constraints: ["up","down"]],
 			[name:"Duration", type:"NUMBER", description:"Transition duration in seconds"] ]
 
-		command "refreshParams"
+		//command "refreshParams"
 		//command "childDevices", [[name:"Select One*", type: "ENUM", constraints: ["Create","Remove"] ]]
 		command "setLED", [
 			[name:"Select LED*", type: "ENUM", constraints: ["Dimmer","Relay"] ],
@@ -470,8 +471,9 @@ void configure() {
 	}
 
 	updateSyncingStatus(6)
-	runIn(1, executeRefreshCmds)
-	runIn(4, executeConfigureCmds)
+	runIn(1, executeProbeCmds)
+	runIn(2, executeRefreshCmds)
+	runIn(5, executeConfigureCmds)
 }
 
 void updated() {
@@ -481,6 +483,7 @@ void updated() {
 
 	if (debugEnable) runIn(1800, debugLogsOff)
 
+	executeProbeCmds()
 	runIn(1, executeConfigureCmds)
 }
 
@@ -497,18 +500,18 @@ void refresh() {
 String on() {
 	logDebug "on..."
 	flashStop()
-	return getOnOffCmds(0xFF)
+	return getOnOffCmds(0xFF, endPoints.dimmer)
 }
 
 String off() {
 	logDebug "off..."
 	flashStop()
-	return getOnOffCmds(0x00)
+	return getOnOffCmds(0x00, endPoints.dimmer)
 }
 
 String setLevel(Number level, Number duration=null) {
 	logDebug "setLevel($level, $duration)..."
-	return getSetLevelCmds(level, duration)
+	return getSetLevelCmds(level, duration, endPoints.dimmer)
 }
 
 List<String> startLevelChange(direction, duration=null) {
@@ -516,7 +519,8 @@ List<String> startLevelChange(direction, duration=null) {
 	Integer durationVal = validateRange(duration, getParamValue("holdRampRate") as Integer, 0, 127)
 	logDebug "startLevelChange($direction) for ${durationVal}s"
 
-	List<String> cmds = [switchMultilevelStartLvChCmd(upDown, durationVal)]
+	List<String> cmds = []
+	cmds << switchMultilevelStartLvChCmd(upDown, durationVal, endPoints.dimmer)
 
 	//Hack for devices that don't implement the duration correctly
 	// Map rampRateParam = getParam("rampRate")
@@ -532,7 +536,7 @@ List<String> startLevelChange(direction, duration=null) {
 
 String stopLevelChange() {
 	logDebug "stopLevelChange()"
-	return switchMultilevelStopLvChCmd()
+	return switchMultilevelStopLvChCmd(endPoints.dimmer)
 }
 
 //Button commands required with capabilities
@@ -569,13 +573,13 @@ void flashHandler(Integer rateToFlash) {
 		logDebug "Flash On"
 		state.flashNext = "off"
 		runInMillis(rateToFlash, flashHandler, [data:rateToFlash])
-		sendCommands(getSetLevelCmds(0xFF, 0))
+		sendCommands(getSetLevelCmds(0xFF, 0, endPoints.dimmer))
 	}
 	else if (state.flashNext == "off") {
 		logDebug "Flash Off"
 		state.flashNext = "on"
 		runInMillis(rateToFlash, flashHandler, [data:rateToFlash])
-		sendCommands(getSetLevelCmds(0x00, 0))
+		sendCommands(getSetLevelCmds(0x00, 0, endPoints.dimmer))
 	}
 }
 
@@ -844,6 +848,19 @@ void zwaveEvent(hubitat.zwave.commands.multichannelassociationv3.MultiChannelAss
 	}
 }
 
+void zwaveEvent(hubitat.zwave.commands.multichannelv3.MultiChannelEndPointReport cmd, ep=0) {
+	logTrace "${cmd} (ep ${ep})"
+
+	if (cmd.endPoints > 0) {
+		logDebug "Endpoints (${cmd.endPoints}) Detected and Enabled"
+		state.endPoints = cmd.endPoints
+		if (cmd.endPoints == 2) {
+			endPoints = ["dimmer":1, "relay":2]
+		}
+		runIn(1,childDevicesCreate)
+	}
+}
+
 void zwaveEvent(hubitat.zwave.commands.basicv1.BasicReport cmd, ep=0) {
 	logTrace "${cmd} (ep ${ep})"
 	flashStop() //Stop flashing if its running
@@ -853,7 +870,7 @@ void zwaveEvent(hubitat.zwave.commands.basicv1.BasicReport cmd, ep=0) {
 void zwaveEvent(hubitat.zwave.commands.switchbinaryv1.SwitchBinaryReport cmd, ep=0) {
 	logTrace "${cmd} (ep ${ep})"
 
-	if (ep > 0) { //Should never get this for EP0
+	if (ep == endPoints.relay) {  //Should only get this for the relay
 		String type = (state.relayDigital ? "digital" : "physical")
 		state.remove("relayDigital")
 		sendSwitchEvents(cmd.value, type, ep)
@@ -1138,6 +1155,21 @@ void executeConfigureCmds() {
 	if (cmds) sendCommands(cmds)
 }
 
+void executeProbeCmds() {
+	logTrace "executeProbeCmds..."
+
+	List<String> cmds = []
+
+	//End Points Check
+	if (state.endPoints == null) {
+		logDebug "Probing for Multiple End Points"
+		cmds << secureCmd(zwave.multiChannelV3.multiChannelEndPointGet())
+		state.endPoints = 0
+	}
+
+	if (cmds) sendCommands(cmds)
+}
+
 void executeRefreshCmds() {
 	List<String> cmds = []
 
@@ -1271,7 +1303,7 @@ void sendEventLog(Map evt, Integer ep=0) {
 	evt.descriptionText = evt.desc ?: "${evt.name} set to ${evt.value}${evt.unit ?: ''}"
 
 	//Endpoint Events
-	if (ep) {
+	if (ep == endPoints.relay) {
 		def childDev = childDevices[0]
 		String logEp = "(RELAY) "
 
@@ -1284,7 +1316,7 @@ void sendEventLog(Map evt, Integer ep=0) {
 			}
 		}
 		else {
-			log.error "No device for endpoint (${ep}). Use command button to create child devices."
+			log.error "No device for endpoint (${ep}). Run configure to create child devices."
 		}
 		return
 	}
