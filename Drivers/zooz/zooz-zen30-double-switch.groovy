@@ -9,11 +9,12 @@
 
 Changelog:
 
-## [2.0.0.b1] - 2023-XX-XX (@jtp10181)
+## [2.0.0.b2] - 2023-XX-XX (@jtp10181)
   - Removed unnecessary association attrbiutes
   - Put in proper multichannel lifeline association
   - Depreciated the childDevices and refreshParams commands
   - Fix for new firmware using different endpoint numbers
+  - Added new settings for 800LR (v4) devices
 
 ## [1.6.4] - 2022-12-13 (@jtp10181)
   - Added Command to set any parameter (can be used in RM)
@@ -161,7 +162,7 @@ https://github.com/krlaframboise/SmartThings/blob/master/devicetypes/krlaframboi
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "2.0.0.b1"
+@Field static final String VERSION = "2.0.0.b2"
 @Field static final Map deviceModelNames = ["A000:A008":"ZEN30"]
 
 metadata {
@@ -333,10 +334,17 @@ void debugShowVars() {
 		title: "Dimmer Ramp Rate to Full On/Off",
 		size: 1, defaultVal: 1,
 		options: [0:"Instant On/Off"], //rampRateOptions
+		changesFR: [(3.20..99):[title:"Dimmer Ramp Rate - Physical ON", defaultVal:0]]
+	],
+	rampRateOff: [ num: 31,
+		title: "Dimmer Ramp Rate - Physical OFF",
+		size: 1, defaultVal: 2,
+		options: [0:"Instant Off"], //rampRateOptions
+		firmVer: 3.20
 	],
 	holdRampRate: [ num: 21,
 		title: "Dimming Speed when Paddle is Held",
-		size: 1, defaultVal: 5,
+		size: 1, defaultVal: 4,
 		options: [:], //rampRateOptions
 	],
 	// zwaveRampRate: [ num: 22, // Removed in firmware v1.05
@@ -357,15 +365,20 @@ void debugShowVars() {
 	doubleTapBrightness: [ num: 17,
 		title: "Double Tap Up Brightness",
 		size: 1, defaultVal: 0,
-		options: [0:"Full Brightness (100%)", 1:"Maximum Brightness Parameter"],
+		options: [0:"Full Brightness (100%)", 1:"Maximum Brightness Setting"],
+		changesFR: [(3.20..99):[options: [0:"Full Brightness (100%)", 1:"Custom Brightness Setting", 2:"Maximum Brightness Setting", 3:"Disabled"]]],
 	],
-	doubleTapFunction: [ num: 18,
-		title: "Double Tap Up Function",
+	dimmerTapFunction: [ num: 18,
+		title: "Dimmer Tap Up Functions",
 		size: 1, defaultVal: 0,
-		options: [0:"Full/Maximum Brightness", 1:"Disabled, Single Tap Last Brightness (or Custom)", 2:"Disabled, Single Tap Full/Maximum Brightness"],
+		options: [0:"Single: Last/Custom | Double: Full/Max", 1:"Single: Last/Custom | Double: Disabled", 2:"Single: Full/Max | Double: Disabled"],
+		changesFR: [(3.20..99):[
+			title: "Single Tap Turn On Brightness",
+			options: [0:"Last Brightness", 1:"Custom Brightness Setting", 2:"Maximum Brightness Setting", 3:"Full Brightness (100%)"]
+		]],
 	],
 	customBrightness: [ num: 23,
-		title: "Custom Brightness when Turned On",
+		title: "Custom Brightness Setting",
 		size: 1, defaultVal: 0,
 		options: [0:"Last Brightness Level"], //brightnessOptions
 	],
@@ -423,6 +436,18 @@ void debugShowVars() {
 		options: [0:"Enabled", 1:"Disabled"],
 		firmVerM: [1:11,2:11,3:10]
 	],
+	zwaveRampRateOn: [ num: 32,
+		title: "Dimmer Ramp Rate - Z-Wave ON",
+		size: 1, defaultVal: 255,
+		options: [255:"Match Physical",0:"Instant On"], //rampRateOptions
+		firmVer: 3.20
+	],
+	zwaveRampRateOff: [ num: 33,
+		title: "Dimmer Ramp Rate - Z-Wave OFF",
+		size: 1, defaultVal: 255,
+		options: [255:"Match Physical",0:"Instant Off"], //rampRateOptions
+		firmVer: 3.20
+	]
 ]
 
 //Set Command Class Versions
@@ -440,10 +465,13 @@ void debugShowVars() {
 ]
 
 /*** Static Lists and Settings ***/
-@Field static final Map endPoints = ["dimmer":0, "relay":1]
+//@Field static final Map endPoints = ["dimmer":0, "relay":1]
 @Field static final Map ledModeCmdOptions = [0:"Default", 1:"Reverse", 2:"Off", 3:"On"]
 @Field static final Map ledColorOptions = [0:"White", 1:"Blue", 2:"Green", 3:"Red"]
 
+Map getEndPoints() {
+	return (state.endPoints == 2 ? ["dimmer":1, "relay":2] : ["dimmer":0, "relay":1])
+}
 
 /*******************************************************************
  ***** Core Functions
@@ -467,6 +495,7 @@ void configure() {
 
 	if (!pendingChanges || state.resyncAll == null) {
 		logDebug "Enabling Full Re-Sync"
+		clearVariables()
 		state.resyncAll = true
 	}
 
@@ -799,7 +828,7 @@ void zwaveEvent(hubitat.zwave.commands.configurationv1.ConfigurationReport cmd) 
 		Long sizeFactor = Math.pow(256,param.size).round()
 		if (val < 0) { val += sizeFactor }
 
-		logDebug "${param.name} (#${param.num}) = ${val.toString()}"
+		logDebug "${param.name} - ${param.title} (#${param.num}) = ${val.toString()}"
 		setParamStoredValue(param.num, val)
 	}
 	else {
@@ -854,9 +883,9 @@ void zwaveEvent(hubitat.zwave.commands.multichannelv3.MultiChannelEndPointReport
 	if (cmd.endPoints > 0) {
 		logDebug "Endpoints (${cmd.endPoints}) Detected and Enabled"
 		state.endPoints = cmd.endPoints
-		if (cmd.endPoints == 2) {
-			endPoints = ["dimmer":1, "relay":2]
-		}
+		// if (cmd.endPoints == 2) {
+		// 	endPoints = ["dimmer":1, "relay":2]
+		// }
 		runIn(1,childDevicesCreate)
 	}
 }
@@ -915,7 +944,7 @@ void zwaveEvent(hubitat.zwave.commands.centralscenev3.CentralSceneNotification c
 				logDebug "Unknown sceneNumber: ${cmd}"
 		}
 
-		switch (cmd.keyAttributes){
+		switch (cmd.keyAttributes) {
 			case 0:
 				btnVal = "${actionType} 1x"
 				break
@@ -1149,7 +1178,6 @@ void executeConfigureCmds() {
 		}
 	}
 
-	if (state.resyncAll) clearVariables()
 	state.resyncAll = false
 
 	if (cmds) sendCommands(cmds)
@@ -1417,8 +1445,15 @@ void updateParamsList() {
 				if (changes.options) { tmpMap.options = changes.options.clone() }
 			}
 		}
+		tmpMap.changesFR.each { m, changes ->
+			if (firmware >= m.getFrom() && firmware <= m.getTo()) {
+				tmpMap.putAll(changes)
+				if (changes.options) { tmpMap.options = changes.options.clone() }
+			}
+		}
 		//Don't need this anymore
 		tmpMap.remove("changes")
+		tmpMap.remove("changesFR")
 
 		//Set DEFAULT tag on the default
 		tmpMap.options.each { k, val ->
@@ -1462,6 +1497,9 @@ void fixParamsMap() {
 	paramsMap.autoOffIntervalRelay.options << autoOnOffIntervalOptions
 	paramsMap.autoOnIntervalRelay.options << autoOnOffIntervalOptions
 	paramsMap.rampRate.options << rampRateOptions
+	paramsMap.rampRateOff.options << rampRateOptions
+	paramsMap.zwaveRampRateOn.options << rampRateOptions
+	paramsMap.zwaveRampRateOff.options << rampRateOptions
 	paramsMap.holdRampRate.options << rampRateOptions
 	paramsMap.minimumBrightness.options << brightnessOptions
 	paramsMap.maximumBrightness.options << brightnessOptions
