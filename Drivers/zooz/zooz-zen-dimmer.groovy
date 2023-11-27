@@ -11,8 +11,12 @@
 
 Changelog:
 
-## [2.0.0.b1] - 2023-XX-XX (@jtp10181)
-  - Added possible workaround for Homekit integration issues
+## [2.0.0.b2] - 2023-XX-XX (@jtp10181)
+  - Rearranged functions to get ready for library code
+  - Removed unnecessary association attrbiutes
+  - Depreciated the childDevices and refreshParams commands
+  - Support for new settings added in 10.40 base firmware
+  - Added possible workaround for Homekit integration issues (dimmer only)
 
 ## [1.6.4] - 2022-12-13 (@jtp10181)
   - Added Command to set any parameter (can be used in RM)
@@ -211,7 +215,9 @@ https://github.com/krlaframboise/SmartThings/tree/master/devicetypes/zooz/
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "2.0.0.b1"
+@Field static final String VERSION = "2.0.0.b2"
+@Field static final String DRIVER = "Zooz-Dimmers"
+@Field static final String COMM_LINK = "https://community.hubitat.com/t/zooz-zen-switches-dimmers-advanced/58649"
 @Field static final Map deviceModelNames =
 	["B112:1F1C":"ZEN22", "B112:261C":"ZEN24", "A000:A002":"ZEN27",
 	"7000:A002":"ZEN72", "7000:A004":"ZEN74", "7000:A007":"ZEN77"]
@@ -232,7 +238,7 @@ metadata {
 		capability "PushableButton"
 		capability "HoldableButton"
 		capability "ReleasableButton"
-		//capability "DoubleTapableButton"
+		capability "DoubleTapableButton"
 		capability "Flash"
 
 		//Modified from default to add duration argument
@@ -240,7 +246,7 @@ metadata {
 			[name:"Direction*", description:"Direction for level change request", type: "ENUM", constraints: ["up","down"]],
 			[name:"Duration", type:"NUMBER", description:"Transition duration in seconds"] ]
 
-		command "refreshParams"
+		//command "refreshParams"
 		command "setLED", [
 			[name:"Select Color*", description:"Works ONLY on ZEN7x Series!", type: "ENUM", constraints: ledColorOptions] ]
 		command "setLEDMode", [
@@ -252,9 +258,6 @@ metadata {
 		//DEBUGGING
 		//command "debugShowVars"
 
-		attribute "assocDNI2", "string"
-		attribute "assocDNI3", "string"
-		attribute "assocDNI4", "string"
 		attribute "syncStatus", "string"
 
 		fingerprint mfr:"027A", prod:"B112", deviceId:"1F1C", inClusters:"0x5E,0x26,0x70,0x85,0x8E,0x59,0x55,0x86,0x72,0x5A,0x73,0x5B,0x9F,0x6C,0x7A" //Zooz ZEN22 Dimmer
@@ -308,23 +311,19 @@ metadata {
 	}
 }
 
-//Preference Helpers
-String fmtDesc(String str) {
-	return "<div style='font-size: 85%; font-style: italic; padding: 1px 0px 4px 2px;'>${str}</div>"
-}
-String fmtTitle(String str) {
-	return "<strong>${str}</strong>"
-}
-
 void debugShowVars() {
+	log.warn "settings ${settings.hashCode()} ${settings}"
 	log.warn "paramsList ${paramsList.hashCode()} ${paramsList}"
 	log.warn "paramsMap ${paramsMap.hashCode()} ${paramsMap}"
-	log.warn "settings ${settings.hashCode()} ${settings}"
 }
 
 //Association Settings
 @Field static final int maxAssocGroups = 4
 @Field static final int maxAssocNodes = 5
+
+/*** Static Lists and Settings ***/
+@Field static final Map ledModeCmdOptions = [0:"Default", 1:"Reverse", 2:"Off", 3:"On"]
+@Field static final Map ledColorOptions = [0:"White", 1:"Blue", 2:"Green", 3:"Red"]
 
 //Main Parameters Listing
 @Field static Map<String, Map> paramsMap =
@@ -454,16 +453,13 @@ void debugShowVars() {
 		size: 1, defaultVal: 0,
 		options: [0:"Disabled", 1:"Enabled"],
 	],
-	// sceneControl3w: [ num: null,
-	// 	title: "Scene Control Events From 3-Way",
-	// 	description: "Enable to get push and multi-tap events from a mechanical switch connected in a direct 3-way",
-	// 	size: 1, defaultVal: 0,
-	// 	options: [0:"Disabled", 1:"Enabled"],
-	// 	changes: [
-	// 		72:[num:31, firmVer:2.10, firmVerM:[10:30]],
-	// 		77:[num:31, firmVer:3.10, firmVerM:[10:30, 2:20]]
-	// 	]
-	// ],
+	sceneControl3w: [ num: null,
+		title: "Scene Control Events From 3-Way",
+		description: "Enable to get push and multi-tap events from a mechanical switch connected in a direct 3-way",
+		size: 1, defaultVal: 0,
+		options: [0:"Disabled", 1:"Enabled"],
+		changes: [72:[num:31, firmVer:2.20, firmVerM:[10:40]]]
+	],
 	//loadControlParam - Dimmers=15, ZEN73/76=12, Other Switches=11
 	loadControl: [ num: 15,
 		title: "Smart Bulb Mode - Load Control",
@@ -525,6 +521,15 @@ void debugShowVars() {
 			72:[], 74:[], 77:[firmVer:2.10, firmVerM:[10:20]]
 		],
 	],
+	ledFlash: [ num: null,
+		title: "LED Flash when Settings Changed",
+		size: 1, defaultVal: 0,
+		options: [0:"Flash Enabled", 1:"Flash Disabled"],
+		changes: [
+			72:[num:32, firmVer:2.20, firmVerM:[10:40]],
+			77:[num:32, firmVer:3.20, firmVerM:[10:40, 2:30]]
+		]
+	],
 	associationReports: [ num: 7,
 		title: "Send Status Report to Associations",
 		size: 1, defaultVal: 15,
@@ -535,14 +540,15 @@ void debugShowVars() {
 			13:"Physical Tap On ZEN / Z-Wave Command / Timer", 14:"Physical Tap On ZEN / 3-Way Switch / Z-Wave Command / Timer",
 			15:"All Of The Above"
 		],
-		changes: [71:[num:null], 72:[firmVer:2.10, firmVerM:[10:30]]]
+		changes: [72:[firmVer:2.10, firmVerM:[10:30]]]
 	],
+	//Hidden Settings to set Defaults
 	sceneMapping: [ num: null,
 		title: "Central Scene Mapping",
 		size: 1, defaultVal: 0,
 		options: [0:"Up is Scene 2, Down is Scene 1", 1:"Up is Scene 1, Down is Scene 2"],
 		hidden: true,
-		changes: [21:[num: null, firmVer:null], 23:[num: 14, firmVer:4.04], 26:[num: 14, firmVer:3.41],
+		changes: [21:[num: 16, firmVer:4.05], 23:[num: 14, firmVer:4.04], 26:[num: 14, firmVer:3.41],
 			22:[num: 23, firmVer:4.04], 24:[num: 23, firmVer:4.04], 27:[num: 23, firmVer:3.04],
 		],
 	],
@@ -554,15 +560,10 @@ void debugShowVars() {
 	0x5B: 3,	// CentralScene (centralscenev3)
 	0x6C: 1,	// Supervision (supervisionv1)
 	0x70: 1,	// Configuration (configurationv1)
-	0x72: 2,	// Manufacturer Specific (manufacturerspecificv2)
 	0x85: 2,	// Association (associationv2)
 	0x86: 2,	// Version (versionv2)
 	0x8E: 3,	// Multi Channel Association (multichannelassociationv3)
 ]
-
-/*** Static Lists and Settings ***/
-@Field static final Map ledModeCmdOptions = [0:"Default", 1:"Reverse", 2:"Off", 3:"On"]
-@Field static final Map ledColorOptions = [0:"White", 1:"Blue", 2:"Green", 3:"Red"]
 
 
 /*******************************************************************
@@ -764,6 +765,338 @@ String setParameter(paramNum, value, size = null) {
 /*******************************************************************
  ***** Z-Wave Reports
 ********************************************************************/
+// void parse(String description) {
+// 	zwaveParse(description)
+// }
+// void zwaveEvent(hubitat.zwave.commands.multichannelv3.MultiChannelCmdEncap cmd) {
+// 	zwaveMultiChannel(cmd)
+// }
+// void zwaveEvent(hubitat.zwave.commands.supervisionv1.SupervisionGet cmd, ep=0) {
+// 	zwaveSupervision(cmd,ep)
+// }
+
+//Handles reports back from Supervision Encapsulated Commands
+void zwaveEvent(hubitat.zwave.commands.supervisionv1.SupervisionReport cmd, ep=0 ) {
+	logDebug "Supervision Report - SessionID: ${cmd.sessionID}, Status: ${cmd.status}"
+	if (supervisedPackets["${device.id}"] == null) { supervisedPackets["${device.id}"] = [:] }
+
+	switch (cmd.status as Integer) {
+		case 0x00: // "No Support"
+		case 0x01: // "Working"
+		case 0x02: // "Failed"
+			logWarn "Supervision NOT Successful - SessionID: ${cmd.sessionID}, Status: ${cmd.status}"
+			break
+		case 0xFF: // "Success"
+			supervisedPackets["${device.id}"].remove(cmd.sessionID)
+			break
+	}
+}
+
+void zwaveEvent(hubitat.zwave.commands.configurationv1.ConfigurationReport cmd) {
+	logTrace "${cmd}"
+	updateSyncingStatus()
+
+	Map param = getParam(cmd.parameterNumber)
+	Integer val = cmd.scaledConfigurationValue
+
+	if (param) {
+		//Convert scaled signed integer to unsigned
+		Long sizeFactor = Math.pow(256,param.size).round()
+		if (val < 0) { val += sizeFactor }
+
+		logDebug "${param.name} - ${param.title} (#${param.num}) = ${val.toString()}"
+		setParamStoredValue(param.num, val)
+	}
+	else {
+		logDebug "Parameter #${cmd.parameterNumber} = ${val.toString()}"
+	}
+}
+
+void zwaveEvent(hubitat.zwave.commands.associationv2.AssociationReport cmd) {
+	logTrace "${cmd}"
+	updateSyncingStatus()
+
+	Integer grp = cmd.groupingIdentifier
+
+	if (grp == 1) {
+		logDebug "Lifeline Association: ${cmd.nodeId}"
+		state.group1Assoc = (cmd.nodeId == [zwaveHubNodeId]) ? true : false
+	}
+	else if (grp > 1 && grp <= maxAssocGroups) {
+		logDebug "Group $grp Association: ${cmd.nodeId}"
+
+		if (cmd.nodeId.size() > 0) {
+			state["assocNodes$grp"] = cmd.nodeId
+		} else {
+			state.remove("assocNodes$grp".toString())
+		}
+
+		String dnis = convertIntListToHexList(cmd.nodeId)?.join(", ")
+		//sendEventLog(name:"assocDNI$grp", value:(dnis ?: "none"))
+		device.updateSetting("assocDNI$grp", [value:"${dnis}", type:"string"])
+	}
+	else {
+		logDebug "Unhandled Group: $cmd"
+	}
+}
+
+void zwaveEvent(hubitat.zwave.commands.basicv1.BasicReport cmd, ep=0) {
+	logTrace "${cmd} (ep ${ep})"
+	flashStop() //Stop flashing if its running
+	sendSwitchEvents(cmd.value, "physical", ep)
+}
+
+void zwaveEvent(hubitat.zwave.commands.switchbinaryv1.SwitchBinaryReport cmd, ep=0) {
+	logTrace "${cmd} (ep ${ep})"
+	sendSwitchEvents(cmd.value, "digital", ep)
+}
+
+void zwaveEvent(hubitat.zwave.commands.switchmultilevelv2.SwitchMultilevelReport cmd, ep=0) {
+	logTrace "${cmd} (ep ${ep})"
+	sendSwitchEvents(cmd.value, "digital", ep)
+}
+
+void zwaveEvent(hubitat.zwave.commands.centralscenev3.CentralSceneNotification cmd, ep=0){
+	logTrace "${cmd} (ep ${ep})"
+
+	//Flip the sceneNumber if needed (per parameter setting)
+	if (settings.sceneReverse) {
+		if (cmd.sceneNumber == 1) cmd.sceneNumber = 2
+		else if (cmd.sceneNumber == 2) cmd.sceneNumber = 1
+		logTrace "Scene Reversed: ${cmd}"
+	}
+
+	Map scene = [name: "pushed", value: cmd.sceneNumber, desc: "", type:"physical", isStateChange:true]
+	String actionType
+	String btnVal
+
+	switch (cmd.sceneNumber) {
+		case 1:
+			actionType = "up"
+			break
+		case 2:
+			actionType = "down"
+			break
+		default:
+			logDebug "Unknown sceneNumber: ${cmd}"
+	}
+
+	switch (cmd.keyAttributes) {
+		case 0:
+			btnVal = "${actionType} 1x"
+			break
+		case 1:
+			scene.name = "released"
+			btnVal = "${actionType} released"
+			break
+		case 2:
+			scene.name = "held"
+			btnVal = "${actionType} held"
+			break
+		case {it >=3 && it <= 6}:
+			if      (cmd.sceneNumber == 1) scene.value = (cmd.keyAttributes * 2) - 3
+			else if (cmd.sceneNumber == 2) scene.value = (cmd.keyAttributes * 2) - 2
+			btnVal = "${actionType} ${cmd.keyAttributes - 1}x"
+			break
+		default:
+			logDebug "Unknown keyAttributes: ${cmd}"
+	}
+
+	if (actionType && btnVal) {
+		scene.desc = "button ${scene.value} ${scene.name} [${btnVal}]"
+		sendEventLog(scene)
+	}
+}
+
+
+/*******************************************************************
+ ***** Event Senders
+********************************************************************/
+//evt = [name, value, type, unit, desc, isStateChange]
+void sendEventLog(Map evt, Integer ep=0) {
+	//Set description if not passed in
+	evt.descriptionText = evt.desc ?: "${evt.name} set to ${evt.value}${evt.unit ?: ''}"
+
+	//Main Device Events
+	if (device.currentValue(evt.name).toString() != evt.value.toString() || evt.isStateChange) {
+		logInfo "${evt.descriptionText}"
+	} else {
+		logDebug "${evt.descriptionText} [NOT CHANGED]"
+	}
+	//Always send event to update last activity
+	sendEvent(evt)
+}
+
+void sendSwitchEvents(rawVal, String type, Integer ep=0) {
+	String value = (rawVal ? "on" : "off")
+	String desc = "switch is turned ${value}" + (type ? " (${type})" : "")
+	sendEventLog(name:"switch", value:value, type:type, desc:desc, ep)
+	state.remove("turningOn")
+
+	if (rawVal) {
+		Integer level = (rawVal == 99 ? 100 : rawVal)
+		level = convertLevel(level, false)
+
+		desc = "level is set to ${level}%"
+		if (type) desc += " (${type})"
+		if (levelCorrection) desc += " [actual: ${rawVal}]"
+		sendEventLog(name:"level", value:level, type:type, unit:"%", desc:desc, ep)
+	}
+}
+
+void sendBasicButtonEvent(buttonId, String name) {
+	String desc = "button ${buttonId} ${name} (digital)"
+	sendEventLog(name:name, value:buttonId, type:"digital", desc:desc, isStateChange:true)
+}
+
+
+/*******************************************************************
+ ***** Execute / Build Commands
+********************************************************************/
+void executeConfigureCmds() {
+	logDebug "executeConfigureCmds..."
+
+	List<String> cmds = []
+
+	if (!firmwareVersion || !state.deviceModel) {
+		cmds << versionGetCmd()
+	}
+
+	cmds += getConfigureAssocsCmds()
+
+	configParams.each { param ->
+		Integer paramVal = getParamValue(param, true)
+		Integer storedVal = getParamStoredValue(param.num)
+
+		if ((paramVal != null) && (state.resyncAll || (storedVal != paramVal))) {
+			logDebug "Changing ${param.name} (#${param.num}) from ${storedVal} to ${paramVal}"
+			cmds += configSetGetCmd(param, paramVal)
+		}
+	}
+
+	if (state.resyncAll) clearVariables()
+	state.resyncAll = false
+
+	if (cmds) sendCommands(cmds)
+}
+
+void executeRefreshCmds() {
+	List<String> cmds = []
+
+	if (state.resyncAll || !firmwareVersion || !state.deviceModel) {
+		cmds << versionGetCmd()
+	}
+
+	cmds << switchMultilevelGetCmd()
+
+	sendCommands(cmds)
+}
+
+List getConfigureAssocsCmds() {
+	List<String> cmds = []
+
+	if (!state.group1Assoc || state.resyncAll) {
+		cmds << associationSetCmd(1, [zwaveHubNodeId])
+		cmds << associationGetCmd(1)
+		if (state.group1Assoc == false) {
+			logDebug "Adding missing lifeline association..."
+		}
+	}
+
+	for (int i = 2; i <= maxAssocGroups; i++) {
+		List<String> cmdsEach = []
+		List settingNodeIds = getAssocDNIsSettingNodeIds(i)
+
+		//Need to remove first then add in case we are at limit
+		List oldNodeIds = state."assocNodes$i"?.findAll { !(it in settingNodeIds) }
+		if (oldNodeIds) {
+			logDebug "Removing Nodes: Group $i - $oldNodeIds"
+			cmdsEach << associationRemoveCmd(i, oldNodeIds)
+		}
+
+		List newNodeIds = settingNodeIds.findAll { !(it in state."assocNodes$i") }
+		if (newNodeIds) {
+			logDebug "Adding Nodes: Group $i - $newNodeIds"
+			cmdsEach << associationSetCmd(i, newNodeIds)
+		}
+
+		if (cmdsEach || state.resyncAll) {
+			cmdsEach << associationGetCmd(i)
+			cmds += cmdsEach
+		}
+	}
+
+	return cmds
+}
+
+String getOnOffCmds(val, Integer endPoint=0) {
+	return getSetLevelCmds(val ? 0xFF : 0x00, null, endPoint)
+}
+
+String getSetLevelCmds(Number level, Number duration=null, Integer endPoint=0) {
+	Short modelSeries = Math.floor(deviceModelShort/10)
+	Short levelVal = safeToInt(level, 99)
+	// level 0xFF tells device to use last level, 0x00 is off
+	if (levelVal != 0xFF && levelVal != 0x00) {
+		//Convert level in range of min/max
+		levelVal = convertLevel(levelVal, true)
+		levelVal = validateRange(levelVal, 99, 1, 99)
+	}
+
+	// Duration Encoding:
+	// 0x01..0x7F 1 second (0x01) to 127 seconds (0x7F) in 1 second resolution.
+	// 0x80..0xFE 1 minute (0x80) to 127 minutes (0xFE) in 1 minute resolution.
+	// 0xFF Factory default duration.
+
+	//Convert seconds to minutes for 7x only
+	if (modelSeries == 7 && duration > 120) {
+		logDebug "getSetLevelCmds converting ${duration}s to ${Math.round(duration/60)}min"
+		duration = (duration / 60) + 127
+	}
+
+	Short durationVal = validateRange(duration, -1, -1, 254)
+	if (duration == null || durationVal == -1) {
+		// For model 2x switches the 0xFF default is 0 seconds, lets override it.
+		if (modelSeries == 2) {
+			durationVal = getParamValue("rampRate")
+		} else {
+			durationVal = 0xFF
+		}
+	}
+
+	logDebug "getSetLevelCmds output [level:${levelVal}, duration:${durationVal}, endPoint:${endPoint}]"
+	return switchMultilevelSetCmd(levelVal, durationVal, endPoint)
+}
+
+
+/*******************************************************************
+ ***** Required for Library
+********************************************************************/
+//These have to be added in after the fact or groovy complains
+void fixParamsMap() {
+	paramsMap.ledColor.options << ledColorOptions
+	paramsMap.autoOffInterval.options << autoOnOffIntervalOptions
+	paramsMap.autoOnInterval.options << autoOnOffIntervalOptions
+	paramsMap.rampRate.options << rampRateOptions
+	paramsMap.rampRateOff.options << rampRateOptions
+	paramsMap.holdRampRate.options << rampRateOptions
+	paramsMap.zwaveRampRateOn.options << rampRateOptions
+	paramsMap.zwaveRampRateOff.options << rampRateOptions
+	paramsMap.remoteZWaveDim.options << rampRateOptions
+	paramsMap.minimumBrightness.options << brightnessOptions
+	paramsMap.maximumBrightness.options << brightnessOptions
+	paramsMap.customBrightness.options << brightnessOptions
+	paramsMap.nightLight.options << brightnessOptions
+	paramsMap['settings'] = [fixed: true]
+}
+
+
+/*******************************************************************
+ *******************************************************************
+
+/*******************************************************************
+ ***** Z-Wave Reports (COMMON)
+********************************************************************/
 void parse(String description) {
 	hubitat.zwave.Command cmd = zwave.parse(description, commandClassVersions)
 
@@ -777,17 +1110,6 @@ void parse(String description) {
 	//Update Last Activity
 	updateLastCheckIn()
 	sendEvent(name:"numberOfButtons", value:10)
-}
-
-void zwaveEvent(hubitat.zwave.commands.securityv1.SecurityMessageEncapsulation cmd) {
-	def encapsulatedCmd = cmd.encapsulatedCommand(commandClassVersions)
-	logTrace "${cmd} --ENCAP-- ${encapsulatedCmd}"
-
-	if (encapsulatedCmd) {
-		zwaveEvent(encapsulatedCmd)
-	} else {
-		logWarn "Unable to extract encapsulated cmd from $cmd"
-	}
 }
 
 //Decodes Multichannel Encapsulated Commands
@@ -816,23 +1138,6 @@ void zwaveEvent(hubitat.zwave.commands.supervisionv1.SupervisionGet cmd, ep=0) {
 	sendCommands(secureCmd(zwave.supervisionV1.supervisionReport(sessionID: cmd.sessionID, reserved: 0, moreStatusUpdates: false, status: 0xFF, duration: 0), ep))
 }
 
-//Handles reports back from Supervision Encapsulated Commands
-void zwaveEvent(hubitat.zwave.commands.supervisionv1.SupervisionReport cmd, ep=0 ) {
-	logDebug "Supervision Report - SessionID: ${cmd.sessionID}, Status: ${cmd.status}"
-	if (supervisedPackets["${device.id}"] == null) { supervisedPackets["${device.id}"] = [:] }
-
-	switch (cmd.status as Integer) {
-		case 0x00: // "No Support"
-		case 0x01: // "Working"
-		case 0x02: // "Failed"
-			logWarn "Supervision NOT Successful - SessionID: ${cmd.sessionID}, Status: ${cmd.status}"
-			break
-		case 0xFF: // "Success"
-			supervisedPackets["${device.id}"].remove(cmd.sessionID)
-			break
-	}
-}
-
 void zwaveEvent(hubitat.zwave.commands.versionv2.VersionReport cmd) {
 	logTrace "${cmd}"
 
@@ -841,126 +1146,6 @@ void zwaveEvent(hubitat.zwave.commands.versionv2.VersionReport cmd) {
 
 	logDebug "Received Version Report - Firmware: ${fullVersion}"
 	setDevModel(new BigDecimal(fullVersion))
-}
-
-void zwaveEvent(hubitat.zwave.commands.configurationv1.ConfigurationReport cmd) {
-	logTrace "${cmd}"
-	updateSyncingStatus()
-
-	Map param = getParam(cmd.parameterNumber)
-	Integer val = cmd.scaledConfigurationValue
-
-	if (param) {
-		//Convert scaled signed integer to unsigned
-		Long sizeFactor = Math.pow(256,param.size).round()
-		if (val < 0) { val += sizeFactor }
-
-		logDebug "${param.name} (#${param.num}) = ${val.toString()}"
-		setParamStoredValue(param.num, val)
-	}
-	else {
-		logDebug "Parameter #${cmd.parameterNumber} = ${val.toString()}"
-	}
-}
-
-void zwaveEvent(hubitat.zwave.commands.associationv2.AssociationReport cmd) {
-	logTrace "${cmd}"
-	updateSyncingStatus()
-
-	Integer grp = cmd.groupingIdentifier
-
-	if (grp == 1) {
-		logDebug "Lifeline Association: ${cmd.nodeId}"
-		state.group1Assoc = (cmd.nodeId == [zwaveHubNodeId]) ? true : false
-	}
-	else if (grp > 1 && grp <= maxAssocGroups) {
-		logDebug "Group $grp Association: ${cmd.nodeId}"
-
-		if (cmd.nodeId.size() > 0) {
-			state["assocNodes$grp"] = cmd.nodeId
-		} else {
-			state.remove("assocNodes$grp".toString())
-		}
-
-		String dnis = convertIntListToHexList(cmd.nodeId)?.join(", ")
-		sendEventLog(name:"assocDNI$grp", value:(dnis ?: "none"))
-		device.updateSetting("assocDNI$grp", [value:"${dnis}", type:"string"])
-	}
-	else {
-		logDebug "Unhandled Group: $cmd"
-	}
-}
-
-void zwaveEvent(hubitat.zwave.commands.basicv1.BasicReport cmd, ep=0) {
-	logTrace "${cmd} (ep ${ep})"
-	flashStop() //Stop flashing if its running
-	sendSwitchEvents(cmd.value, "physical", ep)
-}
-
-void zwaveEvent(hubitat.zwave.commands.switchbinaryv1.SwitchBinaryReport cmd, ep=0) {
-	logTrace "${cmd} (ep ${ep})"
-	sendSwitchEvents(cmd.value, "digital", ep)
-}
-
-void zwaveEvent(hubitat.zwave.commands.switchmultilevelv2.SwitchMultilevelReport cmd, ep=0) {
-	logTrace "${cmd} (ep ${ep})"
-	sendSwitchEvents(cmd.value, "digital", ep)
-}
-
-void zwaveEvent(hubitat.zwave.commands.centralscenev3.CentralSceneNotification cmd, ep=0){
-	if (state.lastSequenceNumber != cmd.sequenceNumber) {
-		state.lastSequenceNumber = cmd.sequenceNumber
-
-		logTrace "${cmd} (ep ${ep})"
-
-		//Flip the sceneNumber if needed (per parameter setting)
-		if (settings.sceneReverse) {
-			if (cmd.sceneNumber == 1) cmd.sceneNumber = 2
-			else if (cmd.sceneNumber == 2) cmd.sceneNumber = 1
-			logTrace "Scene Reversed: ${cmd}"
-		}
-
-		Map scene = [name: "pushed", value: cmd.sceneNumber, desc: "", type:"physical", isStateChange:true]
-		String actionType
-		String btnVal
-
-		switch (cmd.sceneNumber) {
-			case 1:
-				actionType = "up"
-				break
-			case 2:
-				actionType = "down"
-				break
-			default:
-				logDebug "Unknown sceneNumber: ${cmd}"
-		}
-
-		switch (cmd.keyAttributes){
-			case 0:
-				btnVal = "${actionType} 1x"
-				break
-			case 1:
-				scene.name = "released"
-				btnVal = "${actionType} released"
-				break
-			case 2:
-				scene.name = "held"
-				btnVal = "${actionType} held"
-				break
-			case {it >=3 && it <= 6}:
-				if      (cmd.sceneNumber == 1) scene.value = (cmd.keyAttributes * 2) - 3
-				else if (cmd.sceneNumber == 2) scene.value = (cmd.keyAttributes * 2) - 2
-				btnVal = "${actionType} ${cmd.keyAttributes - 1}x"
-				break
-			default:
-				logDebug "Unknown keyAttributes: ${cmd}"
-		}
-
-		if (actionType && btnVal) {
-			scene.desc = "button ${scene.value} ${scene.name} [${btnVal}]"
-			sendEventLog(scene)
-		}
-	}
 }
 
 void zwaveEvent(hubitat.zwave.Command cmd, ep=0) {
@@ -1141,216 +1326,6 @@ void supervisionCheck(Integer num) {
 
 
 /*******************************************************************
- ***** Execute / Build Commands
-********************************************************************/
-void executeConfigureCmds() {
-	logDebug "executeConfigureCmds..."
-
-	List<String> cmds = []
-
-	if (!firmwareVersion || !state.deviceModel) {
-		cmds << versionGetCmd()
-	}
-
-	cmds += getConfigureAssocsCmds()
-
-	configParams.each { param ->
-		Integer paramVal = getParamValue(param, true)
-		Integer storedVal = getParamStoredValue(param.num)
-
-		if ((paramVal != null) && (state.resyncAll || (storedVal != paramVal))) {
-			logDebug "Changing ${param.name} (#${param.num}) from ${storedVal} to ${paramVal}"
-			cmds += configSetGetCmd(param, paramVal)
-		}
-	}
-
-	if (state.resyncAll) clearVariables()
-	state.resyncAll = false
-
-	if (cmds) sendCommands(cmds)
-}
-
-void executeRefreshCmds() {
-	List<String> cmds = []
-
-	if (state.resyncAll || !firmwareVersion || !state.deviceModel) {
-		cmds << versionGetCmd()
-	}
-
-	cmds << switchMultilevelGetCmd()
-
-	sendCommands(cmds)
-}
-
-void clearVariables() {
-	logWarn "Clearing state variables and data..."
-
-	//Backup
-	String devModel = state.deviceModel
-
-	//Clears State Variables
-	state.clear()
-
-	//Clear Config Data
-	configsList["${device.id}"] = [:]
-	device.removeDataValue("configVals")
-	//Clear Data from other Drivers
-	device.removeDataValue("protocolVersion")
-	device.removeDataValue("hardwareVersion")
-	device.removeDataValue("zwaveAssociationG1")
-	device.removeDataValue("zwaveAssociationG2")
-	device.removeDataValue("zwaveAssociationG3")
-
-	//Restore
-	if (devModel) state.deviceModel = devModel
-}
-
-List getConfigureAssocsCmds() {
-	List<String> cmds = []
-
-	if (!state.group1Assoc || state.resyncAll) {
-		cmds << associationSetCmd(1, [zwaveHubNodeId])
-		cmds << associationGetCmd(1)
-		if (state.group1Assoc == false) {
-			logDebug "Adding missing lifeline association..."
-		}
-	}
-
-	for (int i = 2; i <= maxAssocGroups; i++) {
-		if (!device.currentValue("assocDNI$i")) {
-			sendEventLog(name:"assocDNI$i", value:"none")
-		}
-
-		List<String> cmdsEach = []
-		List settingNodeIds = getAssocDNIsSettingNodeIds(i)
-
-		//Need to remove first then add in case we are at limit
-		List oldNodeIds = state."assocNodes$i"?.findAll { !(it in settingNodeIds) }
-		if (oldNodeIds) {
-			logDebug "Removing Nodes: Group $i - $oldNodeIds"
-			cmdsEach << associationRemoveCmd(i, oldNodeIds)
-		}
-
-		List newNodeIds = settingNodeIds.findAll { !(it in state."assocNodes$i") }
-		if (newNodeIds) {
-			logDebug "Adding Nodes: Group $i - $newNodeIds"
-			cmdsEach << associationSetCmd(i, newNodeIds)
-		}
-
-		if (cmdsEach || state.resyncAll) {
-			cmdsEach << associationGetCmd(i)
-			cmds += cmdsEach
-		}
-	}
-
-	return cmds
-}
-
-List getAssocDNIsSettingNodeIds(grp) {
-	def dni = getAssocDNIsSetting(grp)
-	def nodeIds = convertHexListToIntList(dni.split(","))
-
-	if (dni && !nodeIds) {
-		logWarn "'${dni}' is not a valid value for the 'Device Associations - Group ${grp}' setting.  All z-wave devices have a 2 character Device Network ID and if you're entering more than 1, use commas to separate them."
-	}
-	else if (nodeIds.size() > maxAssocNodes) {
-		logWarn "The 'Device Associations - Group ${grp}' setting contains more than ${maxAssocNodes} IDs so some (or all) may not get associated."
-	}
-
-	return nodeIds
-}
-
-Integer getPendingChanges() {
-	Integer configChanges = configParams.count { param ->
-		Integer paramVal = getParamValue(param, true)
-		((paramVal != null) && (paramVal != getParamStoredValue(param.num)))
-	}
-	Integer pendingAssocs = Math.ceil(getConfigureAssocsCmds()?.size()/2) ?: 0
-	return (!state.resyncAll ? (configChanges + pendingAssocs) : configChanges)
-}
-
-String getOnOffCmds(val, Integer endPoint=0) {
-	return getSetLevelCmds(val ? 0xFF : 0x00, null, endPoint)
-}
-
-String getSetLevelCmds(Number level, Number duration=null, Integer endPoint=0) {
-	Short modelSeries = Math.floor(deviceModelShort/10)
-	Short levelVal = safeToInt(level, 99)
-	// level 0xFF tells device to use last level, 0x00 is off
-	if (levelVal != 0xFF && levelVal != 0x00) {
-		//Convert level in range of min/max
-		levelVal = convertLevel(levelVal, true)
-		levelVal = validateRange(levelVal, 99, 1, 99)
-	}
-
-	// Duration Encoding:
-	// 0x01..0x7F 1 second (0x01) to 127 seconds (0x7F) in 1 second resolution.
-	// 0x80..0xFE 1 minute (0x80) to 127 minutes (0xFE) in 1 minute resolution.
-	// 0xFF Factory default duration.
-
-	//Convert seconds to minutes for 7x only
-	if (modelSeries == 7 && duration > 120) {
-		logDebug "getSetLevelCmds converting ${duration}s to ${Math.round(duration/60)}min"
-		duration = (duration / 60) + 127
-	}
-
-	Short durationVal = validateRange(duration, -1, -1, 254)
-	if (duration == null || durationVal == -1) {
-		// For model 2x switches the 0xFF default is 0 seconds, lets override it.
-		if (modelSeries == 2) {
-			durationVal = getParamValue("rampRate")
-		} else {
-			durationVal = 0xFF
-		}
-	}
-
-	logDebug "getSetLevelCmds output [level:${levelVal}, duration:${durationVal}, endPoint:${endPoint}]"
-	return switchMultilevelSetCmd(levelVal, durationVal, endPoint)
-}
-
-
-/*******************************************************************
- ***** Event Senders
-********************************************************************/
-//evt = [name, value, type, unit, desc, isStateChange]
-void sendEventLog(Map evt, Integer ep=0) {
-	//Set description if not passed in
-	evt.descriptionText = evt.desc ?: "${evt.name} set to ${evt.value}${evt.unit ?: ''}"
-
-	//Main Device Events
-	if (device.currentValue(evt.name).toString() != evt.value.toString() || evt.isStateChange) {
-		logInfo "${evt.descriptionText}"
-	} else {
-		logDebug "${evt.descriptionText} [NOT CHANGED]"
-	}
-	//Always send event to update last activity
-	sendEvent(evt)
-}
-
-void sendSwitchEvents(rawVal, String type, Integer ep=0) {
-	String value = (rawVal ? "on" : "off")
-	String desc = "switch is turned ${value}" + (type ? " (${type})" : "")
-	sendEventLog(name:"switch", value:value, type:type, desc:desc, ep)
-	state.remove("turningOn")
-
-	if (rawVal) {
-		Integer level = (rawVal == 99 ? 100 : rawVal)
-		level = convertLevel(level, false)
-
-		desc = "level is set to ${level}%"
-		if (type) desc += " (${type})"
-		if (levelCorrection) desc += " [actual: ${rawVal}]"
-		sendEventLog(name:"level", value:level, type:type, unit:"%", desc:desc, ep)
-	}
-}
-
-void sendBasicButtonEvent(buttonId, String name) {
-	String desc = "button ${buttonId} ${name} (digital)"
-	sendEventLog(name:name, value:buttonId, type:"digital", desc:desc, isStateChange:true)
-}
-
-
-/*******************************************************************
  ***** Common Functions
 ********************************************************************/
 /*** Parameter Store Map Functions ***/
@@ -1450,23 +1425,6 @@ void verifyParamsList() {
 	if (paramsList[devModel] == null) updateParamsList()
 	if (paramsList[devModel][firmware] == null) updateParamsList()
 }
-//These have to be added in after the fact or groovy complains
-void fixParamsMap() {
-	paramsMap.ledColor.options << ledColorOptions
-	paramsMap.autoOffInterval.options << autoOnOffIntervalOptions
-	paramsMap.autoOnInterval.options << autoOnOffIntervalOptions
-	paramsMap.rampRate.options << rampRateOptions
-	paramsMap.rampRateOff.options << rampRateOptions
-	paramsMap.holdRampRate.options << rampRateOptions
-	paramsMap.zwaveRampRateOn.options << rampRateOptions
-	paramsMap.zwaveRampRateOff.options << rampRateOptions
-	paramsMap.remoteZWaveDim.options << rampRateOptions
-	paramsMap.minimumBrightness.options << brightnessOptions
-	paramsMap.maximumBrightness.options << brightnessOptions
-	paramsMap.customBrightness.options << brightnessOptions
-	paramsMap.nightLight.options << brightnessOptions
-	paramsMap['settings'] = [fixed: true]
-}
 
 //Gets full list of params
 List<Map> getConfigParams() {
@@ -1537,6 +1495,18 @@ Number getParamValue(Map param, Boolean adjust=false) {
 }
 
 /*** Parameter Helper Functions ***/
+//Preference Helpers
+String fmtTitle(String str) {
+	return "<strong>${str}</strong>"
+}
+String fmtDesc(String str) {
+	return "<div style='font-size: 85%; font-style: italic; padding: 1px 0px 4px 2px;'>${str}</div>"
+}
+
+private getTimeOptionsRange(String name, Integer multiplier, List range) {
+	return range.collectEntries{ [(it*multiplier): "${it} ${name}${it == 1 ? '' : 's'}"] }
+}
+
 private getBrightnessOptions() {
 	Map options = [1:"1%"]
 	for(x=5; x<100; x+=5) { options << [(x):"${x}%"] }
@@ -1557,10 +1527,6 @@ private getAutoOnOffIntervalOptions() {
 	return options
 }
 
-private getTimeOptionsRange(String name, Integer multiplier, List range) {
-	return range.collectEntries{ [(it*multiplier): "${it} ${name}${it == 1 ? '' : 's'}"] }
-}
-
 /*** Other Helper Functions ***/
 void updateSyncingStatus(Integer delay=2) {
 	runIn(delay, refreshSyncStatus)
@@ -1579,10 +1545,56 @@ void updateLastCheckIn() {
 	}
 }
 
+Integer getPendingChanges() {
+	Integer configChanges = configParams.count { param ->
+		Integer paramVal = getParamValue(param, true)
+		((paramVal != null) && (paramVal != getParamStoredValue(param.num)))
+	}
+	Integer pendingAssocs = Math.ceil(getConfigureAssocsCmds()?.size()/2) ?: 0
+	return (!state.resyncAll ? (configChanges + pendingAssocs) : configChanges)
+}
+
 // iOS app has no way of clearing string input so workaround is to have users enter 0.
 String getAssocDNIsSetting(grp) {
 	def val = settings."assocDNI$grp"
 	return ((val && (val.trim() != "0")) ? val : "")
+}
+
+List getAssocDNIsSettingNodeIds(grp) {
+	def dni = getAssocDNIsSetting(grp)
+	def nodeIds = convertHexListToIntList(dni.split(","))
+
+	if (dni && !nodeIds) {
+		logWarn "'${dni}' is not a valid value for the 'Device Associations - Group ${grp}' setting.  All z-wave devices have a 2 character Device Network ID and if you're entering more than 1, use commas to separate them."
+	}
+	else if (nodeIds.size() > maxAssocNodes) {
+		logWarn "The 'Device Associations - Group ${grp}' setting contains more than ${maxAssocNodes} IDs so some (or all) may not get associated."
+	}
+
+	return nodeIds
+}
+
+void clearVariables() {
+	logWarn "Clearing state variables and data..."
+
+	//Backup
+	String devModel = state.deviceModel
+
+	//Clears State Variables
+	state.clear()
+
+	//Clear Config Data
+	configsList["${device.id}"] = [:]
+	device.removeDataValue("configVals")
+	//Clear Data from other Drivers
+	device.removeDataValue("protocolVersion")
+	device.removeDataValue("hardwareVersion")
+	device.removeDataValue("zwaveAssociationG1")
+	device.removeDataValue("zwaveAssociationG2")
+	device.removeDataValue("zwaveAssociationG3")
+
+	//Restore
+	if (devModel) state.deviceModel = devModel
 }
 
 //Stash the model in a state variable
