@@ -58,18 +58,6 @@
       ]
     },
     {
-      "id": "aaeb26b7-3156-452c-9424-d733c3df79ee",
-      "name": "Zooz ZEN31 RGBW Advanced Driver",
-      "category": "Control",
-      "location": "https://raw.githubusercontent.com/jtp10181/Hubitat/main/packageManifest/zooz-zen-rgbw.json",
-      "description": "Zooz ZEN31 RGBW Dimmer driver with advanced features and settings",
-      "descriptive": "",
-      "tags": [
-        "Lights & Switches",
-        "ZWave"
-      ]
-    },
-    {
       "id": "a25f3f5e-2121-465d-a349-4ee7702b5068",
       "name": "Zooz Modules Advanced Drivers",
       "category": "Control",
@@ -80,6 +68,31 @@
         "Lights & Switches",
         "Safety & Security",
         "Window Coverings",
+        "ZWave"
+      ]
+    },
+    {
+      "id": "96fdbcd8-5ebe-47a8-881a-748574f0917e",
+      "name": "Zooz Scene Controllers Advanced Drivers",
+      "category": "Control",
+      "location": "https://raw.githubusercontent.com/jtp10181/Hubitat/main/packageManifest/zooz-zen-scene.json",
+      "description": "Zooz Scene Controller drivers with advanced features and settings: <br>ZEN37",
+      "descriptive": "",
+      "tags": [
+        "Lights & Switches",
+        "Buttons",
+        "ZWave"
+      ]
+    },
+    {
+      "id": "aaeb26b7-3156-452c-9424-d733c3df79ee",
+      "name": "Zooz ZEN31 RGBW Advanced Driver",
+      "category": "Control",
+      "location": "https://raw.githubusercontent.com/jtp10181/Hubitat/main/packageManifest/zooz-zen-rgbw.json",
+      "description": "Zooz ZEN31 RGBW Dimmer driver with advanced features and settings",
+      "descriptive": "",
+      "tags": [
+        "Lights & Switches",
         "ZWave"
       ]
     },

@@ -1,0 +1,19 @@
+{
+  "packageName": "Zooz Scene Controllers Advanced Drivers",
+  "author": "Jeff Page (@jtp10181)",
+  "minimumHEVersion": "2.3.5",
+  "dateReleased": "2023-12-08",
+  "documentationLink": "https://github.com/jtp10181/Hubitat/tree/main/Drivers/zooz",
+  "communityLink": "https://community.hubitat.com/t/zooz-zen37-wall-remote/129335",
+  "releaseNotes": "Zooz ZEN37 Wall Remote driver with all advanced features and settings",
+  "drivers": [
+    {
+      "id": "e5745c00-80fc-4924-a296-e720cfd470d8",
+      "name": "Zooz ZEN37 Wall Remote Advanced",
+      "namespace": "jtp10181",
+      "location": "https://jtp10181.gateway.scarf.sh/zooz-zen37-v0.1.0.groovy",
+      "required": false,
+      "version": "0.1.0"
+    }
+  ]
+}
