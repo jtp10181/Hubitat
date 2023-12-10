@@ -11,6 +11,10 @@
 
 Changelog:
 
+## [2.0.2] - 2023-12-10 (@jtp10181)
+  - Set fallback log level to Info when not set yet
+  - Fixed issue where not actually disabling brightness correction
+
 ## [2.0.0] - 2023-12-09 (@jtp10181)
   - Rearranged functions and merged with library code
   - Removed unnecessary association attrbiutes
@@ -21,6 +25,7 @@ Changelog:
   - Fix for ZEN30 v4 firmware using different endpoint numbers
   - Added new settings for ZEN7x 10.20/10.40 base and ZEN30 800LR v4
   - Set Level Duration supports up to 7,620s (127 mins) for ZEN30 v4
+  - Brightness correction disabled when included in device firmware
   - Added possible workaround for Homekit integration issues (dimmers only)
   - Added paramters 16 and 17 for ZEN21 v4.05
 
@@ -222,7 +227,7 @@ https://github.com/krlaframboise/SmartThings/tree/master/devicetypes/zooz/
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "2.0.0"
+@Field static final String VERSION = "2.0.2"
 @Field static final String DRIVER = "Zooz-Switches"
 @Field static final String COMM_LINK = "https://community.hubitat.com/t/zooz-zen-switches-dimmers-advanced/58649"
 @Field static final Map deviceModelNames =
@@ -1719,7 +1724,7 @@ void setLogLevel(String levelName, String timeName=null) {
 }
 
 Map getLogLevelInfo() {
-	Integer level = settings.logLevel as Integer ?: 3
+	Integer level = settings.logLevel as Integer ?: 2
 	Integer time = settings.logLevelTime as Integer ?: 0
 	return [level: level, time: time]
 }
@@ -1728,7 +1733,7 @@ Map getLogLevelInfo() {
 void debugLogsOff() {
 	logWarn "Debug logging toggle disabled..."
 	device.removeSetting("logEnable")
-	device.updateSetting("debugEnable",[value:"false",type:"bool"])
+	device.updateSetting("debugEnable",[value:false, type:"bool"])
 }
 
 //Current Support
