@@ -7,10 +7,13 @@
     NOTICE: This file has been modified by *Jeff Page*
         from the original work of *Mike Maxwell (Hubitat)*.
 
-    Copyright 2021-2022 Jeff Page
+    Copyright 2021-2023 Jeff Page
     Copyright 2016 -> 2020 Hubitat Inc. All Rights Reserved
 
     Changelog:
+
+## [2.0.0] - 2023-12-03 (@jtp10181)
+  - Enabled doubleTapped capability
 
 ## [1.0.1] - 2022-07-13 (@jtp10181)
   ### Changed
@@ -23,7 +26,7 @@
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "1.0.1"
+@Field static final String VERSION = "2.0.0"
 
 metadata {
     definition(
@@ -39,7 +42,7 @@ metadata {
         capability "PushableButton"
         capability "HoldableButton"
         capability "ReleasableButton"
-        //capability "DoubleTapableButton"
+        capability "DoubleTapableButton"
     }
     preferences {
         //Logging options similar to other Hubitat drivers
