@@ -1,6 +1,6 @@
 /*
- *  Zooz ZEN52 Double Relay Advanced
- *    - Model: ZEN52 - MINIMUM FIRMWARE 1.40
+ *  Zooz ZEN17 Universal Relay
+ *    - Model: ZEN17 - MINIMUM FIRMWARE 1.04
  *
  *  For Support, Information, and Updates:
  *  https://community.hubitat.com/t/zooz-relays-advanced/98194
@@ -9,31 +9,13 @@
 
 Changelog:
 
-## [1.2.0 - 2024-01-31 (@jtp10181)
+## [1.2.0] - 2024-01-31 (@jtp10181)
+  - Initial release based on ZEN16 driver
+  - Supersedes the companion driver
   - Updated library code (logging fixes)
-  - Added setParamater command
-  - Added proper endpoint detection
+  - Updated setParamater function to request value back
 
-## [1.1.2] - 2023-05-24 (@jtp10181)
-  - Library updates and moving some functions
-  - Multichannel endpoint handling updates (ZEN52)
-
-## [1.1.0] - 2023-05-11 (@jtp10181)
-  - Refactoring to use custom library code
-  - Flash command now remembers last rate for default
-  - Fixed on/off handling for ZEN52 FW 1.60
-  - Changed to new logging engine / options
-
-## [1.0.2] - 2023-02-28 (@jtp10181)
-  - Added Association Group Support
-  - Fixed some variable typing to be more lax to prevent errors
-  - Fixed lifeline association configuration for ZEN52
-
-## [0.2.0] - 2021-08-22 (@jtp10181)
-  - Initial Release of ZEN52
-  - Minor fixes for ZEN51
-
- *  Copyright 2022-2024 Jeff Page
+ *  Copyright 2023-2024 Jeff Page
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -52,26 +34,21 @@ Changelog:
 import groovy.transform.Field
 
 @Field static final String VERSION = "1.2.0"
-@Field static final String DRIVER = "Zooz-ZEN52"
+@Field static final String DRIVER = "Zooz-ZEN17"
 @Field static final String COMM_LINK = "https://community.hubitat.com/t/zooz-relays-advanced/98194"
-@Field static final Map deviceModelNames = ["0104:0202":"ZEN52", "0904:0202":"ZEN52"]
+@Field static final Map deviceModelNames = ["7000:A00A":"ZEN17"]
 
 metadata {
 	definition (
-		name: "Zooz ZEN52 Double Relay Advanced",
+		name: "Zooz ZEN17 Universal Relay Advanced",
 		namespace: "jtp10181",
 		author: "Jeff Page (@jtp10181)",
-		importUrl: "https://raw.githubusercontent.com/jtp10181/Hubitat/main/Drivers/zooz/zooz-zen52-double-relay.groovy"
+		importUrl: "https://raw.githubusercontent.com/jtp10181/Hubitat/main/Drivers/zooz/zooz-zen17-universal-relay.groovy"
 	) {
 		capability "Actuator"
-		//capability "Switch"
+		capability "Switch"
 		capability "Configuration"
 		capability "Refresh"
-		capability "PushableButton"
-		capability "HoldableButton"
-		capability "ReleasableButton"
-		capability "DoubleTapableButton"
-		capability "Flash"
 
 		//command "refreshParams"
 
@@ -84,8 +61,7 @@ metadata {
 
 		attribute "syncStatus", "string"
 
-		fingerprint mfr:"027A", prod:"0104", deviceId:"0202", inClusters:"0x5E,0x55,0x9F,0x6C,0x25,0x70,0x85,0x59,0x8E,0x86,0x72,0x5A,0x73,0x7A,0x60,0x22,0x5B,0x87" //Zooz ZEN52 Double Relay
-		fingerprint mfr:"027A", prod:"0904", deviceId:"0202", inClusters:"0x00,0x00" //Zooz ZEN52 Double Relay LR
+		fingerprint mfr:"027A", prod:"7000", deviceId:"A00A", inClusters:"0x00,0x00" //Zooz ZEN17 Universal Relay
 	}
 
 	preferences {
@@ -111,18 +87,19 @@ metadata {
 			}
 		}
 
-		for(int i in 2..maxAssocGroups) {
-			input "assocDNI$i", "string",
-				title: fmtTitle("Device Associations - Group $i"),
-				description: fmtDesc("Supports up to ${maxAssocNodes} Hex Device IDs separated by commas. Check device documentation for more info. Save as blank or 0 to clear."),
-				required: false
-		}
+		// for(int i in 2..maxAssocGroups) {
+		// 	input "assocDNI$i", "string",
+		// 		title: fmtTitle("Device Associations - Group $i"),
+		// 		description: fmtDesc("Supports up to ${maxAssocNodes} Hex Device IDs separated by commas. Check device documentation for more info. Save as blank or 0 to clear."),
+		// 		required: false
+		// }
 
-		input "childScene", "bool",
-			title: fmtTitle("Scene Events on Child"),
-			description: fmtDesc("Send scene events to child devices and allow up to 5x button push events. Child devices must be using Central Scene Switch driver for this to work.<br>" +
-				"If disabled scene events are limited to 2x and posted on the parent device as two buttons."),
-			defaultValue: false
+		if (firmwareVersion >= 1) {
+			input "childCleanup", "bool",
+				title: fmtTitle("Clean Up Sensor Child Devices"),
+				description: fmtDesc("WARNING: This will remove any sensor child devices that are unnecessary or do not have the capabilities for the selected input type."),
+				defaultValue: false
+		}
 	}
 }
 
@@ -133,128 +110,176 @@ void debugShowVars() {
 }
 
 //Association Settings
-@Field static final int maxAssocGroups = 3
-@Field static final int maxAssocNodes = 5
+@Field static final int maxAssocGroups = 1
+@Field static final int maxAssocNodes = 1
 
 /*** Static Lists and Settings ***/
-//NONE
+@Field static final Map inputTypes = [
+	0:"Momentary (for lights only)",
+	1:"Toggle Switch On/Off",
+	2:"Toggle Switch State Change",
+	3:"Garage Door Momentary (Z-Wave control)",
+	4:"Water Sensor",
+	5:"Heat Sensor",
+	6:"Motion Sensor",
+	7:"Contact Sensor",
+	8:"Carbon Monoxide (CO) Sensor",
+	9:"Carbon Dioxide (CO₂) Sensor",
+	10:"Dry Contact Switch/Sensor",
+	11:"R: Garage Door / Sw: Contact Sensor"
+]
+@Field static final Map inputCapabilities = [
+	4:"WaterSensor",
+	5:"Switch",
+	6:"MotionSensor",
+	7:"ContactSensor",
+	8:"CarbonMonoxideDetector ",
+	9:"CarbonDioxideMeasurement",
+	10:"Switch",
+	11:"ContactSensor"
+]
 
 //Main Parameters Listing
 @Field static Map<String, Map> paramsMap =
 [
-	ledIndicator: [ num: 2,
-		title: "LED Indicator (On when On)",
+	powerFailure: [ num:1,
+		title: "On / Off Status After Power Failure",
 		size: 1, defaultVal: 1,
-		options: [1:"LED Enabled", 0:"LED Disabled"],
+		options: [
+			0:"All relays turned OFF",
+			1:"All relays restores last state",
+			2:"All relays turned ON",
+			3:"R1 restores last, R2 turns ON",
+			4:"R2 restores last, R1 turns ON",
+		]
 	],
-	offTimer: [ num: 3,
-		title: "Auto Turn-Off Timer (R1)",
-		size: 2, defaultVal: 0,
-		description: "0 = Disabled",
-		range: 0..65535,
-	],
-	onTimer: [ num: 4,
-		title: "Auto Turn-On Timer (R1)",
-		size: 2, defaultVal: 0,
-		description: "0 = Disabled",
-		range: 0..65535,
-	],
-	timerUnits: [ num: 7,
-		title: "Time Units (R1)",
-		size: 1, defaultVal: 1,
-		options: [1:"minutes",2:"seconds"],
-	],
-	offTimer2: [ num: 5,
-		title: "Auto Turn-Off Timer (R2)",
-		size: 2, defaultVal: 0,
-		description: "0 = Disabled",
-		range: 0..65535,
-	],
-	onTimer2: [ num: 6,
-		title: "Auto Turn-On Timer (R2)",
-		size: 2, defaultVal: 0,
-		description: "0 = Disabled",
-		range: 0..65535,
-	],
-	timerUnits2: [ num: 8,
-		title: "Time Units (R2)",
-		size: 1, defaultVal: 1,
-		options: [1:"minutes",2:"seconds"],
-	],
-	powerFailure: [ num: 14,
-		title: "Behavior After Power Failure (R1)",
-		size: 1, defaultVal: 2,
-		options: [2:"Restores Last Status", 0:"Forced to Off", 1:"Forced to On"],
-	],
-	powerFailure2: [ num: 15,
-		title: "Behavior After Power Failure (R2)",
-		size: 1, defaultVal: 2,
-		options: [2:"Restores Last Status", 0:"Forced to Off", 1:"Forced to On"],
-	],
-	sceneControl: [ num: 16,
-		title: "Scene Control Events",
-		description: "Enable to get push and multi-tap events (for momentary switches)",
+	ledIndicator: [ num:5,
+		title: "LED Indicator Control",
 		size: 1, defaultVal: 0,
-		options: [0:"Disabled", 1:"Enabled"],
+		options: [
+			0:"LED on when ALL relays off",
+			1:"LED on when ANY relays on",
+			2:"LED Indicator always off",
+			3:"LED Indicator always on",
+		]
 	],
-	loadControl: [ num: 17,
-		title: "Smart Bulb Mode - Load Control (R1)",
-		description: "When control is disabled the relay will still report on/off states",
-		size: 1, defaultVal: 1,
-		options: [1:"Enable Button, Switch and Z-Wave", 0:"Disable Button/Switch Control", 2:"Disable Button, Switch and Z-Wave Control"],
-	],
-	loadControl2: [ num: 18,
-		title: "Smart Bulb Mode - Load Control (R2)",
-		description: "When control is disabled the relay will still report on/off states",
-		size: 1, defaultVal: 1,
-		options: [1:"Enable Button, Switch and Z-Wave", 0:"Disable Button/Switch Control", 2:"Disable Button, Switch and Z-Wave Control"],
-	],
-	switchType: [ num: 20,
-		title: "External Switch Type (R1)",
+	inputSw1: [ num:2,
+		title: "Input Type for S1C terminals",
+		description: "Power Cycle the device after changing this setting",
 		size: 1, defaultVal: 2,
-		options: [0:"Toggle Switch", 1:"Momentary Switch", 2:"On/Off Switch", 3:"3-way Impulse Control", 4:"Garage Door Mode"],
+		options: [:]  //inputTypes
 	],
-	switchType2: [ num: 21,
-		title: "External Switch Type (R2)",
+	controlSw1: [ num:10,
+		title: "Input Control S1",
+		description: "Should switch input automatically activate the Relay",
+		size: 1, defaultVal: 1,
+		options: [1:"Activate Relay and Status", 0:"Send Input Status Only"]
+	],
+	reverseSw1: [ num:19,
+		title: "Reverse Sensor Values on S1C",
+		description: "See online device docs for which triggers allow this",
+		size: 1, defaultVal: 0,
+		options: [0:"Normal", 1:"Reversed"],
+		firmVer: 1.10
+	],
+	inputSw2: [ num:3,
+		title: "Input Type for S2C terminals",
+		description: "Power Cycle the device after changing this setting",
 		size: 1, defaultVal: 2,
-		options: [0:"Toggle Switch", 1:"Momentary Switch", 2:"On/Off Switch", 3:"3-way Impulse Control", 4:"Garage Door Mode"],
+		options: [:]  //inputTypes
 	],
-	relayType: [ num: 25,
-		title: "Relay Type Behavior (R1)",
+	controlSw2: [ num:11,
+		title: "Input Control S2",
+		description: "Should switch input automatically activate the Relay",
+		size: 1, defaultVal: 1,
+		options: [1:"Activate Relay and Status", 0:"Send Input Status Only"]
+	],
+	reverseSw2: [ num:20,
+		title: "Reverse Sensor Values on S2C",
+		description: "See online device docs for which triggers allow this",
 		size: 1, defaultVal: 0,
-		options: [0:"NO: Relay Open when Off", 1:"NC: Relay Closed when Off"],
+		options: [0:"Normal", 1:"Reversed"],
+		firmVer: 1.10
 	],
-	relayType2: [ num: 26,
-		title: "Relay Type Behavior (R2)",
+	//R1 Timers
+	timerOffTime1: [ num:6,
+		title: "Auto Turn-Off R1: TIME",
+		size: 4, defaultVal: 0,
+		range: "0..65535"
+	],
+	timerOffUnits1: [ num:15,
+		title: "Auto Turn-Off R1: UNITS",
 		size: 1, defaultVal: 0,
-		options: [0:"NO: Relay Open when Off", 1:"NC: Relay Closed when Off"],
+		options: [0:"minutes",1:"seconds",2:"hours"]
 	],
-	impulseDuration: [ num: 22,
-		title: "Impulse Duration for 3-way (R1) [seconds]",
-		size: 1, defaultVal: 10,
-		range: 2..200,
+	timerOnTime1: [ num:7,
+		title: "Auto Turn-On R1: TIME",
+		size: 4, defaultVal: 0,
+		range: "0..65535"
 	],
-	impulseDuration2: [ num: 23,
-		title: "Impulse Duration for 3-way (R2) [seconds]",
-		size: 1, defaultVal: 10,
-		range: 2..200,
-	],
-	// Hidden Parameters to Set Defaults
-	assocReports: [ num: 24,
-		title: "Association Reports",
+	timerOnUnits1: [ num:16,
+		title: "Auto Turn-On R1: UNITS",
 		size: 1, defaultVal: 0,
-		options: [0:"Binary for Z-Wave, Basic for Physical", 1:"Always Binary Reports"],
-		hidden: true
+		options: [0:"minutes",1:"seconds",2:"hours"]
+	],
+	//R2 Timers
+	timerOffTime2: [ num:8,
+		title: "Auto Turn-Off R2: TIME",
+		size: 4, defaultVal: 0,
+		range: "0..65535"
+	],
+	timerOffUnits2: [ num:17,
+		title: "Auto Turn-Off R2: UNITS",
+		size: 1, defaultVal: 0,
+		options: [0:"minutes",1:"seconds",2:"hours"]
+	],
+	timerOnTime2: [ num:9,
+		title: "Auto Turn-On R2: TIME",
+		size: 4, defaultVal: 0,
+		range: "0..65535"
+	],
+	timerOnUnits2: [ num:18,
+		title: "Auto Turn-On R2: UNITS",
+		size: 1, defaultVal: 0,
+		options: [0:"minutes",1:"seconds",2:"hours"]
+	],
+	//End of Timers
+	dcMotorMode: [ num:24,
+		title: "DC Motor Mode",
+		description: "Sync R1 and R2 so they cannot be activated at the same time",
+		size: 1, defaultVal: 0,
+		options: [0:"Disabled",1:"Enabled"],
+	],
+	durationS1: [ num:25,
+		title: "Input Trigger Duration S1",
+		description: "[1 = 0.1s, 100 = 10s]  *See Docs for more information*",
+		size: 1, defaultVal: 5,
+		range: "0..100",
+		firmVer: 1.30
+	],
+	durationS2: [ num:26,
+		title: "Input Trigger Duration S2",
+		description: "[1 = 0.1s, 100 = 10s]  *See Docs for more information*",
+		size: 1, defaultVal: 5,
+		range: "0..100",
+		firmVer: 1.30
+	],
+	fixedInput: [ num:27,
+		title: "Fixed Input Actions",
+		description: "For special scenarios only *See Docs for more information*",
+		size: 1, defaultVal: 0,
+		options: [0:"Disabled", 1:"IN1 for ON on R1, IN2 for OFF on R1",
+			2:"IN1 for ON on R2, IN2 for OFF on R2", 3:"IN1 for ON on R1 and R2, IN2 for OFF on R1 and R2"],
+		firmVer: 1.30
 	],
 ]
 
-/* ZEN52
-CommandClassReport - class:0x22, version:1   (Application Status)
+/* ZEN17
+CommandClassReport - class:0x20, version:2   (Basic)
 CommandClassReport - class:0x25, version:2   (Binary Switch)
 CommandClassReport - class:0x55, version:2   (Transport Service)
 CommandClassReport - class:0x59, version:3   (Association Group Information (AGI))
 CommandClassReport - class:0x5A, version:1   (Device Reset Locally)
-CommandClassReport - class:0x5B, version:3   (Central Scene)
 CommandClassReport - class:0x5E, version:2   (Z-Wave Plus Info)
 CommandClassReport - class:0x60, version:4   (Multi Channel)
 CommandClassReport - class:0x6C, version:1   (Supervision)
@@ -262,21 +287,18 @@ CommandClassReport - class:0x70, version:4   (Configuration)
 CommandClassReport - class:0x72, version:2   (Manufacturer Specific)
 CommandClassReport - class:0x73, version:1   (Powerlevel)
 CommandClassReport - class:0x7A, version:5   (Firmware Update Meta Data)
-CommandClassReport - class:0x85, version:2   (Association)
+CommandClassReport - class:0x85, version:3   (Association)
 CommandClassReport - class:0x86, version:3   (Version)
-CommandClassReport - class:0x87, version:3   (Indicator)
-CommandClassReport - class:0x8E, version:3   (Multi Channel Association)
+CommandClassReport - class:0x8E, version:4   (Multi Channel Association)
 CommandClassReport - class:0x9F, version:1   (Security 2)
 */
 
 //Set Command Class Versions
 @Field static final Map commandClassVersions = [
 	0x25: 1,	// switchBinary
-	0x5B: 3,	// centralScene
 	0x60: 3,	// multiChannel
 	0x6C: 1,	// supervision
 	0x70: 2,	// configuration
-	0x72: 2,	// manufacturerSpecific
 	0x85: 2,	// association
 	0x86: 2,	// version
 	0x8E: 3,	// multiChannelAssociation
@@ -316,30 +338,42 @@ void updated() {
 	logDebug "updated..."
 	checkLogLevel()   //Checks and sets scheduled turn off
 
-	//Check to make sure childScene setting can work
+	//Check Child Capabilities
 	childDevices.each { child ->
-		if (child.hasCapability("PushableButton")) {
-			child.sendEvent(name:"numberOfButtons", value:(childScene ? 5 : 0))
-		}
-		else {
-			child.deleteCurrentState("numberOfButtons")
-			if (childScene) {
-				logWarn "$child is missing PushableButton, turning off 'Scene Events to Child'"
-				device.updateSetting("childScene",[value:"false",type:"bool"])
-				childScene = false
+		String ep = child.getDataValue("endPoint")
+		if (ep && ep[-1] == "S") {
+			String epNum = ep.substring(0, ep.length() - 1)
+			Integer inputType = getParamValue("inputSw${epNum}" as String)
+			String logMsg = null
+			logDebug "Sensor endPoint ${ep} found, selected Input Type ${inputType}:${inputTypes[inputType]}"
+			switch (inputType) {
+				case 0..3:
+					logMsg = "Sensor Child ${ep} is not needed with Input Type ${inputType}:${inputTypes[inputType]}."
+					break
+				case 4..11:
+					if (!child.hasCapability(inputCapabilities[inputType])) {
+						logMsg = "Sensor Child ${ep} is missing ${inputCapabilities[inputType]} capability."
+					}
+					break
+				default:
+					logWarn "Input Sw${epNum} has unknown Input Type of ${inputType}"
+			}
+			if (logMsg) {
+				if (childCleanup) {
+					logWarn "${logMsg} <b>*REMOVING Child Device*</b>"
+					deleteChildDevice(child.deviceNetworkId)
+				} else {
+					logWarn "${logMsg} <b>*Change the Driver/Type or run Child Cleanup*</b>"
+				}
+			}
+			if (childCleanup) {
+				logWarn "Cleaning up Sensor Child ${ep} Current States"
+				child.getCurrentStates()?.each { child.deleteCurrentState(it.name) }
+				runIn(5, executeRefreshCmds)
 			}
 		}
 	}
-
-	//Configure for childScene setting
-	sendEvent(name:"numberOfButtons", value:(childScene ? 0 : 2))
-	if (childScene) {
-		logDebug "Removing unnecessary attributes"
-		device.deleteCurrentState("doubleTapped")
-		device.deleteCurrentState("held")
-		device.deleteCurrentState("pushed")
-		device.deleteCurrentState("released")
-	}
+	device.updateSetting("childCleanup",[value:"false",type:"bool"])
 
 	executeProbeCmds()
 	runIn(1, executeConfigureCmds)
@@ -358,74 +392,28 @@ void refresh() {
 /*** Capabilities ***/
 def on() {
 	logDebug "on..."
-	flashStop()
 	return getOnOffCmds(0xFF)
 }
 
 def off() {
 	logDebug "off..."
-	flashStop()
 	return getOnOffCmds(0x00)
-}
-
-//Button commands required with capabilities
-void push(buttonId) { sendBasicButtonEvent(buttonId, "pushed") }
-void hold(buttonId) { sendBasicButtonEvent(buttonId, "held") }
-void release(buttonId) { sendBasicButtonEvent(buttonId, "released") }
-void doubleTap(buttonId) { sendBasicButtonEvent(buttonId, "doubleTapped") }
-
-//Flashing Capability
-void flash(rateToFlash = null) {
-	if (!rateToFlash) rateToFlash = state.flashRate
-	//Min rate of 750ms sec, max of 30s
-	rateToFlash = validateRange(rateToFlash, 1500, 750, 30000)
-	Integer maxRun = 30 * 60 //30 Minutes
-	state.flashNext = (device.currentValue("switch")=="on" ? "off" : "on")
-	state.flashRate = rateToFlash
-
-	logInfo "Flashing started with rate of ${rateToFlash}ms"
-
-	//Start the flashing
-	runIn(maxRun,flashStop,[data:true])
-	flashHandler(rateToFlash)
-}
-
-void flashStop(Boolean turnOn = false) {
-	if (state.flashNext != null) {
-		logInfo "Flashing stopped..."
-		unschedule("flashHandler")
-		unschedule("flashStop")
-		state.remove("flashNext")
-		if (turnOn) { runIn(1,on) }
-	}
-}
-
-void flashHandler(Integer rateToFlash) {
-	if (state.flashNext == "on") {
-		logDebug "Flash On"
-		state.flashNext = "off"
-		runInMillis(rateToFlash, flashHandler, [data:rateToFlash])
-		sendCommands(getOnOffCmds(0xFF))
-	}
-	else if (state.flashNext == "off") {
-		logDebug "Flash Off"
-		state.flashNext = "on"
-		runInMillis(rateToFlash, flashHandler, [data:rateToFlash])
-		sendCommands(getOnOffCmds(0x00))
-	}
 }
 
 
 /*** Custom Commands ***/
 void refreshParams() {
 	List<String> cmds = []
-	cmds << mcAssociationGetCmd(1)
-	for (int i = 1; i <= maxAssocGroups; i++) {
-		cmds << associationGetCmd(i)
-	}
 
+	//Refresh Only Out-of-Sync
 	configParams.each { param ->
-		cmds << configGetCmd(param)
+		Integer paramVal = getParamValueAdj(param)
+		Integer storedVal = getParamStoredValue(param.num)
+
+		if (paramVal != null && storedVal != paramVal) {
+			logDebug "Refreshing ${param.name} (#${param.num}), currently: ${storedVal}"
+			cmds += configGetCmd(param)
+		}
 	}
 
 	if (cmds) sendCommands(cmds)
@@ -468,7 +456,6 @@ def componentRefresh(cd) {
 ********************************************************************/
 void parse(String description) {
 	zwaveParse(description)
-	sendEvent(name:"numberOfButtons", value:(childScene ? 0 : 2))
 }
 void zwaveEvent(hubitat.zwave.commands.multichannelv3.MultiChannelCmdEncap cmd) {
 	zwaveMultiChannel(cmd)
@@ -477,7 +464,7 @@ void zwaveEvent(hubitat.zwave.commands.supervisionv1.SupervisionGet cmd, ep=0) {
 	zwaveSupervision(cmd,ep)
 }
 
-void zwaveEvent(hubitat.zwave.commands.configurationv2.ConfigurationReport cmd) {
+void zwaveEvent(hubitat.zwave.commands.configurationv1.ConfigurationReport cmd) {
 	logTrace "${cmd}"
 	updateSyncingStatus()
 
@@ -504,20 +491,10 @@ void zwaveEvent(hubitat.zwave.commands.associationv2.AssociationReport cmd) {
 	Integer grp = cmd.groupingIdentifier
 
 	if (grp == 1) {
-		logDebug "Lifeline Association: ${cmd.nodeId}"
-		//state.group1Assoc = (cmd.nodeId == [zwaveHubNodeId]) ? true : false
-	}
-	else if (grp > 1 && grp <= maxAssocGroups) {
-		logDebug "Group $grp Association: ${cmd.nodeId}"
-
-		if (cmd.nodeId.size() > 0) {
-			state["assocNodes$grp"] = cmd.nodeId
-		} else {
-			state.remove("assocNodes$grp".toString())
+		if (!state.endPoints) {
+			logDebug "Lifeline Association: ${cmd.nodeId}"
+			state.group1Assoc = (cmd.nodeId == [zwaveHubNodeId]) ? true : false
 		}
-
-		String dnis = convertIntListToHexList(cmd.nodeId)?.join(", ")
-		device.updateSetting("assocDNI$grp", [value:"${dnis}", type:"string"])
 	}
 	else {
 		logDebug "Unhandled Group: $cmd"
@@ -532,36 +509,29 @@ void zwaveEvent(hubitat.zwave.commands.multichannelassociationv3.MultiChannelAss
 	cmd.multiChannelNodeIds.each {mcNodes += "${it.nodeId}:${it.endPointId}"}
 
 	if (cmd.groupingIdentifier == 1) {
-		logDebug "Lifeline Association: ${cmd.nodeId} | MC: ${mcNodes}"
-		state.group1Assoc = (mcNodes == ["${zwaveHubNodeId}:0"] ? true : false)
+		if (state.endPoints) {
+			logDebug "Lifeline Association: ${cmd.nodeId} | MC: ${mcNodes}"
+			state.group1Assoc = (mcNodes == ["${zwaveHubNodeId}:0"] ? true : false)
+		}
 	}
 	else {
 		logDebug "Unhandled Group: $cmd"
 	}
 }
 
-//Physical Only
 void zwaveEvent(hubitat.zwave.commands.basicv1.BasicReport cmd, ep=0) {
 	logTrace "${cmd} (ep ${ep})"
-	flashStop() //Stop flashing if its running
-
-	List epList = (ep ? [ep] : endPointList)
-	epList.each { sendSwitchEvents(cmd.value, "physical", it) }
+	sendSwitchEvents(cmd.value, "physical", ep)
 }
 
-//Digital or Refresh
+//All Switch Reports coming here on ZEN16 v2
 void zwaveEvent(hubitat.zwave.commands.switchbinaryv1.SwitchBinaryReport cmd, ep=0) {
 	logTrace "${cmd} (ep ${ep})"
 
-	List epList = (ep ? [ep] : endPointList)
-	epList.each {
-		if (ep==0 && !state."isDigital$it") return
+	String type = (state."isDigital$ep" ? "digital" : "physical")
+	state.remove("isDigital$ep" as String)
 
-		String type = (state."isDigital$it" ? "digital" : null)
-		state.remove("isDigital$it" as String)
-
-		sendSwitchEvents(cmd.value, type, it)
-	}
+	sendSwitchEvents(cmd.value, type, ep)
 }
 
 void zwaveEvent(hubitat.zwave.commands.multichannelv3.MultiChannelEndPointReport cmd, ep=0) {
@@ -574,57 +544,48 @@ void zwaveEvent(hubitat.zwave.commands.multichannelv3.MultiChannelEndPointReport
 	}
 }
 
-void zwaveEvent(hubitat.zwave.commands.centralscenev3.CentralSceneNotification cmd, ep=0){
-	if (state.lastSequenceNumber != cmd.sequenceNumber) {
-		state.lastSequenceNumber = cmd.sequenceNumber
+void zwaveEvent(hubitat.zwave.commands.sensorbinaryv2.SensorBinaryReport cmd, ep=0) {
+	logTrace "${cmd} (ep ${ep})"
+	//SensorBinary is depreciated so using NotificationReport
+}
 
-		logTrace "${cmd} (ep ${ep})"
+//Unplug and restart device after making changes or these are not accurate
+void zwaveEvent(hubitat.zwave.commands.notificationv8.NotificationReport cmd, ep=0) {
+	logTrace "${cmd} (ep ${ep})"
+	String sensorEp = "${ep}S"
 
-		Map scene = [name: "pushed", value: cmd.sceneNumber, desc: "", type:"physical", isStateChange:true]
-		String actionType
-		String btnVal
-
-		switch (cmd.sceneNumber) {
-			case 1:
-			case 2:
-				actionType = "S${cmd.sceneNumber}"
-				if (childScene) {
-					ep = cmd.sceneNumber
-					scene.value = 1
-				}
-				break
-			default:
-				logDebug "Unknown sceneNumber: ${cmd}"
-		}
-
-		switch (cmd.keyAttributes){
-			case 0:
-				btnVal = "${actionType} 1x"
-				break
-			case 1:
-				scene.name = "released"
-				btnVal = "${actionType} released"
-				break
-			case 2:
-				scene.name = "held"
-				btnVal = "${actionType} held"
-				break
-			case 3:
-				scene.name = "doubleTapped"
-				btnVal = "${actionType} 2x"
-				break
-			case {it >=4 && it <= 6 && childScene}:
-				scene.value = cmd.keyAttributes - 1
-				btnVal = "${actionType} ${cmd.keyAttributes - 1}x"
-				break
-			default:
-				logDebug "Unhandled keyAttributes: ${cmd}"
-		}
-
-		if (actionType && btnVal) {
-			scene.desc = "button ${scene.value} ${scene.name} [${btnVal}]"
-			sendEventLog(scene, ep)
-		}
+	switch (cmd.notificationType as Integer) {
+		case 0x05:  //Water
+			logDebug "${cmd} (ep ${ep}) -- Water"
+			sendEventLog(name:"water", value:(cmd.event ? "wet" : "dry"), sensorEp)
+			break
+		case 0x04:  //Heat
+			logDebug "${cmd} (ep ${ep}) -- Heat"
+			sendEventLog(name:"switch", value:(cmd.event ? "on" : "off"), sensorEp)
+			break
+		case 0x07:  //Home Security
+			logDebug "${cmd} (ep ${ep}) -- Motion"
+			sendEventLog(name:"motion", value:(cmd.event ? "active" : "inactive"), sensorEp)
+			break
+		case 0x06:  //Access Control - Door/Window
+			logDebug "${cmd} (ep ${ep}) -- Contact"
+			if      (cmd.event == 0x16) sendEventLog(name:"contact", value:"open", sensorEp)
+			else if (cmd.event == 0x17) sendEventLog(name:"contact", value:"closed", sensorEp)
+			break
+		case 0x02:  //CO
+			logDebug "${cmd} (ep ${ep}) -- CO"
+			sendEventLog(name:"carbonMonoxide", value:(cmd.event ? "detected" : "clear"), sensorEp)
+			break
+		case 0x03:  //CO2
+			logDebug "${cmd} (ep ${ep}) -- CO2"
+			sendEventLog(name:"carbonDioxide", value:(cmd.event ? "detected" : "clear"), sensorEp)
+			break
+		case 0x00:  //Generic (Switch)
+			logDebug "${cmd} (ep ${ep}) -- Dry Contact Switch"
+			sendEventLog(name:"switch", value:(cmd.event ? "on" : "off"), sensorEp)
+			break
+		default:
+			logDebug "Unhandled: ${cmd} (ep ${ep})"
 	}
 }
 
@@ -646,7 +607,7 @@ void sendEventLog(Map evt, ep=0) {
 				evt.descriptionText = "${childDev}: ${evt.descriptionText}"
 				childDev.parse([evt])
 			} else {
-				String epName = "Switch ${ep}"
+				String epName = "Relay ${ep}"
 				logDebug "(${epName}) ${evt.descriptionText} [NOT CHANGED]"
 				childDev.sendEvent(evt)
 			}
@@ -672,10 +633,9 @@ void sendSwitchEvents(rawVal, String type, Integer ep=0) {
 	String desc = "switch is turned ${value}" + (type ? " (${type})" : "")
 	sendEventLog(name:"switch", value:value, type:type, desc:desc, ep)
 }
-
-void sendBasicButtonEvent(buttonId, String name) {
-	String desc = "button ${buttonId} ${name} (digital)"
-	sendEventLog(name:name, value:buttonId, type:"digital", desc:desc, isStateChange:true)
+void removeDigital() {
+	state.remove("isDigital0")
+	endPointList.each { state.remove("isDigital$it" as String) }
 }
 
 
@@ -686,6 +646,9 @@ void executeConfigureCmds() {
 	logDebug "executeConfigureCmds..."
 
 	List<String> cmds = []
+
+	//Make sure its paying attention
+	cmds << configSetCmd([num:0, size:1], 0)
 
 	if (!firmwareVersion || !state.deviceModel) {
 		cmds << versionGetCmd()
@@ -705,7 +668,8 @@ void executeConfigureCmds() {
 
 	state.resyncAll = false
 
-	if (cmds) sendCommands(cmds)
+	if (cmds) runIn(5, refreshParams)
+	if (cmds) sendCommands(cmds,300)
 }
 
 void executeProbeCmds() {
@@ -731,46 +695,34 @@ void executeRefreshCmds() {
 		cmds << versionGetCmd()
 	}
 
+	//Refresh Switch
+	cmds << switchBinaryGetCmd()
+
 	//Refresh Children
 	endPointList.each { endPoint ->
 		cmds += getChildRefreshCmds(endPoint)
 	}
 
-	sendCommands(cmds)
+	sendCommands(cmds,300)
 }
 
 List getConfigureAssocsCmds() {
 	List<String> cmds = []
 
 	if (!state.group1Assoc || state.resyncAll) {
-		if (!state.group1Assoc) {
-			logDebug "Setting lifeline association..."
+		if (state.group1Assoc == false) {
+			logDebug "Need to reset lifeline association..."
+			cmds << associationRemoveCmd(1,[])
 			cmds << secureCmd(zwave.multiChannelAssociationV3.multiChannelAssociationRemove(groupingIdentifier: 1, nodeId:[], multiChannelNodeIds:[]))
+		}
+		logTrace "getConfigureAssocsCmds endPoints: ${state.endPoints}"
+		if (state.endPoints > 0) {
 			cmds << secureCmd(zwave.multiChannelAssociationV3.multiChannelAssociationSet(groupingIdentifier: 1, multiChannelNodeIds: [[nodeId: zwaveHubNodeId, bitAddress:0, endPointId: 0]]))
+			cmds << mcAssociationGetCmd(1)
 		}
-		cmds << mcAssociationGetCmd(1)
-	}
-
-	for (int i = 2; i <= maxAssocGroups; i++) {
-		List<String> cmdsEach = []
-		List settingNodeIds = getAssocDNIsSettingNodeIds(i)
-
-		//Need to remove first then add in case we are at limit
-		List oldNodeIds = state."assocNodes$i"?.findAll { !(it in settingNodeIds) }
-		if (oldNodeIds) {
-			logDebug "Removing Nodes: Group $i - $oldNodeIds"
-			cmdsEach << associationRemoveCmd(i, oldNodeIds)
-		}
-
-		List newNodeIds = settingNodeIds.findAll { !(it in state."assocNodes$i") }
-		if (newNodeIds) {
-			logDebug "Adding Nodes: Group $i - $newNodeIds"
-			cmdsEach << associationSetCmd(i, newNodeIds)
-		}
-
-		if (cmdsEach || state.resyncAll) {
-			cmdsEach << associationGetCmd(i)
-			cmds += cmdsEach
+		else {
+			cmds << associationSetCmd(1, [zwaveHubNodeId])
+			cmds << associationGetCmd(1)
 		}
 	}
 
@@ -780,6 +732,8 @@ List getConfigureAssocsCmds() {
 String getOnOffCmds(val, Integer endPoint=0) {
 	List epList = (endPoint ? [endPoint] : endPointList)
 	epList.each { state."isDigital$it" = true }
+	state."isDigital0" = true
+	runIn(3, removeDigital)
 
 	return switchBinarySetCmd(val ? 0xFF : 0x00, endPoint)
 }
@@ -787,6 +741,8 @@ String getOnOffCmds(val, Integer endPoint=0) {
 List getChildRefreshCmds(Integer endPoint) {
 	List<String> cmds = []
 	cmds << switchBinaryGetCmd(endPoint)
+	cmds << notificationGetCmd(0xFF, 0x00, endPoint)
+	//cmds << secureCmd(zwave.sensorBinaryV2.sensorBinaryGet(sensorType:0xFF), endPoint)
 	return cmds
 }
 
@@ -796,11 +752,32 @@ List getChildRefreshCmds(Integer endPoint) {
 ********************************************************************/
 //These have to be added in after the fact or groovy complains
 void fixParamsMap() {
+	paramsMap.inputSw1.options = inputTypes
+	paramsMap.inputSw2.options = inputTypes
 	paramsMap['settings'] = [fixed: true]
 }
 
 Integer getParamValueAdj(Map param) {
-	return getParamValue(param)
+	Integer paramVal = getParamValue(param)
+
+	//Check and Set the reverse Sw settings
+	def matches = (param.name =~ /reverse(Sw\d)/)
+	//logDebug "getParamValueAdj: ${param.name} - ${matches.size()} - ${matches}"
+	if (matches.size() == 1 && paramVal > 0) {
+		String swNum = matches[0][1]
+		Map trigParam = getParam("input${swNum}")
+		Integer trigVal = getParamValue(trigParam)
+		if (trigVal >=4 && trigVal <=10) {
+			paramVal = trigVal
+		}
+		else { //Cannot Enable
+			logWarn "Cannot Reverse when ${trigParam.title} = ${trigVal}"
+			device.updateSetting("configParam${param.num}", [value:"0",type:"enum"])
+			paramVal = 0
+		}
+	}
+
+	return paramVal
 }
 
 
@@ -814,16 +791,46 @@ void createChildDevices() {
 			logDebug "Creating new child device for endPoint ${endPoint}, did not find existing"
 			addChild(endPoint)
 		}
+
+		Integer inputType = getParamValue("inputSw${endPoint}" as String)
+		if (inputType >= 4) { //Need Sensor Child
+			String sensorEp = "${endPoint}S"
+			if (!getChildByEP(sensorEp)) {
+				logDebug "Creating new child device for endPoint ${endPoint} (Sensor ${sensorEp}), did not find existing"
+				addChild(sensorEp, inputType)
+			}
+		}
 	}
 }
 
-void addChild(endPoint) {
-	Map deviceType = [namespace:"hubitat", typeName:"Generic Component Central Scene Switch"]
-	Map deviceTypeBak = [namespace:"hubitat", typeName:"Generic Component Switch"]
+void addChild(endPoint, inputType=null) {
+	//Driver Settings
+	Map deviceType = [namespace:"hubitat", typeName:"Generic Component Switch"]
+	Map deviceTypeBak = [:]
+	Map properties = [name:"${device.name}", isComponent:false, endPoint:"${endPoint}"]
 
 	String dni = getChildDNI(endPoint)
-	String epName = "Switch ${endPoint}"
-	Map properties = [name: "${device.name} - ${epName}", isComponent: false, endPoint:"${endPoint}"]
+	String epName = "Relay ${endPoint}"
+	// properties.type = "R"
+
+	//Handle Sensor Child Devices
+	if (inputType != null) {
+		epName = "Sensor ${endPoint}"
+		// properties.type = "S"
+		switch (inputType) {
+			case 4: deviceType.typeName = "Generic Component Water Sensor"; break
+			case 5: deviceType.typeName = "Generic Component Switch"; break
+			case 6: deviceType.typeName = "Generic Component Motion Sensor"; break
+			case 7: deviceType.typeName = "Generic Component Contact Sensor"; break
+			case 8: deviceType.typeName = "Generic Component Carbon Monoxide Detector"; break
+			case 9: deviceType.typeName = "Generic Component Carbon Dioxide Detector"; break
+			case 10: deviceType.typeName = "Generic Component Switch"; break
+			case 11: deviceType.typeName = "Generic Component Contact Sensor"; break
+			default: deviceType.typeName = "Generic Component Switch"
+		}
+	}
+
+	properties.name = "${device.name} - ${epName}"
 	logDebug "Creating '${epName}' Child Device"
 
 	def childDev
@@ -837,21 +844,30 @@ void addChild(endPoint) {
 			childDev = addChildDevice(deviceTypeBak.namespace, deviceTypeBak.typeName, dni, properties)
 		}
 	}
-	if (childDev) {
-		childDev.sendEvent(name:"numberOfButtons", value:(childScene ? 5 : 0))
-	}
 }
 
 /*** Child Common Functions ***/
 private getChildByEP(endPoint) {
+	String devModel = state.deviceModel
 	endPoint = endPoint.toString()
 	//Searching using endPoint data value
 	def childDev = childDevices?.find { it.getDataValue("endPoint") == endPoint }
 	if (childDev) logTrace "Found Child for endPoint ${endPoint} using data.endPoint: ${childDev.displayName} (${childDev.deviceNetworkId})"
 	//If not found try deeper search using the child DNIs
 	else {
-		String dni = getChildDNI(endPoint)
-		childDev = childDevices?.find { it.deviceNetworkId == dni }
+		childDev = childDevices?.find  { ch ->
+			String ep = null
+			List<String> dni = ch.deviceNetworkId.split('-')
+			if (dni.size() <= 1) return false
+			String dniEp = dni[1]
+
+			//logWarn "getChildByEP dni.size ${dni.size()} -- ${dni}"
+			if (dni[2] == "0" || !dni[2])  ep = dniEp  //Default Format DNI-<EP>
+			else if (dni[2] == "1")  ep = "${dniEp}S"  //Format DNI-<EP>-1 (Sensor Child)
+
+			//Return true if match found to save child device
+			return (ep == endPoint)
+		}
 		if (childDev) {
 			logDebug "Found Child for endPoint ${endPoint} parsing DNI: ${childDev.displayName} (${childDev.deviceNetworkId})"
 			//Save the EP on the device so we can find it easily next time
@@ -862,7 +878,7 @@ private getChildByEP(endPoint) {
 }
 
 private getChildEP(childDev) {
-	Integer endPoint = safeToInt(childDev.getDataValue("endPoint"))
+	Integer endPoint = safeToInt(childDev.getDataValue("endPoint")?.replaceAll("[^0-9]+",""))
 	if (!endPoint) logWarn "Cannot determine endPoint number for $childDev (defaulting to 0), run Configure to detect existing endPoints"
 	return endPoint
 }

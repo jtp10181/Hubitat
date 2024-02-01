@@ -10,6 +10,10 @@
 
 Changelog:
 
+## [1.2.0 - 2024-01-31 (@jtp10181)
+  - Updated library code (logging fixes)
+  - Updated setParamater function to request value back
+
 ## [0.2.0] - 2023-11-09 (@jtp10181)
   - Fixed issue with settings if both v1 and v2 in use on same hub
   - Added subModel state
@@ -17,7 +21,7 @@ Changelog:
 ## [0.1.0] - 2023-11-03 (@jtp10181)
   - Initial alpha release
 
- *  Copyright 2023 Jeff Page
+ *  Copyright 2023-2024 Jeff Page
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -35,7 +39,7 @@ Changelog:
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "0.2.0"
+@Field static final String VERSION = "1.2.0"
 @Field static final String DRIVER = "Zooz-ZEN16"
 @Field static final String COMM_LINK = "https://community.hubitat.com/t/zooz-relays-advanced/98194"
 @Field static final Map deviceModelNames = ["A000:A00A":"ZEN16"]
@@ -116,7 +120,7 @@ void debugShowVars() {
 @Field static final int maxAssocNodes = 1
 
 /*** Static Lists and Settings ***/
-@Field static final Map inputTypes = [			
+@Field static final Map inputTypes = [
 	0:"Momentary (for lights only)",
 	1:"Toggle Switch On/Off",
 	2:"Toggle Switch State Change",
@@ -130,7 +134,7 @@ void debugShowVars() {
 	10:"Dry Contact Switch/Sensor",
 	11:"R: Garage Door / Sw: Contact Sensor"
 ]
-@Field static final Map inputCapabilities = [			
+@Field static final Map inputCapabilities = [
 	4:"WaterSensor",
 	5:"Switch",
 	6:"MotionSensor",
@@ -359,6 +363,7 @@ void initialize() {
 
 void configure() {
 	logWarn "configure..."
+	checkLogLevel()   //Checks and sets scheduled turn off
 
 	if (!pendingChanges || state.resyncAll == null) {
 		logDebug "Enabling Full Re-Sync"
@@ -367,13 +372,14 @@ void configure() {
 	}
 
 	updateSyncingStatus(6)
-	runIn(1, executeProbeCmds)
+	executeProbeCmds()
 	runIn(2, executeRefreshCmds)
 	runIn(5, executeConfigureCmds)
 }
 
 void updated() {
 	logDebug "updated..."
+	checkLogLevel()   //Checks and sets scheduled turn off
 
 	//Check Child Capabilities
 	childDevices.each { child ->
@@ -458,7 +464,8 @@ void refreshParams() {
 	if (cmds) sendCommands(cmds)
 }
 
-String setParameter(paramNum, value, size = null) {
+def setParameter(paramNum, value, size = null) {
+	paramNum = safeToInt(paramNum)
 	Map param = getParam(paramNum)
 	if (param && !size) { size = param.size	}
 
@@ -467,8 +474,9 @@ String setParameter(paramNum, value, size = null) {
 		logWarn "Syntax: setParameter(paramNum, value, size)"
 		return
 	}
-	logDebug "setParameter ( number: $paramNum, value: $value, size: $size )" + (param ? " [${param.name}]" : "")
-	return secureCmd(configSetCmd([num: paramNum, size: size], value as Integer))
+	logDebug "setParameter ( number: $paramNum, value: $value, size: $size )" + (param ? " [${param.name} - ${param.title}]" : "")
+	// return configSetCmd([num: paramNum, size: size], value as Integer)
+	return configSetGetCmd([num: paramNum, size: size], value as Integer)
 }
 
 /*** Child Capabilities ***/
@@ -486,6 +494,7 @@ def componentRefresh(cd) {
 	logDebug "componentRefresh from ${cd.displayName} (${cd.deviceNetworkId})"
 	sendCommands(getChildRefreshCmds(getChildEP(cd)))
 }
+
 
 /*******************************************************************
  ***** Z-Wave Reports
@@ -512,7 +521,7 @@ void zwaveEvent(hubitat.zwave.commands.configurationv1.ConfigurationReport cmd) 
 		Long sizeFactor = Math.pow(256,param.size).round()
 		if (val < 0) { val += sizeFactor }
 
-		logDebug "${param.name} (#${param.num}) = ${val.toString()}"
+		logDebug "${param.name} - ${param.title} (#${param.num}) = ${val.toString()}"
 		setParamStoredValue(param.num, val)
 	}
 	else {
@@ -582,37 +591,10 @@ void zwaveEvent(hubitat.zwave.commands.multichannelv3.MultiChannelEndPointReport
 
 void zwaveEvent(hubitat.zwave.commands.sensorbinaryv2.SensorBinaryReport cmd, ep=0) {
 	logTrace "${cmd} (ep ${ep})"
-	
 	//SensorBinary is depreciated so using NotificationReport
-	/*String sensorEp = "${ep}S"
-	switch (cmd.sensorType as Integer) {
-		case 0x01:  //General Purpose (ZEN16 Dry Contact)
-			sendEventLog(name:"switch", value:(cmd.sensorValue ? "on" : "off"), sensorEp)
-			break
-		case 0x03:  //CO
-			sendEventLog(name:"carbonMonoxide", value:(cmd.sensorValue ? "detected" : "clear"), sensorEp)
-			break
-		case 0x04:  //CO2
-			sendEventLog(name:"carbonDioxide", value:(cmd.sensorValue ? "detected" : "clear"), sensorEp)
-			break
-		case 0x05:  //Heat
-			sendEventLog(name:"switch", value:(cmd.sensorValue ? "on" : "off"), sensorEp)
-			break
-		case 0x06:  //Water
-			sendEventLog(name:"water", value:(cmd.sensorValue ? "wet" : "dry"), sensorEp)
-			break
-		case 0x0A:  //Door/Window
-			sendEventLog(name:"contact", value:(cmd.sensorValue ? "open" : "closed"), sensorEp)
-			break
-		case 0x0C:  //Motion
-			sendEventLog(name:"motion", value:(cmd.sensorValue ? "active" : "inactive"), sensorEp)
-			break
-		default:
-			logDebug "Unhandled: ${cmd} (ep ${ep})"
-	}*/
 }
 
-//Unplug and restart ZEN16 after making changes or these are not accurate
+//Unplug and restart device after making changes or these are not accurate
 void zwaveEvent(hubitat.zwave.commands.notificationv8.NotificationReport cmd, ep=0) {
 	logTrace "${cmd} (ep ${ep})"
 	String sensorEp = "${ep}S"
@@ -708,9 +690,6 @@ void removeDigital() {
 void executeConfigureCmds() {
 	logDebug "executeConfigureCmds..."
 
-	//Checks and sets scheduled turn off
-	checkLogLevel()
-
 	List<String> cmds = []
 
 	//Make sure its paying attention
@@ -727,7 +706,7 @@ void executeConfigureCmds() {
 		Integer storedVal = getParamStoredValue(param.num)
 
 		if ((paramVal != null) && (state.resyncAll || (storedVal != paramVal))) {
-			logDebug "Changing ${param.name} (#${param.num}) from ${storedVal} to ${paramVal}"
+			logDebug "Changing ${param.name} - ${param.title} (#${param.num}) from ${storedVal} to ${paramVal}"
 			cmds += configSetGetCmd(param, paramVal)
 		}
 	}
@@ -757,6 +736,7 @@ void executeRefreshCmds() {
 	List<String> cmds = []
 
 	if (state.resyncAll || !firmwareVersion || !state.deviceModel) {
+		cmds << mfgSpecificGetCmd()
 		cmds << versionGetCmd()
 	}
 
@@ -982,9 +962,10 @@ Changelog:
 2023-05-14 - Updates for power metering
 2023-05-18 - Adding requirement for getParamValueAdj in driver
 2023-05-24 - Fix for possible RuntimeException error due to bad cron string
-2023-10-25 - Less savings to the configVals data, and some new functions
+2023-10-25 - Less saving to the configVals data, and some new functions
 2023-10-26 - Added some battery shortcut functions
 2023-11-08 - Added ability to adjust settings on firmware range
+2024-01-28 - Adjusted logging settings for new / upgrade installs, added mfgSpecificReport
 
 ********************************************************************/
 
@@ -1058,6 +1039,20 @@ void zwaveEvent(hubitat.zwave.commands.versionv2.VersionReport cmd) {
 	setDevModel(new BigDecimal(fullVersion))
 }
 
+void zwaveEvent(hubitat.zwave.commands.manufacturerspecificv2.ManufacturerSpecificReport cmd) {
+	logTrace "${cmd}"
+
+	device.updateDataValue("manufacturer",cmd.manufacturerId.toString())
+	device.updateDataValue("deviceType",cmd.productTypeId.toString())
+	device.updateDataValue("deviceId",cmd.productId.toString())
+
+	logDebug "fingerprint  mfr:\"${hubitat.helper.HexUtils.integerToHexString(cmd.manufacturerId, 2)}\", "+
+		"prod:\"${hubitat.helper.HexUtils.integerToHexString(cmd.productTypeId, 2)}\", "+
+		"deviceId:\"${hubitat.helper.HexUtils.integerToHexString(cmd.productId, 2)}\", "+
+		"inClusters:\"${device.getDataValue("inClusters")}\""+
+		(device.getDataValue("secureInClusters") ? ", secureInClusters:\"${device.getDataValue("secureInClusters")}\"" : "")
+}
+
 void zwaveEvent(hubitat.zwave.Command cmd, ep=0) {
 	logDebug "Unhandled zwaveEvent: $cmd (ep ${ep})"
 }
@@ -1095,6 +1090,10 @@ String mcAssociationGetCmd(Integer group) {
 
 String versionGetCmd() {
 	return secureCmd(zwave.versionV2.versionGet())
+}
+
+String mfgSpecificGetCmd() {
+	return secureCmd(zwave.manufacturerSpecificV2.manufacturerSpecificGet())
 }
 
 String switchBinarySetCmd(Integer value, Integer ep=0) {
@@ -1326,7 +1325,7 @@ Map getParam(String search) {
 	verifyParamsList()
 	return configParams.find{ it.name == search }
 }
-Map getParam(Integer search) {
+Map getParam(Number search) {
 	verifyParamsList()
 	return configParams.find{ it.num == search }
 }
@@ -1451,7 +1450,7 @@ void clearVariables() {
 	def engTime = state.energyTime
 
 	//Clears State Variables
-	state.clear()
+	atomicState.clear()
 
 	//Clear Config Data
 	configsList["${device.id}"] = [:]
@@ -1464,7 +1463,7 @@ void clearVariables() {
 	//Restore
 	if (devModel) state.deviceModel = devModel
 	if (engTime) state.energyTime = engTime
-	//setDevModel()
+	atomicState.resyncAll = true
 }
 
 //Stash the model in a state variable
@@ -1615,8 +1614,14 @@ preferences {
 void checkLogLevel(Map levelInfo = [level:null, time:null]) {
 	unschedule(logsOff)
 	//Set Defaults
-	if (settings.logLevel == null) device.updateSetting("logLevel",[value:"3", type:"enum"])
-	if (settings.logLevelTime == null) device.updateSetting("logLevelTime",[value:"30", type:"enum"])
+	if (settings.logLevel == null) {
+		device.updateSetting("logLevel",[value:"3", type:"enum"])
+		levelInfo.level = 3
+	}
+	if (settings.logLevelTime == null) {
+		device.updateSetting("logLevelTime",[value:"30", type:"enum"])
+		levelInfo.time = 30
+	}
 	//Schedule turn off and log as needed
 	if (levelInfo.level == null) levelInfo = getLogLevelInfo()
 	String logMsg = "Logging Level is: ${LOG_LEVELS[levelInfo.level]} (${levelInfo.level})"
@@ -1625,6 +1630,9 @@ void checkLogLevel(Map levelInfo = [level:null, time:null]) {
 		runIn(60*levelInfo.time, logsOff)
 	}
 	logInfo(logMsg)
+
+	//Store last level below Debug
+	if (levelInfo.level <= 2) state.lastLogLevel = levelInfo.level
 }
 
 //Function for optional command
@@ -1636,23 +1644,24 @@ void setLogLevel(String levelName, String timeName=null) {
 }
 
 Map getLogLevelInfo() {
-	Integer level = settings.logLevel as Integer ?: 3
-	Integer time = settings.logLevelTime as Integer ?: 0
+	Integer level = settings.logLevel != null ? settings.logLevel as Integer : 1
+	Integer time = settings.logLevelTime != null ? settings.logLevelTime as Integer : 30
 	return [level: level, time: time]
 }
 
 //Legacy Support
 void debugLogsOff() {
-	logWarn "Debug logging toggle disabled..."
 	device.removeSetting("logEnable")
-	device.updateSetting("debugEnable",[value:"false",type:"bool"])
+	device.updateSetting("debugEnable",[value:false, type:"bool"])
 }
 
 //Current Support
 void logsOff() {
 	logWarn "Debug and Trace logging disabled..."
 	if (logLevelInfo.level >= 3) {
-		device.updateSetting("logLevel",[value:"2", type:"enum"])
+		Integer lastLvl = state.lastLogLevel != null ? state.lastLogLevel as Integer : 2
+		device.updateSetting("logLevel",[value:lastLvl.toString(), type:"enum"])
+		logWarn "Logging Level is: ${LOG_LEVELS[lastLvl]} (${lastLvl})"
 	}
 }
 

@@ -2,42 +2,48 @@
   "packageName": "Zooz Relays Advanced Drivers",
   "author": "Jeff Page (@jtp10181)",
   "minimumHEVersion": "2.3.4",
-  "dateReleased": "2023-11-09",
+  "dateReleased": "2024-01-31",
   "documentationLink": "https://github.com/jtp10181/Hubitat/tree/main/Drivers/zooz",
   "communityLink": "https://community.hubitat.com/t/zooz-relays-advanced/98194",
-  "releaseNotes": "ZEN16 Version [0.2.0] BETA - 2023-11-09\n  - Fixed issue with settings if both v1 and v2 in use on same hub\n  - Added subModel state\n\nZEN51/ZEN52 Version [1.1.2] - 2023-05-24\n  - Library updates and moving some functions\n  - Multichannel endpoint handling updates (ZEN52)",
+  "releaseNotes": "Version [1.2.0] (All Drivers) - 2024-01-31\n  - Added full ZEN17 driver to replace Companion driver\n  - Updated library code (logging fixes)\n  - Added/Updated setParamater function to request value back\n  - Added proper endpoint detection (ZEN52)",
   "drivers": [
     {
       "id": "1d6b0bc9-b3bb-4f57-880f-dcf97ff54395",
       "name": "Zooz ZEN16 MultiRelay Advanced",
       "namespace": "jtp10181",
-      "location": "https://jtp10181.gateway.scarf.sh/zooz-zen16-v0.2.0.groovy",
+      "location": "https://jtp10181.gateway.scarf.sh/zooz-zen16-v1.2.0.groovy",
       "required": false,
-      "version": "0.2.0"
+      "version": "1.2.0"
     },
     {
       "id": "446b0cae-c749-447f-9655-3e3463e9f01a",
-      "name": "Zooz ZEN17 Companion Driver",
+      "name": "Zooz ZEN17 Universal Relay Advanced",
       "namespace": "jtp10181",
-      "location": "https://jtp10181.gateway.scarf.sh/zooz-zen17-companion.groovy",
+			"alternateNames" : [
+				{
+					"name": "Zooz ZEN17 Companion Driver",
+					"namespace": "jtp10181"
+				}
+			],
+      "location": "https://jtp10181.gateway.scarf.sh/zooz-zen17-v1.2.0.groovy",
       "required": false,
-      "version": "1.0.2"
+      "version": "1.2.0"
     },
     {
       "id": "ba6bd7ae-f4e0-4bfb-8085-55e651814e0c",
       "name": "Zooz ZEN51 Relay Advanced",
       "namespace": "jtp10181",
-      "location": "https://jtp10181.gateway.scarf.sh/zooz-zen51-v1.1.2.groovy",
+      "location": "https://jtp10181.gateway.scarf.sh/zooz-zen51-v1.2.0.groovy",
       "required": false,
-      "version": "1.1.2"
+      "version": "1.2.0"
     },
     {
       "id": "f964795e-e849-412d-904d-91bf14d2c11d",
       "name": "Zooz ZEN52 Double Relay Advanced",
       "namespace": "jtp10181",
-      "location": "https://jtp10181.gateway.scarf.sh/zooz-zen52-v1.1.2.groovy",
+      "location": "https://jtp10181.gateway.scarf.sh/zooz-zen52-v1.2.0.groovy",
       "required": false,
-      "version": "1.1.2"
+      "version": "1.2.0"
     }
   ]
 }
