@@ -402,6 +402,7 @@ void zwaveEvent(hubitat.zwave.commands.manufacturerspecificv2.DeviceSpecificRepo
 			if (cmd.deviceIdDataFormat == 1) {
 				serialNumber = convertIntListToHexList(cmd.deviceIdData).join()
 			} else {
+				serialNumber = ""
 				cmd.deviceIdData.each { serialNumber += (char)it }
 			}
 			logDebug "Device Serial Number: $serialNumber"
