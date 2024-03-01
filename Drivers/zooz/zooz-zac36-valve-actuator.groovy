@@ -9,6 +9,14 @@
 
 Changelog:
 
+## [1.0.2] - 2024-03-01 (@jtp10181)
+  - Update library code
+  - Add parameters 113, 114 and 115 for battery configuration
+  - Add support for battery v2 disconnected/charging status
+  - Fixed refresh setting wrong state, removed valve notification from refresh (uses switch state)
+  - Changed battery and powersource reporting defaults to enabled
+  - Changed invert switch default to be disabled (per recommendation from Zooz)
+
 ## [1.0.0] - 2023-11-11 (@jtp10181)
   - Code refactor to new code base and library
   - Fixed on/off commands to follow Zooz docs
@@ -53,7 +61,7 @@ https://github.com/krlaframboise/SmartThings/tree/master/devicetypes/zooz/zooz-z
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "1.0.0"
+@Field static final String VERSION = "1.0.2"
 @Field static final String DRIVER = "Zooz-ZAC36"
 @Field static final String COMM_LINK = "https://community.hubitat.com/t/zooz-zac36/79426"
 @Field static final Map deviceModelNames = ["0101:0036":"ZAC36"]
@@ -87,6 +95,7 @@ metadata {
 
 		attribute "syncStatus", "string"
 		attribute "temperatureAlarm", "string"
+		attribute "batteryStatus", "string"
 
 		fingerprint mfr:"027A", prod:"0101", deviceId: "0036", inClusters:"0x00,0x00" //Zooz ZAC36 Titan Valve Actuator
 	}
@@ -150,6 +159,9 @@ void debugShowVars() {
 @Field static int waterAlarm = 0x05
 @Field static int powerManagement = 0x08
 @Field static int waterValve = 0x0F
+//Other / General
+@Field static Map chargeStatus = [0x00:"discharging", 0x01:"charging", 0x02:"maintaining"]
+
 
 //Main Parameters Listing
 @Field static Map<String, Map> paramsMap =
@@ -237,13 +249,33 @@ void debugShowVars() {
 	],
 	powerReports: [num:85, 
 		title:"Power Source Reports", 
-		size: 1, defaultVal: 0,
+		size: 1, defaultVal: 1,
 		options: [1:"Enabled", 0:"Disabled"],
 		firmVer: 1.19
 	],
 	batteryReports: [num:86, 
 		title:"Battery Reports", 
-		size: 1, defaultVal: 0,
+		size: 1, defaultVal: 1,
+		options: [1:"Enabled", 0:"Disabled"],
+		firmVer: 1.19
+	],
+	batteryThreshold: [ num:113,
+		title: "Battery Threshold Change",
+		description: "Report battery level when changed by this %",
+		size: 1, defaultVal: 10,
+		range: "0..100",
+		firmVer: 1.19
+	],
+	batteryAlarm: [ num:114,
+		title: "Low Battery Report Level",
+		size: 1, defaultVal: 30,
+		range: "0..100",
+		firmVer: 1.19
+	],
+	batteryControl: [ num:115,
+		title: "Low Battery Auto-Close",
+		description: "Automatically close the valve when low battery is triggered",
+		size: 1, defaultVal: 1,
 		options: [1:"Enabled", 0:"Disabled"],
 		firmVer: 1.19
 	],
@@ -262,8 +294,8 @@ void debugShowVars() {
 	inverseReport: [num:17, 
 		title:"Inverse Switch Report", 
 		description: "When enabled off=open, on=closed",
-		size: 1, defaultVal: 1,
-		options: [1:"Enabled", 0:"Disabled"],
+		size: 1, defaultVal: 0,
+		options: [0:"Disabled", 1:"Enabled"],
 		hidden: false
 	],
 	valveReports: [num:81, 
@@ -304,7 +336,7 @@ CommandClassReport - class:0x9F, version:1   (Security 2)
 	0x70: 1,	// Configuration
 	0x71: 8,	// Notification
 	0x72: 2,	// ManufacturerSpecific
-	0X80: 1,	// Battery
+	0X80: 2,	// Battery
 	0x85: 2,	// Association
 	0x86: 2,	// Version
 	0x8E: 3,	// Multi Channel Association
@@ -346,6 +378,7 @@ void updated() {
 	}
 	if (!getParamValue("batteryReports")) {
 		device.deleteCurrentState("battery")
+		device.deleteCurrentState("batteryStatus")
 	}
 	if (!getParamValue("powerReports")) {
 		device.deleteCurrentState("powerSource")
@@ -424,7 +457,8 @@ void refreshParams() {
 	if (cmds) sendCommands(cmds)
 }
 
-String setParameter(paramNum, value, size = null) {
+def setParameter(paramNum, value, size = null) {
+	paramNum = safeToInt(paramNum)
 	Map param = getParam(paramNum)
 	if (param && !size) { size = param.size	}
 
@@ -433,8 +467,8 @@ String setParameter(paramNum, value, size = null) {
 		logWarn "Syntax: setParameter(paramNum, value, size)"
 		return
 	}
-	logDebug "setParameter ( number: $paramNum, value: $value, size: $size )" + (param ? " [${param.name}]" : "")
-	return secureCmd(configSetCmd([num: paramNum, size: size], value as Integer))
+	logDebug "setParameter ( number: $paramNum, value: $value, size: $size )" + (param ? " [${param.name} - ${param.title}]" : "")
+	return configSetGetCmd([num: paramNum, size: size], value as Integer)
 }
 
 /*******************************************************************
@@ -539,8 +573,14 @@ void zwaveEvent(hubitat.zwave.commands.sensormultilevelv11.SensorMultilevelRepor
 	}
 }
 
-void zwaveEvent(hubitat.zwave.commands.batteryv1.BatteryReport cmd, ep=0) {
+void zwaveEvent(hubitat.zwave.commands.batteryv2.BatteryReport cmd, ep=0) {
 	logTrace "${cmd} (ep ${ep})"
+
+	String battStatus = (cmd.disconnected ? "disconnected" : "connected")
+	if (cmd.disconnected == false) {
+		battStatus = chargeStatus[(int) cmd.chargingStatus] ?: "unknown"
+	}
+	sendEventLog(name:"batteryStatus", value:battStatus, desc:"battery is ${battStatus}")
 
 	Integer batLvl = cmd.batteryLevel
 	if (batLvl == 0xFF) {
@@ -548,7 +588,7 @@ void zwaveEvent(hubitat.zwave.commands.batteryv1.BatteryReport cmd, ep=0) {
 		logWarn "LOW BATTERY WARNING"
 	}
 
-	batLvl = validateRange(batLvl, 100, 1, 100)
+	batLvl = validateRange(batLvl, 100, 0, 100)
 	String descText = "battery level is ${batLvl}%"
 	sendEventLog(name:"battery", value:batLvl, unit:"%", desc:descText, isStateChange:true)
 }
@@ -706,12 +746,13 @@ void executeRefreshCmds() {
 	List<String> cmds = []
 
 	if (state.resyncAll || !firmwareVersion || !state.deviceModel) {
+		cmds << mfgSpecificGetCmd()
 		cmds << versionGetCmd()
 	}
 
 	cmds << switchBinaryGetCmd() //Switch
 	cmds << sensorMultilevelGetCmd(tempSensor)  //Temperature
-	cmds << notificationGetCmd(waterValve, 0x01)  //Valve
+	// cmds << notificationGetCmd(waterValve, 0x01)  //Valve  -- THIS DOES NOT WORK CORRECTLY
 	cmds << notificationGetCmd(heatAlarm, 0x00)
 	if (getParamValue("leakReports")) { cmds << notificationGetCmd(waterAlarm, 0x00) }
 
@@ -822,9 +863,10 @@ Changelog:
 2023-05-14 - Updates for power metering
 2023-05-18 - Adding requirement for getParamValueAdj in driver
 2023-05-24 - Fix for possible RuntimeException error due to bad cron string
-2023-10-25 - Less savings to the configVals data, and some new functions
+2023-10-25 - Less saving to the configVals data, and some new functions
 2023-10-26 - Added some battery shortcut functions
 2023-11-08 - Added ability to adjust settings on firmware range
+2024-01-28 - Adjusted logging settings for new / upgrade installs, added mfgSpecificReport
 
 ********************************************************************/
 
@@ -898,6 +940,20 @@ void zwaveEvent(hubitat.zwave.commands.versionv2.VersionReport cmd) {
 	setDevModel(new BigDecimal(fullVersion))
 }
 
+void zwaveEvent(hubitat.zwave.commands.manufacturerspecificv2.ManufacturerSpecificReport cmd) {
+	logTrace "${cmd}"
+
+	device.updateDataValue("manufacturer",cmd.manufacturerId.toString())
+	device.updateDataValue("deviceType",cmd.productTypeId.toString())
+	device.updateDataValue("deviceId",cmd.productId.toString())
+
+	logDebug "fingerprint  mfr:\"${hubitat.helper.HexUtils.integerToHexString(cmd.manufacturerId, 2)}\", "+
+		"prod:\"${hubitat.helper.HexUtils.integerToHexString(cmd.productTypeId, 2)}\", "+
+		"deviceId:\"${hubitat.helper.HexUtils.integerToHexString(cmd.productId, 2)}\", "+
+		"inClusters:\"${device.getDataValue("inClusters")}\""+
+		(device.getDataValue("secureInClusters") ? ", secureInClusters:\"${device.getDataValue("secureInClusters")}\"" : "")
+}
+
 void zwaveEvent(hubitat.zwave.Command cmd, ep=0) {
 	logDebug "Unhandled zwaveEvent: $cmd (ep ${ep})"
 }
@@ -935,6 +991,10 @@ String mcAssociationGetCmd(Integer group) {
 
 String versionGetCmd() {
 	return secureCmd(zwave.versionV2.versionGet())
+}
+
+String mfgSpecificGetCmd() {
+	return secureCmd(zwave.manufacturerSpecificV2.manufacturerSpecificGet())
 }
 
 String switchBinarySetCmd(Integer value, Integer ep=0) {
@@ -983,7 +1043,7 @@ String wakeUpNoMoreInfoCmd() {
 }
 
 String batteryGetCmd() {
-	return secureCmd(zwave.batteryV1.batteryGet())
+	return secureCmd(zwave.batteryV2.batteryGet())
 }
 
 String sensorMultilevelGetCmd(sensorType) {
@@ -1166,7 +1226,7 @@ Map getParam(String search) {
 	verifyParamsList()
 	return configParams.find{ it.name == search }
 }
-Map getParam(Integer search) {
+Map getParam(Number search) {
 	verifyParamsList()
 	return configParams.find{ it.num == search }
 }
@@ -1291,7 +1351,7 @@ void clearVariables() {
 	def engTime = state.energyTime
 
 	//Clears State Variables
-	state.clear()
+	atomicState.clear()
 
 	//Clear Config Data
 	configsList["${device.id}"] = [:]
@@ -1304,7 +1364,7 @@ void clearVariables() {
 	//Restore
 	if (devModel) state.deviceModel = devModel
 	if (engTime) state.energyTime = engTime
-	//setDevModel()
+	atomicState.resyncAll = true
 }
 
 //Stash the model in a state variable
@@ -1426,8 +1486,14 @@ preferences {
 void checkLogLevel(Map levelInfo = [level:null, time:null]) {
 	unschedule(logsOff)
 	//Set Defaults
-	if (settings.logLevel == null) device.updateSetting("logLevel",[value:"3", type:"enum"])
-	if (settings.logLevelTime == null) device.updateSetting("logLevelTime",[value:"30", type:"enum"])
+	if (settings.logLevel == null) {
+		device.updateSetting("logLevel",[value:"3", type:"enum"])
+		levelInfo.level = 3
+	}
+	if (settings.logLevelTime == null) {
+		device.updateSetting("logLevelTime",[value:"30", type:"enum"])
+		levelInfo.time = 30
+	}
 	//Schedule turn off and log as needed
 	if (levelInfo.level == null) levelInfo = getLogLevelInfo()
 	String logMsg = "Logging Level is: ${LOG_LEVELS[levelInfo.level]} (${levelInfo.level})"
@@ -1436,6 +1502,9 @@ void checkLogLevel(Map levelInfo = [level:null, time:null]) {
 		runIn(60*levelInfo.time, logsOff)
 	}
 	logInfo(logMsg)
+
+	//Store last level below Debug
+	if (levelInfo.level <= 2) state.lastLogLevel = levelInfo.level
 }
 
 //Function for optional command
@@ -1447,23 +1516,24 @@ void setLogLevel(String levelName, String timeName=null) {
 }
 
 Map getLogLevelInfo() {
-	Integer level = settings.logLevel as Integer ?: 3
-	Integer time = settings.logLevelTime as Integer ?: 0
+	Integer level = settings.logLevel != null ? settings.logLevel as Integer : 1
+	Integer time = settings.logLevelTime != null ? settings.logLevelTime as Integer : 30
 	return [level: level, time: time]
 }
 
 //Legacy Support
 void debugLogsOff() {
-	logWarn "Debug logging toggle disabled..."
 	device.removeSetting("logEnable")
-	device.updateSetting("debugEnable",[value:"false",type:"bool"])
+	device.updateSetting("debugEnable",[value:false, type:"bool"])
 }
 
 //Current Support
 void logsOff() {
 	logWarn "Debug and Trace logging disabled..."
 	if (logLevelInfo.level >= 3) {
-		device.updateSetting("logLevel",[value:"2", type:"enum"])
+		Integer lastLvl = state.lastLogLevel != null ? state.lastLogLevel as Integer : 2
+		device.updateSetting("logLevel",[value:lastLvl.toString(), type:"enum"])
+		logWarn "Logging Level is: ${LOG_LEVELS[lastLvl]} (${lastLvl})"
 	}
 }
 
