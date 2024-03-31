@@ -1,6 +1,6 @@
 /*  
- *  Zooz ZSE40 4-in-1 Multisensor
- *    - Model: ZSE40 - MINIMUM FIRMWARE 32.02
+ *  Zooz ZSE43 Tilt-Shock XS Sensor
+ *    - Model: ZSE43 - ALL FIRMWARE
  *
  *  For Support, Information, and Updates:
  *  https://community.hubitat.com/t/zooz-sensors/81074
@@ -18,73 +18,7 @@ Changelog:
   - Fixed decimal bug with hardware offsets on ZSE44
 
 ## [1.1.0] - 2023-11-08 (@jtp10181)
-  - Rearranged functions to get ready for library code
-  - Merged new code base and library
-  - Added ZSE41 and ZSE42 to package
-
-## [1.0.5] - 2022-08-06 (@jtp10181)
-  ### Fixed
-  - Forgot to change param 8 setting from -1 to 255 when I added the signed/unsigned conversion
-  - Put in proper scalable signed/unsigned parameter value conversion
-
-## [1.0.4] - 2022-08-02 (@jtp10181)
-  ### Fixed
-  - Race condition with configVals (now keeping copy in static var)
-  - Various fixes in common functions merged from other drivers
-  - The deviceModel checking should be even better now, with page refresh
-  - Handling of ZSE40-700 with 1.10 firmware fixed
-  ### Removed
-  - Supervision encapsulation code, not being used
-  
-## [1.0.2] - 2022-07-25 (@jtp10181)
-  ### Fixed
-  - Fixed issue handling decimal parameters introduced in 1.0.1
-  
-## [1.0.1] - 2022-07-25 (@jtp10181)
-  ### Added
-  - Set deviceModel in device data (press refresh)
-  ### Changed
-  - Description text loging enabled by default
-  - Removed getParam.value and replaced with separate function
-  - Adding HTML styling to the Preferences
-  - Cleaned up some logging functions
-  - Other minor function updates synced from other drivers
-  ### Fixed
-  - Motion Clear Delay upper limit changed back to 255 and properly fixed
-  
-## [1.0.0] - 2022-04-25 (@jtp10181)
-  ### Added
-  - More robust checking for missing firmware/model data to help new users
-  - INFO state message about anything pending that needs the device to wake up, more visible than logging
-  ### Changed
-  - Renamed Configure and Refresh commands since they do not work instantly like a mains device
-  - Downgraded some command class versions to hopefully better support older devices
-  - Removed some unused code carried over from copying another driver
-  ### Fixed
-  - Added inClusters to fingerprint so it will be selected by default
-  - Global (Field static) Maps defined explicitly as a ConcurrentHashMap
-  - Corrected upper limit of Motion Clear delay (thanks @conrad4 for finding it)
-  
-## [0.3.0] - 2022-01-23 (@jtp10181)
-  ### Added
-  - Basic WakeUpInterval support (configure will force it to 12 hours)
-  ### Fixed
-  - Removed Initialize function, was causing issues with pairing
-  
-## [0.2.0] - 2022-01-17 (@jtp10181)
-  ### Added
-  - Temperature, Humidity, and Light offsets
-  - Refresh command to force full refresh next wake-up
-  - Log messages with instructions when you need to wake up the device
-  - Properly sending wakeUpNoMoreInfoCmd to save battery
-  ### Fixed
-  - Added min firmware to parameter 8 setting
-  - Wake-up only gets battery level by default
-  - parse() logTrace would fail if command could not be parsed
-  
-## [0.1.0] - 2021-09-29 (@jtp10181)
-  ### Added
-  - Initial Release, supports all known settings and features except associations
+  -Initial Release, from ZSE40 1.1.0 codebase
 
 NOTICE: This file has been created by *Jeff Page* with some code used 
 	from the original work of *Zooz* and *Kevin LaFramboise* under compliance with the Apache 2.0 License.
@@ -110,23 +44,21 @@ import groovy.transform.Field
 @Field static final String VERSION = "1.2.0"
 @Field static final String DRIVER = "Zooz-Sensors"
 @Field static final String COMM_LINK = "https://community.hubitat.com/t/zooz-sensors/81074"
-@Field static final Map deviceModelNames = ["2021:2101":"ZSE40"]
+@Field static final Map deviceModelNames = ["7000:E003":"ZSE43"]
 
 metadata {
 	definition (
-		name: "Zooz ZSE40 4-in-1 Multisensor",
+		name: "Zooz ZSE43 Tilt-Shock XS Sensor",
 		namespace: "jtp10181",
 		author: "Jeff Page (@jtp10181)",
 		singleThreaded: true,
-		importUrl: "https://raw.githubusercontent.com/jtp10181/Hubitat/main/Drivers/zooz/zooz-zse40-multisensor.groovy"
+		importUrl: "https://raw.githubusercontent.com/jtp10181/Hubitat/main/Drivers/zooz/zooz-zse43-tilt-shock.groovy"
 	) {
 		capability "Sensor"
-		capability "MotionSensor"
-		capability "IlluminanceMeasurement"
-		capability "RelativeHumidityMeasurement"
-		capability "TemperatureMeasurement"
+		capability "ContactSensor"
+		capability "ShockSensor"
+		capability "AccelerationSensor"
 		capability "Battery"
-		capability "TamperAlert"
 
 		command "fullConfigure"
 		command "forceRefresh"
@@ -136,7 +68,7 @@ metadata {
 
 		attribute "syncStatus", "string"
 
-		fingerprint mfr:"027A", prod:"2021", deviceId:"2101", inClusters:"0x5E,0x86,0x72,0x5A,0x85,0x59,0x73,0x80,0x71,0x31,0x70,0x84,0x7A,0x98" //Zooz ZSE40 4-in-1 Multisensor
+		fingerprint mfr:"027A", prod:"7000", deviceId:"E003", inClusters:"0x00,0x00" //Zooz ZSE43 Tilt-Shock Sensor
 	}
 
 	preferences {
@@ -162,21 +94,6 @@ metadata {
 			}
 		}
 
-		input "tempOffset", "decimal",
-			title: fmtTitle("Temperature Offset"),
-			description: fmtDesc("Range: -25.0..25.0, DEFAULT: 0"),
-			defaultValue: 0, range: "-25..25", required: false
-
-		input "humidityOffset", "decimal",
-			title: fmtTitle("Humidity Offset"),
-			description: fmtDesc("Range: -25.0..25.0, DEFAULT: 0"),
-			defaultValue: 0, range: "-25..25", required: false
-
-		input "lightOffset", "decimal",
-			title: fmtTitle("Light % Offset"),
-			description: fmtDesc("Range: -25.0..25.0, DEFAULT: 0"),
-			defaultValue: 0, range: "-25..25", required: false
-
 		input "wakeUpInt", "number",
 			title: fmtTitle("Wake-up Interval (hours)"),
 			description: fmtDesc("How often the device will wake up to receive commands from the hub"),
@@ -196,77 +113,51 @@ void debugShowVars() {
 @Field static final int maxAssocNodes = 1
 
 /*** Static Lists and Settings ***/
-//Sensor Types
-@Field static Short SENSOR_TYPE_TEMPERATURE = 0x01
-@Field static Short SENSOR_TYPE_LUMINANCE = 0x03
-@Field static Short SENSOR_TYPE_HUMIDITY = 0x05
-//Notification Types
-@Field static Short NOTIFICATION_TYPE_SECURITY = 0x07
-//Notification Events
-@Field static Short EVENT_PARAM_IDLE = 0x00
-@Field static Short EVENT_PARAM_TAMPER = 0x03
-@Field static Short EVENT_PARAM_MOTION = 0x08
+//None
 
 //Main Parameters Listing
 @Field static Map<String, Map> paramsMap =
 [
-	tempTrigger: [ num:2, 
-		title: "Temperature Change Report Trigger (1 = 0.1° / 10 = 1°)", 
-		size: 1, defaultVal: 10, 
-		range: "1..50"
-	],
-	humidityTrigger: [ num:3, 
-		title: "Humidity Change Report Trigger (%)", 
-		size: 1, defaultVal: 10, 
-		range: "1..50"
-	],
-	lightTrigger: [ num:4, 
-		title: "Light Change Report Trigger (%)", 
-		size: 1, defaultVal: 10, 
-		range: "5..50"
-	],
-	motionClear: [ num:5, 
-		title: "Motion Clear Delay / Timeout (seconds)", 
-		size: 1, defaultVal: 15, 
-		range: "15..255"
-	],
-	motionSensitivity: [ num:6, 
-		title: "Motion Sensitivity", 
-		size: 1, defaultVal: 3, 
-		options: [1:"1 - Most Sensitive", 2:"2", 3:"3", 4:"4", 5:"5", 6:"6", 7:"7 - Least Sensitive"]
-	],
-	ledMode: [ num:7, 
+	ledMode: [ num:1, 
 		title: "LED Indicator Mode", 
 		size: 1, defaultVal: 3, 
-		options: [1:"LED Disabled", 2:"Motion Flash / Temp Flash (every 3 mins)", 3:"Motion Flash / Temp None"],
-		changesFR: [(16..32.30):[defaultVal:4, options:[1:"LED Disabled", 2:"Motion Flash / Temp Pulse", 3:"Motion Flash / Temp Flash (every 3 mins)", 4:"Motion Flash / Temp None"]]],
+		options: [3:"LED Blinks on Any Status Change", 2:"LED Blinks on Open/Close", 1:"LED Blinks on Shock", 0:"LED Disabled"]
 	],
-	group1Report: [ num:8, 
-		title: "Group 1 (Hub) Reporting", 
-		size: 1, defaultVal: 255, 
-		options: [0:"Notification Reports Only", 255:"Notification AND Basic Reports"],
-		changesFR: [(16..30):[num:null]],
+	// Param #2 Removed in FW 1.20
+	// batteryThreshold: [ num:2,
+	// 	title: "Battery Level Report Threshold",
+	// 	size: 1, defaultVal: 10,
+	// 	range: 1..50
+	// ],
+	batteryLow: [ num:3,
+		title: "Low Battery Report (%)",
+		size: 1, defaultVal: 10,
+		range: 10..50
 	],
-	tempUnits: [ num:1,
-		title: "Temperature Units:",
-		size: 1, defaultVal: 1,
-		options: [0:"Celsius (°C)", 1:"Fahrenheit (°F)"]
+	shockSensitivity: [ num:4,
+		title: "Shock Sensor Sensitivity",
+		size: 1, defaultVal: 0,
+		options: [0:"High: Reports Immediately", 1:"Medium: Reports after 1.5s", 2:"Low: Reports after 2.5s"]	
+	],
+	sensorsEnabled: [ num:7,
+		title: "Select Sensors to Enable",
+		size: 1, defaultVal: 2,
+		options: [2:"Both Sensors Enabled", 1:"Only Shock Enabled", 0:"Only Tilt Enabled"]	
 	],
 ]
 
-/* ZSE40
+/* ZSE43
 CommandClassReport
 */
 
 //Set Command Class Versions
 @Field static final Map commandClassVersions = [
-	0x31: 5,	// Sensor Multilevel (sensormultilevelv5)
-	0x70: 1,	// Configuration (configurationv1)
-	0x71: 3,	// Notification (notificationv3) (8)
-	0x80: 1,	// Battery (batteryv1)
-	0x84: 2,	// Wakeup (wakeupv2)
-	0x85: 2,	// Association (associationv2) (3)
-	0x86: 2,	// Version (versionv2) (3)
+	0x70: 1,	// configuration
+	0x71: 8,	// notification
+	0x80: 1,	// battery
+	0x84: 2,	// wakeup
+	0x85: 2,	// association
+	0x86: 2,	// version
 ]
 
 
@@ -306,8 +197,6 @@ void updated() {
 	else if (!state.resyncAll && !state.pendingRefresh) {
 		state.remove("INFO")
 	}
-
-	setSubModel()
 
 	updateSyncingStatus(1)
 }
@@ -411,48 +300,29 @@ void zwaveEvent(hubitat.zwave.commands.wakeupv2.WakeUpNotification cmd, ep=0) {
 	state.resyncAll = false
 	state.pendingRefresh = false
 	state.remove("INFO")
-	setSubModel()
 	
 	sendCommands(cmds, 400)
 }
 
-void zwaveEvent(hubitat.zwave.commands.basicv1.BasicSet cmd, ep=0) {
+void zwaveEvent(hubitat.zwave.commands.sensorbinaryv2.SensorBinaryReport cmd, ep=0) {
 	logTrace "${cmd} (ep ${ep})"
-	sendEventLog(name:"motion", value:(cmd.value ? "active":"inactive"))
+	//Ignoring these, handled by NotificationReport
 }
 
-void zwaveEvent(hubitat.zwave.commands.sensormultilevelv5.SensorMultilevelReport cmd, ep=0) {
-	logTrace "${cmd} (ep ${ep})"	
-	switch (cmd.sensorType) {
-		case SENSOR_TYPE_TEMPERATURE: //0x01
-			String temp = convertTemperatureIfNeeded(cmd.scaledSensorValue, (cmd.scale ? "F" : "C"), cmd.precision)
-			BigDecimal offset = safeToDec(settings?.tempOffset,0)
-			BigDecimal tempOS = safeToDec(temp,0) + offset
-			logDebug "Temperature Offset by ${offset} from ${temp} to ${tempOS}"
-			sendEventLog(name:"temperature", value:(safeToDec(tempOS,0,Math.min(cmd.precision,1))), unit:"°${temperatureScale}")
-			break
-		case SENSOR_TYPE_LUMINANCE: //0x03
-			BigDecimal offset = safeToDec(settings?.lightOffset,0)
-			BigDecimal lightOS = safeToDec(cmd.scaledSensorValue,0) + offset
-			logDebug "Light % Offset by ${offset} from ${cmd.scaledSensorValue} to ${lightOS}"
-			sendEventLog(name:"illuminance", value:(Math.round(lightOS)), unit:"%")
-			break
-		case SENSOR_TYPE_HUMIDITY:  //0x05
-			BigDecimal offset = safeToDec(settings?.humidityOffset,0)
-			BigDecimal humidOS = safeToDec(cmd.scaledSensorValue,0) + offset
-			logDebug "Humidity Offset by ${offset} from ${cmd.scaledSensorValue} to ${humidOS}"
-			sendEventLog(name:"humidity", value:(safeToDec(humidOS,0,Math.min(cmd.precision,1))), unit:"%")
-			break
-		default:
-			logDebug "Unhandled sensorType: ${cmd}"
-	}
-}
-
-void zwaveEvent(hubitat.zwave.commands.notificationv3.NotificationReport cmd, ep=0) {
+void zwaveEvent(hubitat.zwave.commands.notificationv8.NotificationReport cmd, ep=0) {
 	logTrace "${cmd} (ep ${ep})"
-	switch (cmd.notificationType) {
-		case NOTIFICATION_TYPE_SECURITY:
-			sendSecurityEvent(cmd.event, cmd.eventParameter[0])
+
+	switch (cmd.notificationType as Integer) {
+		case 0x06:  //Access Control - Door/Window
+			if      (cmd.event == 0x16) sendEventLog(name:"contact", value:"open", ep)
+			else if (cmd.event == 0x17) sendEventLog(name:"contact", value:"closed", ep)
+			else    logDebug "Unhandled event: ${cmd}"
+			break
+		case 0x07:  //Home Security - 0x03 is Tampering alert, apparently being used for shock sensor
+			if		(cmd.event == 0x03) sendEventLog(name:"shock", value:"detected", ep)
+			else if	(cmd.event == 0x00) sendEventLog(name:"shock", value:"clear", ep)
+			if (logDesc) log.info "$device.displayName is inactive"
+			else    logDebug "Unhandled event: ${cmd}"
 			break
 		default:
 			logDebug "Unhandled notificationType: ${cmd}"
@@ -476,27 +346,6 @@ void sendEventLog(Map evt, Integer ep=0) {
 	}
 	//Always send event to update last activity
 	sendEvent(evt)
-}
-
-void sendSecurityEvent(event, parameter) {
-	Boolean cleared
-	Integer eventAdj = event
-	//Idle Event the parameter is the event to clear
-	if (event == EVENT_PARAM_IDLE) {
-		eventAdj = parameter
-		cleared = true
-	}
-	
-	switch (eventAdj) {
-		case EVENT_PARAM_TAMPER:
-			sendEventLog(name:"tamper", value:(cleared ? "clear":"detected"))
-			break
-		case EVENT_PARAM_MOTION:
-			sendEventLog(name:"motion", value:(cleared ? "inactive":"active"))
-			break
-		default:
-			logDebug "Unhandled Security Event: ${event}, ${parameter}"
-	}
 }
 
 
@@ -546,14 +395,6 @@ List<String> getRefreshCmds() {
 	cmds << versionGetCmd()
 	cmds << wakeUpIntervalGetCmd()
 
-	//Sensors
-	cmds << sensorMultilevelGetCmd(SENSOR_TYPE_TEMPERATURE)
-	cmds << sensorMultilevelGetCmd(SENSOR_TYPE_LUMINANCE)
-	cmds << sensorMultilevelGetCmd(SENSOR_TYPE_HUMIDITY)
-	//These don't work
-	//cmds << notificationGetCmd(NOTIFICATION_TYPE_SECURITY, EVENT_PARAM_TAMPER)
-	//cmds << notificationGetCmd(NOTIFICATION_TYPE_SECURITY, EVENT_PARAM_MOTION)
-
 	return cmds ?: []
 }
 
@@ -572,19 +413,9 @@ List getConfigureAssocsCmds() {
 }
 
 private logForceWakeupMessage(msg) {
-	String helpText = "You can force a wake up by using a paper clip to push the Z-Wave button on the device."
+	String helpText = "Quickly press the internal button 4 times to wake the device."
 	logWarn "${msg} will execute the next time the device wakes up.  ${helpText}"
 	state.INFO = "*** ${msg} *** Waiting for device to wake up.  ${helpText}"
-}
-
-private setSubModel() {
-	String devModel = state.deviceModel
-	if (devModel == "ZSE40-700") { devModel = setDevModel() }
-	if (!state.subModel) {
-		if (devModel == "ZSE40" && getDataValue("inClusters").contains("0x9F")) {
-			state.subModel = "v700"
-		}
-	}
 }
 
 
@@ -799,7 +630,7 @@ String batteryGetCmd() {
 
 String sensorMultilevelGetCmd(sensorType) {
 	Integer scale = (temperatureScale == "F" ? 1 : 0)
-	return secureCmd(zwave.sensorMultilevelV5.sensorMultilevelGet(scale: scale, sensorType: sensorType))
+	return secureCmd(zwave.sensorMultilevelV11.sensorMultilevelGet(scale: scale, sensorType: sensorType))
 }
 
 String notificationGetCmd(notificationType, eventType, Integer ep=0) {

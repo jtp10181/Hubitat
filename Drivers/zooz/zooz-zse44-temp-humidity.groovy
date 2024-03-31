@@ -9,6 +9,14 @@
 
 Changelog:
 
+## [1.2.0] - 2024-03-30 (@jtp10181)
+  - Added ZSE43, ZSE18, and ZSE11 to HPM package
+  - Updated Library code
+  - Added Wake-up Interval Setting
+  - Added singleThreaded flag
+  - Changed some command class versions
+  - Fixed decimal bug with hardware offsets on ZSE44
+
 ## [1.1.0] - 2023-11-08 (@jtp10181)
   - Rearranged functions to get ready for library code
   - Merged new code base and library
@@ -49,7 +57,7 @@ Changelog:
 NOTICE: This file has been created by *Jeff Page* with some code used 
 	from the original work of *Zooz* and *Kevin LaFramboise* under compliance with the Apache 2.0 License.
 
- *  Copyright 2022-2023 Jeff Page
+ *  Copyright 2022-2024 Jeff Page
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -67,7 +75,7 @@ NOTICE: This file has been created by *Jeff Page* with some code used
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "1.1.0"
+@Field static final String VERSION = "1.2.0"
 @Field static final String DRIVER = "Zooz-Sensors"
 @Field static final String COMM_LINK = "https://community.hubitat.com/t/zooz-sensors/81074"
 @Field static final Map deviceModelNames = ["7000:E004":"ZSE44"]
@@ -77,13 +85,14 @@ metadata {
 		name: "Zooz ZSE44 Temperature Humidity XS Sensor",
 		namespace: "jtp10181",
 		author: "Jeff Page (@jtp10181)",
+		singleThreaded: true,
 		importUrl: "https://raw.githubusercontent.com/jtp10181/Hubitat/main/Drivers/zooz/zooz-zse44-temp-humidity.groovy"
 	) {
 		capability "Sensor"
-		capability "Relative Humidity Measurement"
-		capability "Temperature Measurement"
+		capability "RelativeHumidityMeasurement"
+		capability "TemperatureMeasurement"
 		capability "Battery"
-		capability "Tamper Alert"
+		capability "TamperAlert"
 
 		command "fullConfigure"
 		command "forceRefresh"
@@ -99,12 +108,12 @@ metadata {
 	preferences {
 		configParams.each { param ->
 			if (!param.hidden) {
-				BigDecimal paramVal = getParamValue(param)
 				if (param.options) {
+					BigDecimal paramVal = getParamValue(param)
 					input "configParam${param.num}", "enum",
 						title: fmtTitle("${param.title}"),
 						description: fmtDesc("• Parameter #${param.num}, Selected: ${paramVal}" + (param?.description ? "<br>• ${param?.description}" : '')),
-						defaultValue: paramVal,
+						defaultValue: param.defaultVal,
 						options: param.options,
 						required: false
 				}
@@ -112,7 +121,7 @@ metadata {
 					input "configParam${param.num}", "number",
 						title: fmtTitle("${param.title}"),
 						description: fmtDesc("• Parameter #${param.num}, Range: ${(param.range).toString()}, DEFAULT: ${param.defaultVal}" + (param?.description ? "<br>• ${param?.description}" : '')),
-						defaultValue: paramVal,
+						defaultValue: param.defaultVal,
 						range: param.range,
 						required: false
 				}
@@ -120,14 +129,20 @@ metadata {
 		}
 
 		input "tempOffset", "decimal",
-			title: fmtTitle("Temperature Offset (Driver):"),
+			title: fmtTitle("Temperature Offset (Driver)"),
 			description: fmtDesc("Range: -25.0..25.0, DEFAULT: 0"),
 			defaultValue: 0, range: "-25..25", required: false
 
 		input "humidityOffset", "decimal",
-			title: fmtTitle("Humidity Offset (Driver):"),
+			title: fmtTitle("Humidity Offset (Driver)"),
 			description: fmtDesc("Range: -25.0..25.0, DEFAULT: 0"),
 			defaultValue: 0, range: "-25..25", required: false
+
+		input "wakeUpInt", "number",
+			title: fmtTitle("Wake-up Interval (hours)"),
+			description: fmtDesc("How often the device will wake up to receive commands from the hub"),
+			defaultValue: 12,
+			range: 1..24
 	}
 }
 
@@ -171,12 +186,12 @@ void debugShowVars() {
 	],
 	//TEMP ALERTS
 	//HUMIDITY ALERTS
-	tempOffset: [ num:14,
+	tempOffsetHw: [ num:14,
 		title: "Temperature Offset (Hardware)",
 		size: 1, defaultVal: 0,
 		range: "-10.0..10.0"
 	],
-	humidOffset: [ num:15,
+	humidOffsetHw: [ num:15,
 		title: "Humidity Offset (Hardware)",
 		size: 1, defaultVal: 0,
 		range: "-10.0..10.0"
@@ -194,7 +209,7 @@ void debugShowVars() {
 		range: "0..480"
 	],
 	tempUnits: [ num:13,
-		title: "Temperature Units:",
+		title: "Temperature Units",
 		size: 1, defaultVal: 1,
 		options: [0:"Celsius (°C)", 1:"Fahrenheit (°F)"]
 	],
@@ -206,7 +221,7 @@ CommandClassReport
 
 //Set Command Class Versions
 @Field static final Map commandClassVersions = [
-	0x31: 5,	// Sensor Multilevel (sensormultilevelv5) (11)
+	0x31: 11,	// Sensor Multilevel (sensormultilevelv11)
 	0x70: 1,	// Configuration (configurationv1) (4)
 	0x71: 8,	// Notification (notificationv8) (8)
 	0x80: 1,	// Battery (batteryv1)
@@ -292,7 +307,7 @@ void zwaveEvent(hubitat.zwave.commands.configurationv1.ConfigurationReport cmd) 
 		Long sizeFactor = Math.pow(256,param.size).round()
 		if (val < 0) { val += sizeFactor }
 
-		logDebug "${param.name} (#${param.num}) = ${val.toString()}"
+		logDebug "${param.name} - ${param.title} (#${param.num}) = ${val.toString()}"
 		setParamStoredValue(param.num, val)
 	}
 	else {
@@ -359,19 +374,19 @@ void zwaveEvent(hubitat.zwave.commands.wakeupv2.WakeUpNotification cmd, ep=0) {
 	sendCommands(cmds, 400)
 }
 
-void zwaveEvent(hubitat.zwave.commands.sensormultilevelv5.SensorMultilevelReport cmd, ep=0) {
+void zwaveEvent(hubitat.zwave.commands.sensormultilevelv11.SensorMultilevelReport cmd, ep=0) {
 	logTrace "${cmd} (ep ${ep})"	
 	switch (cmd.sensorType) {
 		case SENSOR_TYPE_TEMPERATURE: //0x01
-			def temp = convertTemperatureIfNeeded(cmd.scaledSensorValue, (cmd.scale ? "F" : "C"), cmd.precision)
-			def offset = safeToDec(settings?.tempOffset,0)
-			def tempOS = safeToDec(temp,0) + offset
+			String temp = convertTemperatureIfNeeded(cmd.scaledSensorValue, (cmd.scale ? "F" : "C"), cmd.precision)
+			BigDecimal offset = safeToDec(settings?.tempOffset,0)
+			BigDecimal tempOS = safeToDec(temp,0) + offset
 			logDebug "Temperature Offset by ${offset} from ${temp} to ${tempOS}"
 			sendEventLog(name:"temperature", value:(safeToDec(tempOS,0,Math.min(cmd.precision,1))), unit:"°${temperatureScale}")
 			break
 		case SENSOR_TYPE_HUMIDITY:  //0x05
-			def offset = safeToDec(settings?.humidityOffset,0)
-			def humidOS = safeToDec(cmd.scaledSensorValue,0) + offset
+			BigDecimal offset = safeToDec(settings?.humidityOffset,0)
+			BigDecimal humidOS = safeToDec(cmd.scaledSensorValue,0) + offset
 			logDebug "Humidity Offset by ${offset} from ${cmd.scaledSensorValue} to ${humidOS}"
 			sendEventLog(name:"humidity", value:(safeToDec(humidOS,0,Math.min(cmd.precision,1))), unit:"%")
 			break
@@ -424,12 +439,13 @@ List<String> getConfigureCmds() {
 
 	List<String> cmds = []
 
-	if (state.resyncAll) {
-		clearVariables()
-		cmds << wakeUpIntervalSetCmd(43200)
+	Integer wakeSeconds = wakeUpInt ? wakeUpInt*3600 : 43200
+	if (state.resyncAll || wakeSeconds != (device.getDataValue("zwWakeupInterval") as Integer)) {
+		cmds << wakeUpIntervalSetCmd(wakeSeconds)
 		cmds << wakeUpIntervalGetCmd()
 	}
 	if (state.resyncAll || !firmwareVersion || !state.deviceModel) {
+		cmds << mfgSpecificGetCmd()
 		cmds << versionGetCmd()
 	}
 
@@ -440,11 +456,14 @@ List<String> getConfigureCmds() {
 		Integer storedVal = getParamStoredValue(param.num)
 
 		if ((paramVal != null) && (state.resyncAll || (storedVal != paramVal))) {
-			logDebug "Changing ${param.name} (#${param.num}) from ${storedVal} to ${paramVal}"
+			logDebug "Changing ${param.name} - ${param.title} (#${param.num}) from ${storedVal} to ${paramVal}"
 			cmds += configSetGetCmd(param, paramVal)
 		}
 	}
 
+	if (state.resyncAll) {
+		clearVariables()
+	}
 	state.resyncAll = false
 
 	if (cmds) updateSyncingStatus(6)
@@ -457,6 +476,8 @@ List<String> getRefreshCmds() {
 
 	cmds << versionGetCmd()
 	cmds << wakeUpIntervalGetCmd()
+
+	//Sensors
 	cmds << sensorMultilevelGetCmd(SENSOR_TYPE_TEMPERATURE)
 	cmds << sensorMultilevelGetCmd(SENSOR_TYPE_HUMIDITY)
 
@@ -493,18 +514,18 @@ void fixParamsMap() {
 }
 
 Integer getParamValueAdj(Map param) {
-	Integer paramVal = getParamValue(param)
+	BigDecimal paramVal = getParamValue(param)
 
 	switch(param.name) {
-		case "tempOffset":
-		case "humidOffset":
+		case "tempOffsetHw":
+		case "humidOffsetHw":
 			//Convert -10.0..10.0 range to 0..200
 			paramVal = (paramVal * 10) + 100
 			paramVal = validateRange(paramVal, 100, 0, 200)
 			break
 	}
 
-	return paramVal
+	return (paramVal as Integer)
 }
 
 
@@ -521,9 +542,10 @@ Changelog:
 2023-05-14 - Updates for power metering
 2023-05-18 - Adding requirement for getParamValueAdj in driver
 2023-05-24 - Fix for possible RuntimeException error due to bad cron string
-2023-10-25 - Less savings to the configVals data, and some new functions
+2023-10-25 - Less saving to the configVals data, and some new functions
 2023-10-26 - Added some battery shortcut functions
 2023-11-08 - Added ability to adjust settings on firmware range
+2024-01-28 - Adjusted logging settings for new / upgrade installs, added mfgSpecificReport
 
 ********************************************************************/
 
@@ -597,6 +619,20 @@ void zwaveEvent(hubitat.zwave.commands.versionv2.VersionReport cmd) {
 	setDevModel(new BigDecimal(fullVersion))
 }
 
+void zwaveEvent(hubitat.zwave.commands.manufacturerspecificv2.ManufacturerSpecificReport cmd) {
+	logTrace "${cmd}"
+
+	device.updateDataValue("manufacturer",cmd.manufacturerId.toString())
+	device.updateDataValue("deviceType",cmd.productTypeId.toString())
+	device.updateDataValue("deviceId",cmd.productId.toString())
+
+	logDebug "fingerprint  mfr:\"${hubitat.helper.HexUtils.integerToHexString(cmd.manufacturerId, 2)}\", "+
+		"prod:\"${hubitat.helper.HexUtils.integerToHexString(cmd.productTypeId, 2)}\", "+
+		"deviceId:\"${hubitat.helper.HexUtils.integerToHexString(cmd.productId, 2)}\", "+
+		"inClusters:\"${device.getDataValue("inClusters")}\""+
+		(device.getDataValue("secureInClusters") ? ", secureInClusters:\"${device.getDataValue("secureInClusters")}\"" : "")
+}
+
 void zwaveEvent(hubitat.zwave.Command cmd, ep=0) {
 	logDebug "Unhandled zwaveEvent: $cmd (ep ${ep})"
 }
@@ -634,6 +670,10 @@ String mcAssociationGetCmd(Integer group) {
 
 String versionGetCmd() {
 	return secureCmd(zwave.versionV2.versionGet())
+}
+
+String mfgSpecificGetCmd() {
+	return secureCmd(zwave.manufacturerSpecificV2.manufacturerSpecificGet())
 }
 
 String switchBinarySetCmd(Integer value, Integer ep=0) {
@@ -687,7 +727,7 @@ String batteryGetCmd() {
 
 String sensorMultilevelGetCmd(sensorType) {
 	Integer scale = (temperatureScale == "F" ? 1 : 0)
-	return secureCmd(zwave.sensorMultilevelV5.sensorMultilevelGet(scale: scale, sensorType: sensorType))
+	return secureCmd(zwave.sensorMultilevelV11.sensorMultilevelGet(scale: scale, sensorType: sensorType))
 }
 
 String notificationGetCmd(notificationType, eventType, Integer ep=0) {
@@ -865,7 +905,7 @@ Map getParam(String search) {
 	verifyParamsList()
 	return configParams.find{ it.name == search }
 }
-Map getParam(Integer search) {
+Map getParam(Number search) {
 	verifyParamsList()
 	return configParams.find{ it.num == search }
 }
@@ -1003,7 +1043,7 @@ void clearVariables() {
 	//Restore
 	if (devModel) state.deviceModel = devModel
 	if (engTime) state.energyTime = engTime
-	//setDevModel()
+	state.resyncAll = true
 }
 
 //Stash the model in a state variable
@@ -1125,8 +1165,14 @@ preferences {
 void checkLogLevel(Map levelInfo = [level:null, time:null]) {
 	unschedule(logsOff)
 	//Set Defaults
-	if (settings.logLevel == null) device.updateSetting("logLevel",[value:"3", type:"enum"])
-	if (settings.logLevelTime == null) device.updateSetting("logLevelTime",[value:"30", type:"enum"])
+	if (settings.logLevel == null) {
+		device.updateSetting("logLevel",[value:"3", type:"enum"])
+		levelInfo.level = 3
+	}
+	if (settings.logLevelTime == null) {
+		device.updateSetting("logLevelTime",[value:"30", type:"enum"])
+		levelInfo.time = 30
+	}
 	//Schedule turn off and log as needed
 	if (levelInfo.level == null) levelInfo = getLogLevelInfo()
 	String logMsg = "Logging Level is: ${LOG_LEVELS[levelInfo.level]} (${levelInfo.level})"
@@ -1135,6 +1181,9 @@ void checkLogLevel(Map levelInfo = [level:null, time:null]) {
 		runIn(60*levelInfo.time, logsOff)
 	}
 	logInfo(logMsg)
+
+	//Store last level below Debug
+	if (levelInfo.level <= 2) state.lastLogLevel = levelInfo.level
 }
 
 //Function for optional command
@@ -1146,23 +1195,24 @@ void setLogLevel(String levelName, String timeName=null) {
 }
 
 Map getLogLevelInfo() {
-	Integer level = settings.logLevel as Integer ?: 3
-	Integer time = settings.logLevelTime as Integer ?: 0
+	Integer level = settings.logLevel != null ? settings.logLevel as Integer : 1
+	Integer time = settings.logLevelTime != null ? settings.logLevelTime as Integer : 30
 	return [level: level, time: time]
 }
 
 //Legacy Support
 void debugLogsOff() {
-	logWarn "Debug logging toggle disabled..."
 	device.removeSetting("logEnable")
-	device.updateSetting("debugEnable",[value:"false",type:"bool"])
+	device.updateSetting("debugEnable",[value:false, type:"bool"])
 }
 
 //Current Support
 void logsOff() {
 	logWarn "Debug and Trace logging disabled..."
 	if (logLevelInfo.level >= 3) {
-		device.updateSetting("logLevel",[value:"2", type:"enum"])
+		Integer lastLvl = state.lastLogLevel != null ? state.lastLogLevel as Integer : 2
+		device.updateSetting("logLevel",[value:lastLvl.toString(), type:"enum"])
+		logWarn "Logging Level is: ${LOG_LEVELS[lastLvl]} (${lastLvl})"
 	}
 }
 

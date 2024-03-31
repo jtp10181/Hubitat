@@ -2,38 +2,59 @@
   "packageName": "Zooz Sensors Advanced Drivers",
   "author": "Jeff Page (@jtp10181)",
   "minimumHEVersion": "2.3.4",
-  "dateReleased": "2022-11-08",
+  "dateReleased": "2024-03-30",
   "documentationLink": "https://github.com/jtp10181/Hubitat/tree/main/Drivers/zooz",
   "communityLink": "https://community.hubitat.com/t/zooz-sensors/81074",
-  "releaseNotes": "Version [1.1.0] - 2023-11-08\n  - Rearranged functions to get ready for library code\n  - Merged new code base and library\n  - Added ZSE41 and ZSE42 to package\n  - Added driver-side temp and humidity offsets for ZSE44",
-  "version": "1.1.0",
+  "releaseNotes": "Version [1.2.0] - 2024-03-30\n  - Added ZSE43, ZSE18, and ZSE11 to HPM package\n  - Updated Library code\n  - Added Wake-up Interval Setting\n  - Added singleThreaded flag\n  - Changed some command class versions\n  - Fixed decimal bug with hardware offsets on ZSE44",
+  "version": "1.2.0",
   "drivers": [
+    {
+      "id": "aaec77d9-1507-4350-baac-7fe261a95e38",
+      "name": "Zooz ZSE11 Q Sensor",
+      "namespace": "jtp10181",
+      "location": "https://jtp10181.gateway.scarf.sh/zooz-zse11-v1.2.0.groovy",
+      "required": false
+    },
+    {
+      "id": "53a905ec-0440-49ce-978d-090b8dc3aeb5",
+      "name": "Zooz ZSE18 Motion Sensor",
+      "namespace": "jtp10181",
+      "location": "https://jtp10181.gateway.scarf.sh/zooz-zse18-v1.2.0.groovy",
+      "required": false
+    },
     {
       "id": "cbe3bb01-e8cd-416e-9af6-cc18fd451444",
       "name": "Zooz ZSE40 4-in-1 Multisensor",
       "namespace": "jtp10181",
-      "location": "https://jtp10181.gateway.scarf.sh/zooz-zse40-v1.1.0.groovy",
+      "location": "https://jtp10181.gateway.scarf.sh/zooz-zse40-v1.2.0.groovy",
       "required": false
     },
     {
       "id": "5972223b-d3b5-4d65-94e6-749b06b0aeeb",
       "name": "Zooz ZSE41 Open-Close XS Sensor",
       "namespace": "jtp10181",
-      "location": "https://jtp10181.gateway.scarf.sh/zooz-zse41-v1.1.0.groovy",
+      "location": "https://jtp10181.gateway.scarf.sh/zooz-zse41-v1.2.0.groovy",
       "required": false
     },
     {
       "id": "124da3c3-d01e-43fc-b51b-c80f3816ebce",
       "name": "Zooz ZSE42 Water Leak XS Sensor",
       "namespace": "jtp10181",
-      "location": "https://jtp10181.gateway.scarf.sh/zooz-zse42-v1.1.0.groovy",
+      "location": "https://jtp10181.gateway.scarf.sh/zooz-zse42-v1.2.0.groovy",
+      "required": false
+    },
+    {
+      "id": "09fb53b6-fd22-49e1-91d3-487c489a6494",
+      "name": "Zooz ZSE43 Tilt-Shock XS Sensor",
+      "namespace": "jtp10181",
+      "location": "https://jtp10181.gateway.scarf.sh/zooz-zse43-v1.2.0.groovy",
       "required": false
     },
     {
       "id": "e6498052-92e9-4eb8-bfa4-024c5c1e3f36",
       "name": "Zooz ZSE44 Temperature Humidity XS Sensor",
       "namespace": "jtp10181",
-      "location": "https://jtp10181.gateway.scarf.sh/zooz-zse44-v1.1.0.groovy",
+      "location": "https://jtp10181.gateway.scarf.sh/zooz-zse44-v1.2.0.groovy",
       "required": false
     }
   ]

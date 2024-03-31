@@ -499,7 +499,7 @@ void clearVariables() {
 	def engTime = state.energyTime
 
 	//Clears State Variables
-	atomicState.clear()
+	state.clear()
 
 	//Clear Config Data
 	configsList["${device.id}"] = [:]
@@ -512,7 +512,7 @@ void clearVariables() {
 	//Restore
 	if (devModel) state.deviceModel = devModel
 	if (engTime) state.energyTime = engTime
-	atomicState.resyncAll = true
+	state.resyncAll = true
 }
 
 //Stash the model in a state variable
