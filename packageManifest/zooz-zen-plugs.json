@@ -1,27 +1,26 @@
 {
   "packageName": "Zooz Plugs Advanced Drivers",
   "author": "Jeff Page (@jtp10181)",
-  "minimumHEVersion": "2.3.0",
-  "dateReleased": "2023-10-21",
+  "minimumHEVersion": "2.3.4",
+  "dateReleased": "2024-04-06",
   "documentationLink": "https://github.com/jtp10181/Hubitat/tree/main/Drivers/zooz",
   "communityLink": "https://community.hubitat.com/t/zooz-smart-plugs/98333",
-  "releaseNotes": "Support for ANY standard Z-Wave Power Metering Plug\n\nMulti-Channel Power Plugs [0.1.0] - 2023-10-21\n  - Initial public release to HPM\n  - Enabled, tested, and adjusted addChild code\n  - Fixed bug with lower limits not being enforced\n\nStandard Plugs [1.2.1] - 2023-05-24\n  - Fix for possible RuntimeException error due to bad cron string",
+  "releaseNotes": "Support for ANY standard Z-Wave Power Metering Plug\n\nVersion [1.2.2] - 2024-04-06\n  - Fixed bug with lower limits not being enforced\n  - Added singleThreaded flag\n  - Updated Library and common code\n  - Other minor fixes",
+  "version": "1.2.2",
   "drivers": [
     {
       "id": "fd71eac0-0b3e-4ebe-bb23-603d8572c187",
       "name": "Zooz ZEN Plugs Advanced",
       "namespace": "jtp10181",
-      "location": "https://jtp10181.gateway.scarf.sh/zooz-zen-plugs-v1.2.1.groovy",
-      "required": false,
-      "version": "1.2.1"
+      "location": "https://jtp10181.gateway.scarf.sh/zooz-zen-plugs-v1.2.2.groovy",
+      "required": false
     },
     {
       "id": "f1891c31-6acc-4780-bd44-07f4ecfa9c8e",
       "name": "Zooz ZEN Plugs MCP Advanced",
       "namespace": "jtp10181",
-      "location": "https://jtp10181.gateway.scarf.sh/zooz-zen-plugs-mcp-v0.1.0.groovy",
-      "required": false,
-      "version": "0.1.0"
+      "location": "https://jtp10181.gateway.scarf.sh/zooz-zen-plugs-mcp-v1.2.2.groovy",
+      "required": false
     }
   ]
 }
