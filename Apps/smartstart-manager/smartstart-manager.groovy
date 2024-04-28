@@ -26,6 +26,7 @@
  *
  *
  * Changelog:
+ * 0.2.0 (2024-04-28) - Add delete button to edit page
  * 0.1.0 (2024-04-28) - Initial beta release
  *
  */
@@ -35,7 +36,7 @@ import groovy.json.JsonSlurper
 import groovy.transform.Field
 
 definition(
-    name: "Smart Start Manager",
+    name: "SmartStart Manager",
     namespace: "jtp10181",
     author: "Jeff Page (@jtp10181)",
     description: "Manage your SmartStart Devices List",
@@ -77,6 +78,11 @@ void appButtonHandler(String btn) {
     switch (btn) {
         case "btnEditSave":
             smartEditPost()
+            if (state.editSelection == -1) { state.editSelection = -2 }
+            break
+        case "btnEditDelete":
+            smartDelPost()
+            resetEditSettings(-1)
             break
         default:
             log.warn "Unhandled button press: $btn"
@@ -87,7 +93,7 @@ def pageMain() {
     logDebug "Loading pageMain()..."
     smartListUpdate()
     zwDetailsUpdate()
-    state.editSelection = -1
+    state.editSelection = -2
 
     dynamicPage(name: "pageMain", title:styleSection("Smart Start Manager: Main Page"), uninstall: true, install: true) {
         section() {
@@ -156,26 +162,11 @@ String listTable() {
 def pageEditEntry() {
     logDebug "Loading pageEditEntry()..."
     Map ssOptions = getSmartIndexes()
-    List ssList = getSmartList()
-    Map ssEditing = [dsk:"", nodeName:"", nodeLocation:"", gkList:[1, 2], bootMode:1] as Map
+    Integer sel = ("${settings.selectedDev}".isNumber() ? settings.selectedDev as Integer : -1)
+    Map ssEditing = resetEditSettings(sel)
 
     dynamicPage(name: "pageEditEntry", title:styleSection("Smart Start Manager: Edit"), uninstall: false, install: false) {
         section() {
-            //Get things ready
-            Integer sel = (settings.selectedDev != null ? settings.selectedDev as Integer : -1)
-            if (sel >= 0) {
-                ssEditing = ssList[sel]
-            }
-            logDebug("selectedDev: ${sel} -- ${ssEditing}")
-            if (state.editSelection != sel) {
-                state.editSelection = sel
-                app.updateSetting("editDSK", [type: "string", value: ssEditing.dsk])
-                app.updateSetting("editName", [type: "string", value: ssEditing.nodeName])
-                app.updateSetting("editLocation", [type: "string", value: ssEditing.nodeLocation])
-                app.updateSetting("editGrants", [type: "enum", value: ssEditing.gkList])
-                app.updateSetting("editBootMode", [type: "enum", value: "$ssEditing.bootMode"])
-            }
-
             //Display inputs
             input name: "selectedDev", type: "enum", title: styleInputTitle("Select Entry to Edit:"),
                     options: ssOptions, defaultValue: (-1), width:8, submitOnChange: true, newLineAfter: true
@@ -198,9 +189,32 @@ def pageEditEntry() {
         }
 
         section() {
-            input name: "btnEditSave", type: "button", title: "Save to SmartStart"
+            input name: "btnEditSave", type: "button", title: "Save to SmartStart", width: 4//, submitOnChange: true
+            input name: "btnEditDelete", type: "button", title: "Delete from SmartStart", width: 4, textColor: "white", backgroundColor: "#cc2d3b"//, submitOnChange: true
         }
     }
+}
+
+Map resetEditSettings(Integer selection) {
+    logDebug "resetEditSettings(${selection})"
+    List ssList = getSmartList()
+    Map ssEditing = [dsk:"", nodeName:"", nodeLocation:"", gkList:[1, 2], bootMode:1] as Map
+//    logDebug "${settings.selectedDev} | ${selection} | ${state.editSelection}"
+
+    //Get things ready
+    if (selection >= ssList.size() || state.editSelection < -1) { sel = -1 }
+    if (selection >= 0) { ssEditing = ssList[selection] }
+    logDebug("selectedDev: ${selection} -- ${ssEditing}")
+    if (state.editSelection != selection) {
+        state.editSelection = selection
+        app.updateSetting("selectedDev", [type: "enum", value: "$selection"])
+        app.updateSetting("editDSK", [type: "string", value: ssEditing.dsk])
+        app.updateSetting("editName", [type: "string", value: ssEditing.nodeName])
+        app.updateSetting("editLocation", [type: "string", value: ssEditing.nodeLocation])
+        app.updateSetting("editGrants", [type: "enum", value: ssEditing.gkList])
+        app.updateSetting("editBootMode", [type: "enum", value: "$ssEditing.bootMode"])
+    }
+    return ssEditing
 }
 
 //Download SS List From Endpoint
@@ -270,6 +284,31 @@ void smartEditHandler(resp, data){
         //Refresh List from hub if success
         if (respData.status == "success") { smartListUpdate() }
         else { logDebug(editSaveHandler: ${respData}, "error") }
+    } catch (EX) {
+        log.error "$EX"
+    }
+}
+
+//Delete SmartStart Entry from hub
+void smartDelPost() {
+    params = [
+            uri        : "http://127.0.0.1:8080",
+            path       : "/mobileapi/zwave/smartstart/delete",
+            contentType: "application/json",
+            body       : [nodeDSK: settings.editDSK]
+    ]
+    logDebug "smartDelPost ${params}"
+    asynchttpPost("smartDelHandler", params)
+}
+
+void smartDelHandler(resp, data){
+    try{
+        def jSlurp = new JsonSlurper()
+        Map respData = (Map)jSlurp.parseText((String)resp.data)
+        logDebug "smartDelHandler: ${respData}"
+        //Refresh List from hub if success
+        if (respData.status == "success") { smartListUpdate() }
+        else { logDebug(smartDelHandler: ${respData}, "error") }
     } catch (EX) {
         log.error "$EX"
     }
