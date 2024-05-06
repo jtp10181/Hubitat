@@ -120,6 +120,18 @@
         "Repeaters & Extenders",
         "ZWave"
       ]
+    },
+    {
+      "id": "2efa6db6-c1a7-413b-bdc0-09bce9feb071",
+      "name": "SmartStart Manager App",
+      "category": "Utility",
+      "location": "https://raw.githubusercontent.com/jtp10181/Hubitat/main/packageManifest/smartstart-manager.json",
+      "description": "App to manage the Z-Wave SmartStart devices list from the hub",
+      "descriptive": "",
+      "tags": [
+        "ZWave",
+        "Tools & Utilities"
+      ]
     }
   ]
 }
