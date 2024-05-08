@@ -1,18 +1,18 @@
 {
   "packageName": "SmartStart Manager App",
   "author": "Jeff Page (@jtp10181)",
-  "minimumHEVersion": "2.3.9",
-  "dateReleased": "2024-05-05",
+  "minimumHEVersion": "2.3.8",
+  "dateReleased": "2024-05-08",
   "documentationLink": "https://github.com/jtp10181/Hubitat/tree/main/Apps/smartstart-manager",
   "communityLink": "https://community.hubitat.com/t/smartstart-manager/137492",
-  "releaseNotes": "Version 0.4.0 (2024-05-05)\n - Changed some async calls to regular http calls\n - Added links on list view going to device page and edit page\n - Added editing/deleting of disabled entries\n - Fixed reported null pointer errors",
-  "version": "0.4.0",
+  "releaseNotes": "Version 0.4.2 (2024-05-08) - Added validation checks to Edit/Add page\n\nVersion 0.4.0 (2024-05-05)\n - Changed some async calls to regular http calls\n - Added links on list view going to device page and edit page\n - Added editing/deleting of disabled entries\n - Fixed reported null pointer errors",
+  "version": "0.4.2",
   "apps": [
     {
       "id": "9f3ec39b-3e0e-4271-8c90-5bba363ae428",
       "name": "SmartStart Manager",
       "namespace": "jtp10181",
-      "location": "https://jtp10181.gateway.scarf.sh/smartstart-manager-v0.4.0.groovy",
+      "location": "https://jtp10181.gateway.scarf.sh/smartstart-manager-v0.4.2.groovy",
       "required": true
     }
   ]

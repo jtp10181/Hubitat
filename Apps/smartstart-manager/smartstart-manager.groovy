@@ -15,12 +15,13 @@
  *
  *      http://www.apache.org/licenses/LICENSE-2.0
  *
- *  Unless required by applicable law or agreed to in writing, software distributed under the License is distributed
- *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
- *  for the specific language governing permissions and limitations under the License.
+ *  Unless required by applicable law or agreed to in writing, software distributed under the License is
+ *  distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and limitations under the License.
  *
  *
  * Changelog:
+ * 0.4.2 (2024-05-08) - Added validation checks to Edit/Add page
  * 0.4.0 (2024-05-05) - Changed some async calls to regular http calls
  *                      Added links on list view going to device page and edit page
  *                      Added editing/deleting of disabled entries
@@ -37,7 +38,7 @@ import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
 import groovy.transform.Field
 
-@Field static final String VERSION = "0.4.0"
+@Field static final String VERSION = "0.4.2"
 @Field static final String APP_NAME = "SmartStart-Manager"
 @Field static final String COMM_LINK = "https://community.hubitat.com/t/smartstart-manager/137492"
 
@@ -115,7 +116,7 @@ def pageMain() {
     if (!state.ssEnabled) state.ssEnabled = [:]
     if (!state.smartListDisabled) state.smartListDisabled = []
 
-    dynamicPage(name: "pageMain", title:styleSection("Smart Start Manager"), uninstall: true, install: true) {
+    dynamicPage(name: "pageMain", title:styleSection("SmartStart Manager"), uninstall: true, install: true) {
         section() {
             href name: "pageViewListHref", page: "pageViewList",
                     title: "View SmartStart List", description: "", width: 4, newLine: true
@@ -124,19 +125,18 @@ def pageMain() {
         }
 
         section("Settings", hideable: true, hidden: true) {
+            input name: "maskDSK", type: "bool", title: "Partially Mask DSK (for screenshots)", defaultValue: true, width:6, submitOnChange: true, newLineAfter: true
+            paragraph ''
             input name: "debugLevel", type: "enum", title: "Debug Logging Level:", submitOnChange: true,
                     options: [0:"None", 1:"Debug", 2:"Trace"], defaultValue: 0, width: 4, newLineAfter: true
-            paragraph ''
-            input name: "maskDSK", type: "bool", title: "Partially Mask DSK (for screenshots)", defaultValue: true, width:6, submitOnChange: true, newLineAfter: true
             paragraph ''
             input name: "btnLoadBackupD", type: "button", title: "Load Disabled List Backup from File Manager (Automatically Created)", width: 6, newLine: true
         }
         section() {
-            paragraph "<span style='font-size:80%'>SmartStart Manager App v${VERSION} by Jeff Page (@jtp10181)<br/>" +
-                    "For Support see the <a href='${COMM_LINK}' target='_blank'>Hubitat Community Post</a><br/>" +
-                    "Donations via <a href='https://paypal.me/JPage81?locale.x=en_US' target='_blank'>PayPal.Me</a></span>"
-
-
+            paragraph appInfo()
+            paragraph "<span style='font-size:80%;color:#61676b'>" +
+                    "Support: <a href='${COMM_LINK}' target='_blank'>Hubitat Community</a><br/>" +
+                    "Donations: <a href='https://paypal.me/JPage81?locale.x=en_US' target='_blank'>PayPal.Me</a>" + "</span>"
         }
     }
 }
@@ -145,11 +145,12 @@ def pageViewList() {
     logDebug "Loading pageViewList()..."
     state.remove("editSelection")
 
-    dynamicPage(name: "pageViewList", title:styleSection("Smart Start Manager: View List"), uninstall: false, install: false) {
+    dynamicPage(name: "pageViewList", title:styleSection("SmartStart Manager: View List"), uninstall: false, install: false) {
         section() {
             href name: "pageEditEntryHref", url: "./pageEditEntry?idx=-1",
                     title: "Add SmartStart Entry", description: "", width: 3, newLine: true
             paragraph listTable()
+            paragraph appInfo()
         }
     }
 }
@@ -171,7 +172,7 @@ String listTable() {
     tHead.each { str += "<th><strong>${it}</strong></th>" }
     str += "</tr></thead>"
 
-    ssList.sort(false){ it.nodeName.toLowerCase() }.each { ss ->
+    ssList.sort(false){ it.nodeName?.toLowerCase() }.each { ss ->
         logDebug("Processing Entry [${ss.idx}: ${ss.nodeName}] (${ss.enabled ? "enabled" : "disabled"})", "trace")
         Map nodeInfo = state.zwNodes.find { it.nodeId == ss.nodeDec }
         Map devInfo = state.zwDevices["${ss.nodeDec}"]
@@ -209,7 +210,13 @@ def pageEditEntry() {
     Map ssEditing = resetEditSettings(sel)
     Boolean addNew = (ssEditing.dsk ? false : true)
 
-    dynamicPage(name: "pageEditEntry", title:styleSection("Smart Start Manager: Edit"), uninstall: false, install: false) {
+    //Validation
+    Boolean dskBlank = (!settings.editDSK)
+    Boolean nameBlank = (settings.editName == null || settings.editName == '')
+    Boolean dskOK = (dskBlank || settings.editDSK ==~ /^\d{5}-\d{5}-\d{5}-\d{5}-\d{5}-\d{5}-\d{5}-\d{5}$/)
+    Boolean dSave = (dskBlank || nameBlank || !dskOK)
+
+    dynamicPage(name: "pageEditEntry", title:styleSection("SmartStart Manager: Edit"), uninstall: false, install: false) {
         section() {
             href name: "pageViewListHref", url: "./pageViewList",
                     title: "Switch to List Page", description: "", width: 3, newLine: true
@@ -230,28 +237,33 @@ def pageEditEntry() {
                 }
                 paragraph styleInputTitle("DSK:") + "<br/>${dsk}"
             } else {
-                input name: "editDSK", type: "string", title: styleInputTitle("Input DSK:") + "&nbsp;&nbsp;&nbsp;&nbsp;<i>ppppp-xxxxx-xxxxx-xxxxx-xxxxx-xxxxx-xxxxx-xxxx</i>", width:8, newLine: true, submitOnChange: true
+                input name: "editDSK", type: "string", title: styleInputTitle("Input DSK:", true) + "&nbsp;&nbsp;&nbsp;&nbsp;" +
+                        "<span ${dskOK ? "" : "style='color:red'"}><i>ppppp-xxxxx-xxxxx-xxxxx-xxxxx-xxxxx-xxxxx-xxxxx</i></span>", width:8, newLine: true, submitOnChange: true
             }
-            input name: "editName", type: "string", title: styleInputTitle("SmartStart Name:"), width:8, newLine: true, submitOnChange: true
+            input name: "editName", type: "string", title: styleInputTitle("SmartStart Name:", true), width:8, newLine: true, submitOnChange: true
             input name: "editLocation", type: "string", title: styleInputTitle("SmartStart Location:"), width:8, newLine: true, submitOnChange: true
-            input name: "editGrants", type: "enum", title: styleInputTitle("Grant Keys:"), multiple: true, options: gKeys, width:4, newLine: true, submitOnChange: true
-            input name: "editBootMode", type: "enum", title: styleInputTitle("Boot Mode:"), options: bootModes, width:4, submitOnChange: true
+            input name: "editGrants", type: "enum", title: styleInputTitle("Grant Keys:"), multiple: true, options: gKeys, defaultValue: 0, width:4, newLine: true, submitOnChange: true
+            input name: "editBootMode", type: "enum", title: styleInputTitle("Boot Mode:"), options: bootModes, defaultValue: 1, width:4, newLineAfter: true, submitOnChange: true
             //input name: "editEnabled", type: "bool", title: styleInputTitle("SmartStart Status: " + (editEnabled ? "Enabled" : "Disabled")), width:6, submitOnChange: true, newLine: true
             if (!addNew) paragraph "This SmartStart Entry is <span style='font-weight:bold;color:" + (ssEditing.enabled ? "DarkGreen" : "DarkRed") + "'>" +
                     (ssEditing.enabled ? "Enabled" : "Disabled") + "</span> <i>(can be changed in list view)</i>"
-        }
-
-        section() {
-            input name: "btnEditSave", type: "button", title: "Save to SmartStart", width: 3, textColor: "white", backgroundColor: "green"
+            paragraph ""
+            input name: "btnEditSave", type: "button", title: "Save to SmartStart", width: 3, textColor: (dSave ? "#f2f2f2" : "white"),
+                    backgroundColor: (dSave ? "#a9c7a9" : "DarkGreen"), disabled: dSave
             if (!addNew) {
                 input name: "btnEditDelete", type: "button", title: "Delete from SmartStart", width: 3, textColor: "white", backgroundColor: "#cc2d3b"
             }
-            if (state.msgEditDel) {
-                paragraph "$state.msgEditDel"
-                state.remove("msgEditDel")
-            }
+            paragraph(state.msgEditDel ? "$state.msgEditDel" : "")
+            state.remove("msgEditDel")
         }
+
+        section() { paragraph appInfo() }
     }
+}
+
+String appInfo() {
+    return "<span style='font-size:90%;color:#555a5e;font-weight:bold'>SmartStart Manager v${VERSION}</span>" +
+            "<span style='font-size:84%;color:#555a5e'> - &copy; 2024 Jeff Page (@jtp10181)</span>"
 }
 
 Map resetEditSettings(Integer selection) {
@@ -262,7 +274,7 @@ Map resetEditSettings(Integer selection) {
     //Get things ready
     if (selection >= ssList.size()) { selection = -1 }
     if (selection >= 0) { ssEditing = ssList.getAt(selection) }
-    logDebug("Setting selectedDev: [${selection}: ${ssEditing?.nodeName}] -- prior selection: ${state.editSelection}")
+    logDebug("Checking selectedDev: [${selection}: ${ssEditing?.nodeName}] -- prior selection: ${state.editSelection}")
     if (state.editSelection != selection || state.editSelection == null) {
         state.editSelection = selection
         app.updateSetting("selectedDev", [type: "enum", value: "$selection"])
@@ -272,6 +284,7 @@ Map resetEditSettings(Integer selection) {
         app.updateSetting("editGrants", [type: "enum", value: ssEditing.gkList])
         app.updateSetting("editBootMode", [type: "enum", value: "$ssEditing.bootMode"])
         app.updateSetting("editEnabled", [type: "bool", value: ssEditing.enabled])
+        logDebug("Updated fields for: [${selection}: ${ssEditing?.nodeName}]")
     }
     return ssEditing
 }
@@ -558,11 +571,11 @@ void disabledLoadBackup() {
 
 //Styling Functions
 String styleSection(String sectionHeadingText) {
-   return """<div style="font-weight:bold; font-size: 120%">$sectionHeadingText</div>""" as String
+   return "<div style='font-weight:bold; font-size: 120%'>$sectionHeadingText</div>" as String
 }
 
-String styleInputTitle(String title) {
-    return """<strong>$title</strong>""" as String
+String styleInputTitle(String title, Boolean required = false) {
+    return "<strong>$title</strong>" + (required ? "<span style='color:red'> *</span>" : "") as String
 }
 
 //Check-in
