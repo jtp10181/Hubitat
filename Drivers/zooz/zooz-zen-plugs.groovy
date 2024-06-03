@@ -10,6 +10,10 @@
 
 Changelog:
 
+## [1.2.4] - 2024-06-02 (@jtp10181)
+  - Added new settings for ZEN15 FW 2.10
+  - Added new settings for ZEN05 FM 2.0 with power reporting
+
 ## [1.2.2] - 2024-04-06 (@jtp10181)
   - Fixed bug with lower limits not being enforced
   - Added singleThreaded flag
@@ -75,23 +79,20 @@ Changelog:
 
  *  Copyright 2022-2024 Jeff Page
  *
- *  Licensed under the Apache License, Version 2.0 (the "License");
- *  you may not use this file except in compliance with the License.
- *  You may obtain a copy of the License at
+ *  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
+ *  in compliance with the License. You may obtain a copy of the License at:
  *
  *      http://www.apache.org/licenses/LICENSE-2.0
  *
- *  Unless required by applicable law or agreed to in writing, software
- *  distributed under the License is distributed on an "AS IS" BASIS,
- *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *  See the License for the specific language governing permissions and
- *  limitations under the License.
+ *  Unless required by applicable law or agreed to in writing, software distributed under the License is
+ *  distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and limitations under the License.
  *
 */
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "1.2.2"
+@Field static final String VERSION = "1.2.4"
 @Field static final String DRIVER = "Zooz-Plugs"
 @Field static final String COMM_LINK = "https://community.hubitat.com/t/zooz-smart-plugs/98333"
 @Field static final Map deviceModelNames =
@@ -124,7 +125,8 @@ metadata {
 			[name:"size",type:"NUMBER", description:"Parameter Size"]]
 
 		//DEBUGGING
-		//command "debugShowVars"
+		// command "debugShowVars"
+		// command "debugSetModel", [[name:"devModel*",type:"STRING"],[name:"firmwareVersion*",type:"STRING"]]
 
 		attribute "syncStatus", "string"
 		attribute "accessory", "string"
@@ -184,6 +186,11 @@ void debugShowVars() {
 	log.warn "settings ${settings.hashCode()} ${settings}"
 	log.warn "paramsList ${paramsList.hashCode()} ${paramsList}"
 	log.warn "paramsMap ${paramsMap.hashCode()} ${paramsMap}"
+}
+
+void debugSetModel(String devModel, String firmwareVersion) {
+	state.deviceModel = devModel
+	device.updateDataValue("firmwareVersion", firmwareVersion)
 }
 
 //Association Settings
@@ -272,14 +279,14 @@ void debugShowVars() {
 		title: "Power (Watts) Reporting Enabled",
 		size: 1, defaultVal: 0,
 		options: [0:"Enabled", 1:"Disabled"],
-		changes: [04:[num:10, firmVer:1.30]]
+		changes: [04:[num:10, firmVer:1.30], 05:[num:13, firmVer:2.0]]
 	],
 	powerThreshold: [ num: null,
 		title: "Power (Watts) Reporting Threshold",
 		size: 1, defaultVal: 10,
 		description: "Report when changed by this amount",
 		range: 5..50,
-		changes: [04:[num:5],
+		changes: [04:[num:5], 05:[num:9, firmVer:2.0],
 			15:[num:151, size:2, defaultValue:50, range:0..32767, description: "Report when changed by this amount, 0 = Disabled"]
 		]
 	],
@@ -295,7 +302,7 @@ void debugShowVars() {
 		size: 4, defaultVal: 10,
 		description: "Minimum number of minutes between wattage reports",
 		range: 1..65535,
-		changes: [04:[num:6],
+		changes: [04:[num:6], 05:[num:10, firmVer:2.0],
 			15:[num:171, range:0..44640, description: "Minimum number of minutes between wattage reports, 0 = Disabled"]
 		]
 	],
@@ -303,21 +310,24 @@ void debugShowVars() {
 		title: "Current (Amps) Reporting Enabled",
 		size: 1, defaultVal: 0,
 		options: [0:"Enabled", 1:"Disabled"],
-		changes: [04:[num:11, firmVer:1.30]]
+		changes: [04:[num:11, firmVer:1.30], 05:[num:14, firmVer:2.0]]
 	],
 	currentThreshold: [ num: null,
 		title: "Current (Amps) Reporting Threshold",
 		size: 1, defaultVal: 10,
 		description: "[1 = 0.1A, 10 = 1A]  Report when changed by this amount",
 		range: 1..10,
-		changes: [04:[num:7]]
+		changes: [04:[num:7], 05:[num:11, firmVer:2.0],
+			15:[num:176, firmVer:2.10, size: 2, defaultVal: 1000, range: 0..65535,
+				description: "[1000 = 1A, set in mA]  Report when changed by this amount, 0 = Disabled"]
+		]
 	],
 	currentFrequency: [ num: null,
 		title: "Current (Amps) Reporting Frequency",
 		size: 4, defaultVal: 60,
 		description: "Minimum number of minutes between amperage reports",
 		range: 1..65535,
-		changes: [04:[num:12, firmVer:1.30],
+		changes: [04:[num:12, firmVer:1.30], 05:[num:15, firmVer:2.0],
 			15:[num:174, range:0..44640, description: "Minimum number of minutes between amperage reports, 0 = Disabled"]
 		]
 	],
@@ -326,7 +336,7 @@ void debugShowVars() {
 		size: 1, defaultVal: 10,
 		description: "[1 = 0.01kWh, 100 = 1kWh]  Report when changed by this amount",
 		range: 1..100,
-		changes: [04:[num:8]]
+		changes: [04:[num:8], 05:[num:12, firmVer:2.0]]
 	],
 	energyFrequency: [ num: null,
 		title: "Energy (kWh) Reporting Frequency",
@@ -335,19 +345,37 @@ void debugShowVars() {
 		range: 0..44640,
 		changes: [15:[num:172]]
 	],
+	voltageThreshold: [ num: null,
+		title: "Voltage (V) Reporting Threshold",
+		size: 1, defaultVal: 10,
+		description: "Report when changed by this amount, 0 = Disabled",
+		range: 0..255,
+		changes: [15:[num:175, firmVer:2.10]]
+	],
 	voltageFrequency: [ num: null,
 		title: "Voltage (V) Reporting Frequency",
 		size: 4, defaultVal: 60,
 		description: "Minimum number of minutes between voltage reports, 0 = Disabled",
 		range: 0..44640,
-		changes: [04:[num:13, firmVer:1.30], 15:[num:173]]
+		changes: [04:[num:13, firmVer:1.30], 05:[num:16, firmVer:2.0], 15:[num:173]]
 	],
 	overloadProtection: [ num: null,
 		title: "Overload Protection *See Docs*",
 		size: 1, defaultVal: 1,
 		description: "Zooz DOES NOT recommend disabling this, as it may result in device damage and malfunction!",
 		options: [1:"Enabled", 0:"Disabled"],
-		changes: [15:[num:20]]
+		changes: [15:[num:20, changesFR: [ (2.10..99):[
+			description: "Device will shut down if overloaded for longer than this",
+			options: [2:"2 seconds", 3:"3 seconds", 4:"4 seconds", 5:"5 seconds"],
+			defaultVal: 2 ]]
+		]]
+	],
+	overloadTurnOnDelay: [ num: null,
+		title: "Overload Protection Turn On Delay",
+		size: 2, defaultVal: 0,
+		description: "Automatic turn-on (in seconds) after device was shut off due to overload protection, 0 = Disabled or 10..65535 seconds",
+		range: "0..65535",
+		changes: [15:[num:36, firmVer:2.10]]
 	],
 	// Hidden Parameters to Set Defaults
 	statusNotifications: [ num: null,
