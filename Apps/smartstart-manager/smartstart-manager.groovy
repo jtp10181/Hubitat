@@ -21,6 +21,10 @@
  *
  *
  * Changelog:
+ * 0.5.0 (2024-06-10) - Added full backup and restore features
+ *                      Added beautiful buttons with icons and updated styling
+ *                      Fixed combined list parsing to reset enabled state
+ *                      Updated logging to match style of my drivers
  * 0.4.2 (2024-05-08) - Added validation checks to Edit/Add page
  * 0.4.0 (2024-05-05) - Changed some async calls to regular http calls
  *                      Added links on list view going to device page and edit page
@@ -38,7 +42,7 @@ import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
 import groovy.transform.Field
 
-@Field static final String VERSION = "0.4.2"
+@Field static final String VERSION = "0.5.0"
 @Field static final String APP_NAME = "SmartStart-Manager"
 @Field static final String COMM_LINK = "https://community.hubitat.com/t/smartstart-manager/137492"
 
@@ -66,14 +70,17 @@ preferences {
 @Field static final LinkedHashMap<Integer,String> bootModes = [0:"S2 (Manual)", 1:"SmartStart Mesh", 2:"SmartStart LR"]
 @Field static final LinkedHashMap<Integer,String> gKeys = [0:"No Security", 128:"S0 Unauthenticated", 1:"S2 Unauthenticated", 2:"S2 Authenticated", 4:"S2 Access Control"]
 @Field static final LinkedHashMap<Integer,String> gKeysShort = [0:"None", 128:"S0", 1:"S2Ua", 2:"S2A", 4:"S2AC"]
+@Field static final Map LOG_LEVELS = [0:"Error", 1:"Warn", 2:"Info", 3:"Debug", 4:"Trace"]
 @Field static final String disabledBackupFile = "smartstartManager_disabledBackup.json"
+@Field static final String fullBackupFile = "smartstartManager_fullBackup.json"
 
 void installed() {
-   log.info("Installed with settings: ${settings}")
+   logInfo("Installed with settings: ${settings}")
    initialize()
 }
 
 void updated() {
+    app.removeSetting("debugLevel")
     logDebug("Updated with settings: ${settings}")
     initialize()
 }
@@ -89,66 +96,76 @@ void handleReboot(evt) {
 }
 
 void appButtonHandler(String btn) {
-    if (btn == "btnEditSave") {
-        btnEditSave()
-    }
-    else if (btn == "btnEditDelete") {
-        btnEditDelete()
-    }
-    else if (btn == "btnLoadBackupD") {
-        disabledLoadBackup()
+    if (btn == "btnEditSave") { btnEditSave() }
+    else if (btn == "btnEditDelete") { btnEditDelete() }
+    else if (btn == "btnSaveSettings") { /*Nothing*/ }
+    else if (btn == "btnCreateBackup") { saveFullBackup() }
+    else if (btn == "btnRestoreBackup") { loadFullBackup() }
+    else if (btn == "btnLoadBackupD") { loadDisabledBackup() }
+    else if (btn == "btnListRefresh") {
+        smartListUpdate()
+        zwDetailsUpdate()
     }
     else if ((btn.tokenize(":"))[0] == "btnEnabled") {
         String dsk = (btn.tokenize(":"))[1]
         smartListToggle(dsk)
     }
     else {
-        log.warn "Unhandled button press: $btn"
+        logWarn "Unhandled button press: $btn"
     }
 }
 
 def pageMain() {
-    logDebug "Loading pageMain()..."
+    logDebug "Loading pageMain..."
     smartListUpdateAsync()
     zwDetailsUpdateAsync()
     state.remove("editSelection")
     app.removeSetting("selectedDev")
-    if (!state.ssEnabled) state.ssEnabled = [:]
-    if (!state.smartListDisabled) state.smartListDisabled = []
 
     dynamicPage(name: "pageMain", title:styleSection("SmartStart Manager"), uninstall: true, install: true) {
         section() {
             href name: "pageViewListHref", page: "pageViewList",
-                    title: "View SmartStart List", description: "", width: 4, newLine: true
+                    title: "${btnIcon('pi-list')}  View SmartStart List", description: "", width: 4, newLine: true
             href name: "pageEditEntryHref", page: "pageEditEntry",
-                    title: "Edit / Add SmartStart Entries", description: "", width: 4, newLine: true
+                    title: "${btnIcon('pi-pencil')}  Edit / Add SmartStart Entries", description: "", width: 4, newLine: true
         }
 
-        section("Settings", hideable: true, hidden: true) {
-            input name: "maskDSK", type: "bool", title: "Partially Mask DSK (for screenshots)", defaultValue: true, width:6, submitOnChange: true, newLineAfter: true
+        section("${btnIcon('pi-cog')}  Settings", hideable: true, hidden: true) {
+            input name: "logLevel", type: "enum", title: "Logging Level", options: LOG_LEVELS, defaultValue: 2, width: 3
             paragraph ''
-            input name: "debugLevel", type: "enum", title: "Debug Logging Level:", submitOnChange: true,
-                    options: [0:"None", 1:"Debug", 2:"Trace"], defaultValue: 0, width: 4, newLineAfter: true
+            input name: "maskDSK", type: "bool", title: "Partially Mask DSK (for screenshots)", defaultValue: true, width: 6
             paragraph ''
-            input name: "btnLoadBackupD", type: "button", title: "Load Disabled List Backup from File Manager (Automatically Created)", width: 6, newLine: true
+            input name: "btnSaveSettings", type: "button", title: "${btnIcon('pi-save')}&nbsp; Save Settings", width: 4
+            paragraph ''
+        }
+        section("${btnIcon('pi-download')}  Backups", hideable: true, hidden: true) {
+            input name: "btnCreateBackup", type: "button", title: "${btnIcon('pi-save')}&nbsp; Create Full Backup in File Manager", width: 6, newLine: true, newLineAfter: true
+            input name: "btnRestoreBackup", type: "button", title: "${btnIcon('pi-upload')}&nbsp; Restore Full Backup from File Manager", width: 6, newLine: true, newLineAfter: true
+            input name: "btnLoadBackupD", type: "button", title: "${btnIcon('pi-sync')}&nbsp; Restore Disabled List from File Manager (Automatically Created)", width: 8, newLine: true
+        }
+        if(state.msgBackup) {
+            section() {
+                paragraph("$state.msgBackup")
+                state.remove("msgBackup")
+            }
         }
         section() {
             paragraph appInfo()
             paragraph "<span style='font-size:80%;color:#61676b'>" +
-                    "Support: <a href='${COMM_LINK}' target='_blank'>Hubitat Community</a><br/>" +
-                    "Donations: <a href='https://paypal.me/JPage81?locale.x=en_US' target='_blank'>PayPal.Me</a>" + "</span>"
+                    "$ICON_QCR Support: <a href='${COMM_LINK}' target='_blank'>Hubitat Community</a><br/>" +
+                    "$ICON_PP Donations: <a href='https://paypal.me/JPage81?locale.x=en_US' target='_blank'>PayPal.Me</a>" + "</span>"
         }
     }
 }
 
 def pageViewList() {
-    logDebug "Loading pageViewList()..."
+    logDebug "Loading pageViewList..."
     state.remove("editSelection")
 
-    dynamicPage(name: "pageViewList", title:styleSection("SmartStart Manager: View List"), uninstall: false, install: false) {
+    dynamicPage(name: "pageViewList", title:styleSection("SmartStart Manager: List View"), uninstall: false, install: false) {
         section() {
-            href name: "pageEditEntryHref", url: "./pageEditEntry?idx=-1",
-                    title: "Add SmartStart Entry", description: "", width: 3, newLine: true
+            paragraph (hrefButton("Main Menu", "../pageMain", "pi-arrow-left") + "&nbsp;&nbsp;" + hrefButton("Add SmartStart Entry", "./pageEditEntry?idx=-1", "pi-plus"), width: 5)
+            input name: "btnListRefresh", type: "button", title: "${btnIcon('pi-refresh')} Refresh List", width: 3
             paragraph listTable()
             paragraph appInfo()
         }
@@ -161,7 +178,7 @@ String listTable() {
     String O = "<i class='he-checkbox-unchecked'></i>"
     List ssList = getSmartList()
 
-    if (!ssList) { return "SmartStart List is Empty: Add to SmartStart using the Edit Section or Mobile App"}
+    if (!ssList) { return "$ICON_WARN_O15  <strong>SmartStart List is Empty:</strong> Add to SmartStart using the Edit/Add Page or the Mobile App"}
 
     String str = "<script src='https://code.iconify.design/iconify-icon/1.0.0/iconify-icon.min.js'></script>"
     str += "<style>.mdl-data-table tbody tr:hover{background-color:inherit} .tstat-col td,.tstat-col th { padding:8px 8px;text-align:center;font-size:12px} .tstat-col td {font-size:15px }" +
@@ -173,7 +190,7 @@ String listTable() {
     str += "</tr></thead>"
 
     ssList.sort(false){ it.nodeName?.toLowerCase() }.each { ss ->
-        logDebug("Processing Entry [${ss.idx}: ${ss.nodeName}] (${ss.enabled ? "enabled" : "disabled"})", "trace")
+        logTrace("Processing Entry [${ss.idx}: ${ss.nodeName}] (${ss.enabled ? "enabled" : "disabled"})")
         Map nodeInfo = state.zwNodes.find { it.nodeId == ss.nodeDec }
         Map devInfo = state.zwDevices["${ss.nodeDec}"]
         str += "<tr style='color:black'>"
@@ -186,7 +203,7 @@ String listTable() {
                 //"<td>${ss.nodeLocation ?: ''}</td>"
                 "<td style='border-left:2px solid black;text-align:left'>"+ (devInfo?.displayName ? "<a href='/device/edit/${devInfo.id}' target='_blank'>${devInfo.displayName} <i class='pi pi-external-link ml-1'></i></a>" : "-") +"</td>" +
                 "<td>"+ (nodeInfo?.security ?: "-") +"</td>" +
-                "<td>"+ (ss.nodeDec>=256 ? "Long Range" : (ss.nodeDec ? "Mesh" : "-")) +"</td>"
+                "<td>"+ (nodeInfo?.nodeId>=256 ? "Long Range" : (nodeInfo?.nodeId ? "Mesh" : "-")) +"</td>"
     }
     str += "</tr></table></div>"
     return str
@@ -199,7 +216,7 @@ String buttonLink(String btnName, String linkText, color = "#1A77C9", font = "15
 }
 
 def pageEditEntry() {
-    logDebug "Loading pageEditEntry()..."
+    logDebug "Loading pageEditEntry..."
     Map ssOptions = getSmartEditMenu()
     Integer sel = (settings.selectedDev ? settings.selectedDev as Integer : -1)
     if (hubitatQueryString && state.editSelection == null) {
@@ -216,10 +233,10 @@ def pageEditEntry() {
     Boolean dskOK = (dskBlank || settings.editDSK ==~ /^\d{5}-\d{5}-\d{5}-\d{5}-\d{5}-\d{5}-\d{5}-\d{5}$/)
     Boolean dSave = (dskBlank || nameBlank || !dskOK)
 
-    dynamicPage(name: "pageEditEntry", title:styleSection("SmartStart Manager: Edit"), uninstall: false, install: false) {
+    dynamicPage(name: "pageEditEntry", title:styleSection("SmartStart Manager: Edit / Add"), uninstall: false, install: false) {
         section() {
-            href name: "pageViewListHref", url: "./pageViewList",
-                    title: "Switch to List Page", description: "", width: 3, newLine: true
+            paragraph (hrefButton("Main Menu", "../pageMain", "pi-arrow-left") + "&nbsp;&nbsp;" + hrefButton("View SmartStart List", "./pageViewList", "pi-list"), width: 5)
+            input name: "btnListRefresh", type: "button", title: "${btnIcon('pi-refresh')} Refresh List", width: 3
             //Display inputs
             input name: "selectedDev", type: "enum", title: styleInputTitle("Select Entry to Edit:"), options: ssOptions,
                     defaultValue: (-1), width:8, submitOnChange: true, newLine: true, newLineAfter: true, showFilter: true
@@ -248,10 +265,10 @@ def pageEditEntry() {
             if (!addNew) paragraph "This SmartStart Entry is <span style='font-weight:bold;color:" + (ssEditing.enabled ? "DarkGreen" : "DarkRed") + "'>" +
                     (ssEditing.enabled ? "Enabled" : "Disabled") + "</span> <i>(can be changed in list view)</i>"
             paragraph ""
-            input name: "btnEditSave", type: "button", title: "Save to SmartStart", width: 3, textColor: (dSave ? "#f2f2f2" : "white"),
+            input name: "btnEditSave", type: "button", title: "${btnIcon('pi-save')}&nbsp; Save to SmartStart", width: 4, textColor: (dSave ? "#f2f2f2" : "white"),
                     backgroundColor: (dSave ? "#a9c7a9" : "DarkGreen"), disabled: dSave
             if (!addNew) {
-                input name: "btnEditDelete", type: "button", title: "Delete from SmartStart", width: 3, textColor: "white", backgroundColor: "#cc2d3b"
+                input name: "btnEditDelete", type: "button", title: "${btnIcon('pi-trash')}&nbsp; Delete from SmartStart", width: 4, textColor: "white", backgroundColor: "#cc2d3b"
             }
             paragraph(state.msgEditDel ? "$state.msgEditDel" : "")
             state.remove("msgEditDel")
@@ -266,8 +283,17 @@ String appInfo() {
             "<span style='font-size:84%;color:#555a5e'> - &copy; 2024 Jeff Page (@jtp10181)</span>"
 }
 
+String hrefButton(String btnName, String href, String iconName=null) {
+    String output = ""
+    output += """<button onClick="location.href='""" + href + """'" class="p-button p-component mr-2 mb-2" type="button" aria-label="hrefButton" data-pc-name="button" data-pc-section="root" data-pd-ripple="true">"""
+    if (iconName) output += btnIcon(iconName)
+    output += btnName
+    output += """<span role="presentation" aria-hidden="true" data-p-ink="true" data-p-ink-active="false" class="p-ink" data-pc-name="ripple" data-pc-section="root"></span></button>"""
+    return output
+}
+
 Map resetEditSettings(Integer selection) {
-    logDebug "resetEditSettings(${selection})"
+    logTrace "resetEditSettings(${selection})"
     List ssList = getSmartList()
     Map ssEditing = [dsk:"", nodeName:"", nodeLocation:"", gkList:[1, 2], bootMode:1, enabled:true]
 
@@ -284,7 +310,7 @@ Map resetEditSettings(Integer selection) {
         app.updateSetting("editGrants", [type: "enum", value: ssEditing.gkList])
         app.updateSetting("editBootMode", [type: "enum", value: "$ssEditing.bootMode"])
         app.updateSetting("editEnabled", [type: "bool", value: ssEditing.enabled])
-        logDebug("Updated fields for: [${selection}: ${ssEditing?.nodeName}]")
+        logTrace("Updated fields for: [${selection}: ${ssEditing?.nodeName}]")
     }
     return ssEditing
 }
@@ -295,7 +321,7 @@ void smartListUpdate() {
             uri    : "http://127.0.0.1:8080",
             path   : "/mobileapi/zwave/smartstart/list",
     ]
-    logDebug "smartListUpdate ${params}"
+    logTrace "smartListUpdate ${params}"
 
     httpGet(params) { resp ->
         saveSmartList(resp.data?.items ?: [] as List)
@@ -307,19 +333,19 @@ void smartListUpdateAsync() {
             uri    : "http://127.0.0.1:8080",
             path   : "/mobileapi/zwave/smartstart/list",
     ]
-    logDebug "smartListUpdate ${params}"
+    logTrace "smartListUpdateAsync ${params}"
     asynchttpGet("smartListHandler", params)
 }
 
 void smartListHandler(resp, data) {
-    logDebug "Processing smartList Response"
-    //logDebug("smartList Response: ${resp.data}", "trace")
+    logTrace "Processing StartStart List Response"
+    //logTrace("smartList Response: ${resp.data}")
     Map respData = [:]
     try {
         def jSlurp = new JsonSlurper()
         respData = jSlurp.parseText(resp.data as String) as Map
     } catch (Exception e) {
-        log.error "EXCEPTION CAUGHT: ${e.message} ON LINE ${e.stackTrace.find{it.className.contains("user_")}?.lineNumber}"
+        logErr "EXCEPTION CAUGHT: ${e.message} ON LINE ${e.stackTrace.find{it.className.contains("user_")}?.lineNumber}"
     }
     saveSmartList(respData?.items ?: [] as List)
 }
@@ -330,7 +356,7 @@ void zwDetailsUpdate() {
             uri    : "http://127.0.0.1:8080",
             path   : "/hub/zwaveDetails/json",
     ]
-    logDebug "zwDetailsUpdate ${params}"
+    logTrace "zwDetailsUpdate ${params}"
 
     httpGet(params) { resp ->
         state.zwDevices = resp.data?.zwDevices as Map
@@ -343,21 +369,22 @@ void zwDetailsUpdateAsync() {
             uri    : "http://127.0.0.1:8080",
             path   : "/hub/zwaveDetails/json",
     ]
-    logDebug "zwDetailsUpdate ${params}"
+    logTrace "zwDetailsUpdateAsync ${params}"
     asynchttpGet("zwDetailsHandler", params)
 }
 
 void zwDetailsHandler(resp, data) {
-    logDebug "Processing zwDetails Response"
+    logTrace "Processing Z-Wave Details Response"
     Map respData = [:]
     try {
         def jSlurp = new JsonSlurper()
         respData = jSlurp.parseText(resp.data as String) as Map
     } catch (Exception e) {
-        log.error "EXCEPTION CAUGHT: ${e.message} ON LINE ${e.stackTrace.find{it.className.contains("user_")}?.lineNumber}"
+        logErr "EXCEPTION CAUGHT: ${e.message} ON LINE ${e.stackTrace.find{it.className.contains("user_")}?.lineNumber}"
     }
     state.zwDevices = respData.zwDevices as Map
     state.zwNodes = respData.nodes as List
+    logDebug "zwDetailsHandler Found ${state.zwDevices?.size() ?: 0} devices and ${state.zwNodes?.size() ?: 0} nodes"
 }
 
 //Save New/Edited SmartStart Entry back to hub
@@ -369,8 +396,8 @@ Boolean smartEditPost(Map ssNode) {
             body   : [ nodeDSK: ssNode.dsk, nodeName:ssNode.nodeName, nodeLocation:ssNode.nodeLocation,
                        grantKeys: ssNode.grantKeys as String, bootMode: ssNode.bootMode as String ]
     ]
-    logDebug "smartEditPost ${params.findAll { k,v -> k != 'body'}}"
-    logDebug("smartEditPost ${params}", "trace")
+    logTrace "smartEditPost ${params.findAll { k,v -> k != 'body'}}"
+    logTrace "smartEditPost ${params}"
 
     Boolean success = false
     try {
@@ -379,10 +406,9 @@ Boolean smartEditPost(Map ssNode) {
             logDebug "editSaveResponse: ${resp.data}"
             success = (resp.data?.status == "success")
             if (!success) { logDebug("smartEditPost Error: ${resp.data}", "error") }
-            smartListUpdate()
         }
     } catch (Exception e) {
-        log.error "EXCEPTION CAUGHT: ${e.message} ON LINE ${e.stackTrace.find{it.className.contains("user_")}?.lineNumber}"
+        logErr "EXCEPTION CAUGHT: ${e.message} ON LINE ${e.stackTrace.find{it.className.contains("user_")}?.lineNumber}"
     }
     return success
 }
@@ -394,8 +420,8 @@ Boolean smartDelPost(String dsk) {
             path   : "/mobileapi/zwave/smartstart/delete",
             body   : [nodeDSK: dsk]
     ]
-    logDebug "smartDelPost ${params.findAll { k,v -> k != 'body'}}"
-    logDebug("smartDelPost ${params}", "trace")
+    logTrace "smartDelPost ${params.findAll { k,v -> k != 'body'}}"
+    logTrace "smartDelPost ${params}"
 
     Boolean success = false
     try {
@@ -404,23 +430,26 @@ Boolean smartDelPost(String dsk) {
             logDebug "smartDelResponse: ${resp.data}"
             success = (resp.data?.status == "success")
             if (!success) { logDebug("smartDelPost Error: ${resp.data}", "error") }
-            smartListUpdate()
         }
     } catch (Exception e) {
-        log.error "EXCEPTION CAUGHT: ${e.message} ON LINE ${e.stackTrace.find{it.className.contains("user_")}?.lineNumber}"
+        logErr "EXCEPTION CAUGHT: ${e.message} ON LINE ${e.stackTrace.find{it.className.contains("user_")}?.lineNumber}"
     }
     return success
 }
 
 //Process and Save SmartStart List from hub
 void saveSmartList(List ssList) {
-    logDebug("saveSmartList with ${ssList.size() ?: 0} SmartStart records and ${state.smartListDisabled?.size() ?: 0} disabled records")
-    logDebug("saveSmartList ${ssList}", "trace")
+    logDebug("saveSmartList processing ${ssList.size() ?: 0} SmartStart records and ${state.smartListDisabled?.size() ?: 0} disabled records")
+    logTrace("saveSmartList ${ssList}")
+
+    //Reset / Check States
+    state.ssEnabled = [:]
+    if (!state.smartListDisabled) state.smartListDisabled = []
+
     //Processing for Hub List Only
     ssList.each { ss ->
         //Set enabled if in list from hub
         ss.enabled = true
-        state.ssEnabled["$ss.dsk"] = "on"
 
         //Remove from disabled list if its in hub list
         state.smartListDisabled?.removeAll { it.dsk == ss.dsk || it.nodeDSK == ss.dsk }
@@ -432,10 +461,16 @@ void saveSmartList(List ssList) {
     }
 
     //Add in disabled items
-    state.smartListDisabled?.each { ssList << it.clone() }
+    state.smartListDisabled?.each { ssd ->
+        ssd.enabled = false
+        ssList << ssd.clone()
+    }
 
     //Processing for all entries
     ssList.each { ss ->
+        //Build enabled list
+        state.ssEnabled["$ss.dsk"] = (ss.enabled ? "on" : "off")
+
         //Node to Decimal
         ss.nodeDec = null
         if (ss.node && ss.node.charAt(0) == '0') {
@@ -455,6 +490,7 @@ void saveSmartList(List ssList) {
     //Sort, store index number, and save to state
     ssList.sort{ it.dsk.toLowerCase() }.eachWithIndex { ss, idx -> ss.idx = idx }
     state.smartListCombined = ssList
+    logTrace("saveSmartList Complete")
 }
 
 List getSmartList() {
@@ -462,7 +498,7 @@ List getSmartList() {
 }
 
 Map getSmartEditMenu() {
-    logDebug("Generating Edit Menu...")
+    logTrace("Generating Edit Menu...")
     Map ssMenu = [:]
     smartList.each { ss ->
         Map devInfo = state.zwDevices["${ss.nodeDec}"]
@@ -480,22 +516,22 @@ void btnEditSave() {
     ]
     Boolean result
     if (settings.editEnabled) {
-        logDebug("Saving enabled entry to SmartStart on Hub: ${ssNode.nodeName}")
+        logDebug("Saving '${ssNode.nodeName}' entry to SmartStart on Hub (Enabled)")
         result = smartEditPost(ssNode)
     }
     else {
-        logDebug("Saving disabled entry to app state: ${ssNode.nodeName}")
+        logDebug("Saving '${ssNode.nodeName}' entry to App State (Disabled)")
         Map dNode = state.smartListDisabled?.find { it.dsk == settings.editDSK }
         if (dNode) {
             dNode.putAll(ssNode)
-            smartListUpdate()
             result = true
         }
     }
+    if (result) { smartListUpdate() }
 
     //Show Status Message
-    if (result) { atomicState.msgEditDel = "<strong>\u2705 Saved Successfully</strong>" }
-    else { atomicState.msgEditDel = "<strong>\u274C Save Failed</strong>" }
+    if (result) { atomicState.msgEditDel = "$ICON_CHKSQ_G15  <strong>${settings.editName} - Save Successfull</strong>" }
+    else { atomicState.msgEditDel = "$ICON_XCR_R15  <strong>${settings.editName} - Failed to Save</strong>" }
 
     //Reset Edit Page
     if (result && state.editSelection == -1) state.remove("editSelection")
@@ -509,13 +545,13 @@ void btnEditDelete() {
     } else {
         logDebug("Deleting disabled entry from app state: ${settings.editName}")
         state.smartListDisabled?.removeAll { it.dsk == settings.editDSK }
-        smartListUpdate()
         result = true
     }
+    if (result) { smartListUpdate() }
 
     //Show Status Message
-    if (result) { atomicState.msgEditDel = "<strong>\u2611\uFE0F Deleted Successfully</strong>" }
-    else { atomicState.msgEditDel = "<strong>\u26A0 Delete Failed</strong>" }
+    if (result) { atomicState.msgEditDel = "$ICON_TRASH_G15  <strong>${settings.editName} - Deleted Successfully</strong>" }
+    else { atomicState.msgEditDel = "$ICON_XCR_R15  <strong>${settings.editName} - Failed to Delete</strong>" }
 
     //Reset Edit Page
     resetEditSettings(-1)
@@ -530,15 +566,15 @@ void smartListToggle(String dsk, Boolean enabled = null) {
     if (enabled) {
         Map ssNode = state.smartListDisabled?.find { it.dsk == dsk }
         logDebug "Enabling ${ssNode.nodeName} - saving to SmartStart"
-        logDebug("Enabling ${ssNode}", "trace")
+        logTrace "Enabling ${ssNode}"
 
         //Add back to SmartStart
         if (ssNode) smartEditPost(ssNode.clone())
     }
     else {
         Map ssNode = state.smartListCombined?.find { it.dsk == dsk }
-        logDebug "Disabling ${ssNode.nodeName} - removing from SmarStart"
-        logDebug("Disabling ${ssNode}", "trace")
+        logDebug "Disabling ${ssNode.nodeName} - removing from SmartStart"
+        logTrace "Disabling ${ssNode}"
         ssNode.enabled = false
 
         //Copy to disabled list
@@ -552,24 +588,75 @@ void smartListToggle(String dsk, Boolean enabled = null) {
         smartDelPost(ssNode.dsk)
     }
     state.ssEnabled[dsk] = (enabled ? "on" : "off")
+    smartListUpdate()
 
     //This will save backup for both enable and disable operations
-    disabledSaveBackup(state.smartListDisabled)
+    saveDisabledBackup(state.smartListDisabled)
 }
 
-void disabledSaveBackup(List disabledList) {
-    logDebug("disabledSaveBackup: Backing up ${disabledList?.size() ?: 0} disabled records")
-    String disabledJson = JsonOutput.toJson(disabledList) as String
-    uploadHubFile("$disabledBackupFile",disabledJson.getBytes())
+void saveDisabledBackup(List disabledList) {
+    logDebug("saveDisabledBackup: Backing up ${disabledList?.size() ?: 0} disabled records")
+    String listJson = JsonOutput.toJson(disabledList) as String
+    uploadHubFile("$disabledBackupFile",listJson.getBytes())
 }
 
-void disabledLoadBackup() {
-    byte[] dBytes = downloadHubFile("$disabledBackupFile")
-    state.smartListDisabled = (new JsonSlurper().parseText(new String(dBytes))) as List
-    logDebug("disabledLoadBackup: Restored ${state.smartListDisabled?.size() ?: 0} disabled records")
+void saveFullBackup() {
+    logDebug("saveFullBackup: Backing up ${state.smartListCombined?.size() ?: 0} records")
+
+    //Copy important bits from combined list to temporary list
+    List tmpList = []
+    state.smartListCombined?.each { ssNode ->
+        tmpList << [
+                dsk: ssNode.dsk, nodeName: ssNode.nodeName, nodeLocation: ssNode.nodeLocation,
+                grantKeys: ssNode.grantKeys, bootMode: ssNode.bootMode, status: "Unknown"
+        ]
+    }
+
+    //Save to file manager
+    String listJson = JsonOutput.toJson(tmpList) as String
+    uploadHubFile("$fullBackupFile",listJson.getBytes())
+    atomicState.msgBackup = "$ICON_CHKSQ_G15  <strong>Backup file with ${tmpList?.size() ?: 0} records saved to File Manager</strong>"
 }
 
-//Styling Functions
+void loadDisabledBackup() {
+    backupLoadFile("$disabledBackupFile")
+}
+
+void loadFullBackup() {
+    backupLoadFile("$fullBackupFile")
+}
+
+void backupLoadFile(String filename) {
+    byte[] dBytes
+    try {
+        dBytes = downloadHubFile("$filename")
+    }
+    catch (Exception e) {
+        logErr "EXCEPTION CAUGHT: ${e.message} ON LINE ${e.stackTrace.find{it.className.contains("user_")}?.lineNumber} | ${e}"
+        atomicState.msgBackup = "$ICON_XCR_R15  <strong>Restore Failed - ${e}</strong>"
+    }
+    if (dBytes != null) {
+        backupMerge(new String(dBytes))
+    }
+}
+
+void backupMerge(String jsonBackup) {
+    List tmpList = (new JsonSlurper().parseText(jsonBackup)) as List
+    Integer sizeAll = tmpList?.size() ?: 0
+    //Remove from temp list it already in app
+    state.smartListCombined?.each { ssc ->
+        tmpList?.removeAll { it.dsk == ssc.dsk }
+    }
+
+    Integer sizeFinal = tmpList?.size() ?: 0
+    state.smartListDisabled += tmpList
+
+    logDebug("backupMerge: Restored $sizeFinal of $sizeAll records (as disabled)")
+    atomicState.msgBackup = "$ICON_CHKSQ_G15  <strong>Restored $sizeFinal of $sizeAll records from backup into disabled list</strong>"
+    if (sizeAll - sizeFinal > 0 ) atomicState.msgBackup += " (${sizeAll-sizeFinal} duplicates ignored)"
+}
+
+//Styling Functions / Strings
 String styleSection(String sectionHeadingText) {
    return "<div style='font-weight:bold; font-size: 120%'>$sectionHeadingText</div>" as String
 }
@@ -577,6 +664,18 @@ String styleSection(String sectionHeadingText) {
 String styleInputTitle(String title, Boolean required = false) {
     return "<strong>$title</strong>" + (required ? "<span style='color:red'> *</span>" : "") as String
 }
+
+String btnIcon(String name) {
+    return "<span class='p-button-icon p-button-icon-left pi " + name + "' data-pc-section='icon'></span>"
+}
+
+@Field static final String ICON_CHKSQ_G15 = "<i class='pi pi-check-square' style='color:green; font-size:1.5rem; font-weight:bold'></i>"
+@Field static final String ICON_XCR_R15 = "<i class='pi pi-times-circle' style='color:red; font-size:1.5rem; font-weight:bold'></i>"
+@Field static final String ICON_TRASH_G15 = "<i class='pi pi-trash' style='color:green; font-size:1.5rem; font-weight:bold'></i>"
+@Field static final String ICON_WARN_O15 = "<i class='pi pi-exclamation-triangle' style='color:OrangeRed; font-size:1.5rem; font-weight:bold'></i>"
+@Field static final String ICON_EXCLAMATION_R15 = "<i class='pi pi-exclamation-circle' style='color:red; font-size:1.5rem; font-weight:bold'></i>"
+@Field static final String ICON_QCR = "<i class='pi pi-question-circle' style='font-weight:bold'></i>"
+@Field static final String ICON_PP = "<i class='pi pi-paypal'></i>"
 
 //Check-in
 void updateLastCheckIn() {
@@ -607,14 +706,11 @@ void doCheckIn() {
 }
 
 //Logging Functions
-// Writes to log.debug by default if debug logging setting enabled;
-// can specify other log level (e.g., "info") if desired
-void logDebug(String str, String level="debug") {
-   switch(level) {
-      default:
-        if (settings["debugLevel"] != null && (settings["debugLevel"].toInteger()) >= 1) log."$level"(str)
-      case "trace": 
-         if (settings["debugLevel"] != null && (settings["debugLevel"].toInteger()) == 2) log.trace(str)
-         break
-   }
+Integer getLogLevelInfo() {	
+    return settings.logLevel != null ? settings.logLevel as Integer : 1 
 }
+void logErr(String msg)   { log.error "${msg}"}
+void logWarn(String msg)  { if (logLevelInfo>=1) log.warn "${msg}" }
+void logInfo(String msg)  { if (logLevelInfo>=2) log.info "${msg}" }
+void logDebug(String msg) { if (logLevelInfo>=3) log.debug "${msg}" }
+void logTrace(String msg) { if (logLevelInfo>=4) log.trace "${msg}" }
