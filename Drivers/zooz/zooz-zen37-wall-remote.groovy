@@ -9,28 +9,33 @@
 
 Changelog:
 
+## [1.0.0] - 2024-06-15 (@jtp10181)
+  - Added support for battery status events
+  - Added wake up interval setting
+  - Added support for associations
+  - Added singleThreaded flag
+  - Fixed install sequence so it will fully configure at initial pairing
+  - Updated library and common code
+
 ## [0.1.0] - 2023-12-08 (@jtp10181)
   - Initial Release
 
- *  Copyright 2023 Jeff Page
+ *  Copyright 2023-2024 Jeff Page
  *
- *  Licensed under the Apache License, Version 2.0 (the "License");
- *  you may not use this file except in compliance with the License.
- *  You may obtain a copy of the License at
+ *  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
+ *  in compliance with the License. You may obtain a copy of the License at:
  *
  *      http://www.apache.org/licenses/LICENSE-2.0
  *
- *  Unless required by applicable law or agreed to in writing, software
- *  distributed under the License is distributed on an "AS IS" BASIS,
- *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *  See the License for the specific language governing permissions and
- *  limitations under the License.
+ *  Unless required by applicable law or agreed to in writing, software distributed under the License is
+ *  distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and limitations under the License.
  *
 */
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "0.1.0"
+@Field static final String VERSION = "1.0.0"
 @Field static final String DRIVER = "Zooz-ZEN37"
 @Field static final String COMM_LINK = "https://community.hubitat.com/t/zooz-zen37-wall-remote/129335"
 @Field static final Map deviceModelNames = ["7000:F003":"ZEN37"]
@@ -40,11 +45,11 @@ metadata {
 		name: "Zooz ZEN37 Wall Remote Advanced",
 		namespace: "jtp10181",
 		author: "Jeff Page (@jtp10181)",
+		singleThreaded: true,
 		importUrl: "https://raw.githubusercontent.com/jtp10181/Hubitat/main/Drivers/zooz/zooz-zen37-wall-remote.groovy"
 	) {
 		capability "Actuator"
 		capability "Battery"
-		capability "PowerSource"
 		capability "PushableButton"
 		capability "HoldableButton"
 		capability "ReleasableButton"
@@ -53,27 +58,24 @@ metadata {
 		command "fullConfigure"
 		command "forceRefresh"
 
-		// command "setParameter",[[name:"parameterNumber*",type:"NUMBER", description:"Parameter Number"],
-		// 	[name:"value*",type:"NUMBER", description:"Parameter Value"],
-		// 	[name:"size",type:"NUMBER", description:"Parameter Size"]]
-
 		//DEBUGGING
 		//command "debugShowVars"
 
 		attribute "syncStatus", "string"
+		attribute "batteryStatus", "string"
 
-		fingerprint mfr:"027A", prod:"7000", deviceId:"F003", inClusters:"0x00,0x00" //Zooz ZEN37 Wall Remote
+		fingerprint mfr:"027A", prod:"7000", deviceId:"F003", inClusters:"0x00,0x00", controllerType: "ZWV"  //Zooz ZEN37 Wall Remote
 	}
 
 	preferences {
 		configParams.each { param ->
 			if (!param.hidden) {
-				Integer paramVal = getParamValue(param)
 				if (param.options) {
+					Integer paramVal = getParamValue(param)
 					input "configParam${param.num}", "enum",
 						title: fmtTitle("${param.title}"),
 						description: fmtDesc("• Parameter #${param.num}, Selected: ${paramVal}" + (param?.description ? "<br>• ${param?.description}" : '')),
-						defaultValue: paramVal,
+						defaultValue: param.defaultVal,
 						options: param.options,
 						required: false
 				}
@@ -81,12 +83,34 @@ metadata {
 					input "configParam${param.num}", "number",
 						title: fmtTitle("${param.title}"),
 						description: fmtDesc("• Parameter #${param.num}, Range: ${(param.range).toString()}, DEFAULT: ${param.defaultVal}" + (param?.description ? "<br>• ${param?.description}" : '')),
-						defaultValue: paramVal,
+						defaultValue: param.defaultVal,
 						range: param.range,
 						required: false
 				}
 			}
 		}
+
+		if (!isLongRange()) {
+			input "assocEnabled", "bool", defaultValue: false,
+				title: fmtTitle("Show Association Settings"),
+				description: fmtDesc("Turn on and Save to show the Association Settings")
+
+			if (assocEnabled) {
+				for(int i in 2..maxAssocGroups) {
+					input "assocDNI$i", "string", required: false,
+						title: fmtTitle("Device Associations - Group $i (${AssocGrpNames[i]})"),
+						description: fmtDesc("${AssocGrpInfo[i]}. Supports up to ${maxAssocNodes} Hex Device IDs separated by commas. Save as blank or 0 to clear.")
+				}
+			}
+		} else {
+			input "assocEnabled", "hidden", title: fmtTitle("Associations Not Available"),
+				description: fmtDesc("Associations are not available when device is paired in Long Range mode")
+		}
+
+		input "wakeUpInt", "number",
+			title: fmtTitle("Wake-up Interval (hours)"),
+			description: fmtDesc("How often the device will wake up to receive commands from the hub"),
+			defaultValue: 12, range: "1..24"
 	}
 }
 
@@ -97,8 +121,21 @@ void debugShowVars() {
 }
 
 //Association Settings
-@Field static final int maxAssocGroups = 1
-@Field static final int maxAssocNodes = 1
+@Field static final int maxAssocGroups = 9
+@Field static final int maxAssocNodes = 5
+@Field static final TreeMap<Integer,String> AssocGrpNames = [
+	2:"On/Off Top", 3:"On/Off Bottom", 4:"Dimming Top", 5:"Dimming Bottom", 6:"On/Off Button 1", 7:"On/Off Button 2", 8:"On/Off Button 3", 9:"On/Off Button 4"
+]
+@Field static final TreeMap<Integer,String> AssocGrpInfo = [
+	2:"Basic on (button 1: top large button) and off (button 2: bottom large button)", 
+	3:"Basic on (button 3: small left button) and off (button 4: small right button)", 
+	4:"Multilevel start level change (held) and stop level change (released) for buttons 1 (up) and 2 (down)", 
+	5:"Multilevel start level change (held) and stop level change (released) for buttons 3 (up) and 4 (down)", 
+	6:"Basic on/off toggle when button 1 is pressed",
+	7:"Basic on/off toggle when button 2 is pressed",
+	8:"Basic on/off toggle when button 3 is pressed",
+	9:"Basic on/off toggle when button 4 is pressed"
+]
 
 /*** Static Lists and Settings ***/
 @Field static final TreeMap<Integer,String> ledColorOptions = [
@@ -111,7 +148,7 @@ void debugShowVars() {
 	batteryAlarm: [ num: 1,
 		title: "Low Battery Alert Threshold",
 		size: 1, defaultVal: 5,
-		range: 5..10
+		range: "5..10"
 	],
 	ledColor1: [ num: 2,
 		title: "LED Color (Button 1)",
@@ -138,6 +175,12 @@ void debugShowVars() {
 		size: 1, defaultVal: 5,
 		options: [0:"OFF", 1:"10%", 2:"20%", 3:"30%", 4:"40%", 5:"50%", 6:"60%", 7:"70%", 8:"80%", 9:"90%", 10:"100%"]
 	],
+	dimmingDuration: [ num: 7,
+		title: "Remote Dimming Duration",
+		description: "Time (seconds) to go from 0 to 100 brightness on associated devices",
+		size: 1, defaultVal: 5,
+		range: "1..99"
+	]
 ]
 
 /* ZEN37 v0.07
@@ -163,6 +206,7 @@ CommandClassReport - class:0x9F, version:1   (Security 2)
 
 //Set Command Class Versions
 @Field static final Map commandClassVersions = [
+	0x5B: 3,   // centralScene
 	0x6C: 1,   // supervision
 	0x70: 1,   // configuration
 	0x71: 8,   // notification
@@ -177,10 +221,13 @@ CommandClassReport - class:0x9F, version:1   (Security 2)
 ********************************************************************/
 void installed() {
 	logWarn "installed..."
+	state.resyncAll = true
+	runIn(2, runWakeupCmds)
+	sendCommands(getRefreshCmds(),400)
 }
 
 void fullConfigure() {
-	logWarn "configure..."
+	logWarn "fullConfigure..."
 
 	if (!pendingChanges || state.resyncAll == null) {
 		logForceWakeupMessage "Full Re-Configure"
@@ -230,18 +277,6 @@ void release(buttonId) { sendBasicButtonEvent(buttonId, "released") }
 void doubleTap(buttonId) { sendBasicButtonEvent(buttonId, "doubleTapped") }
 
 /*** Custom Commands ***/
-String setParameter(paramNum, value, size = null) {
-	Map param = getParam(paramNum)
-	if (param && !size) { size = param.size }
-
-	if (paramNum == null || value == null || size == null) {
-		logWarn "Incomplete parameter list supplied..."
-		logWarn "Syntax: setParameter(paramNum, value, size)"
-		return
-	}
-	logDebug "setParameter ( number: $paramNum, value: $value, size: $size )" + (param ? " [${param.name}]" : "")
-	return secureCmd(configSetCmd([num: paramNum, size: size], value as Integer))
-}
 
 
 /*******************************************************************
@@ -267,7 +302,7 @@ void zwaveEvent(hubitat.zwave.commands.configurationv1.ConfigurationReport cmd) 
 		Long sizeFactor = Math.pow(256,param.size).round()
 		if (val < 0) { val += sizeFactor }
 
-		logDebug "${param.name} (#${param.num}) = ${val.toString()}"
+		logDebug "${param.name} - ${param.title} (#${param.num}) = ${val.toString()}"
 		setParamStoredValue(param.num, val)
 	}
 	else {
@@ -284,6 +319,18 @@ void zwaveEvent(hubitat.zwave.commands.associationv2.AssociationReport cmd) {
 	if (grp == 1) {
 		logDebug "Lifeline Association: ${cmd.nodeId}"
 		state.group1Assoc = (cmd.nodeId == [zwaveHubNodeId]) ? true : false
+	}
+	else if (grp > 1 && grp <= maxAssocGroups) {
+		String dnis = convertIntListToHexList(cmd.nodeId)?.join(", ")
+		logDebug "Confirmed Group $grp Association: " + (cmd.nodeId.size()>0 ? "${dnis} // ${cmd.nodeId}" : "None")
+
+		if (cmd.nodeId.size() > 0) {
+			if (!state.assocNodes) state.assocNodes = [:]
+			state.assocNodes["$grp"] = cmd.nodeId
+		} else {
+			state.assocNodes?.remove("$grp" as String)
+		}
+		device.updateSetting("assocDNI$grp", [value:"${dnis}", type:"string"])
 	}
 	else {
 		logDebug "Unhandled Group: $cmd"
@@ -314,7 +361,10 @@ void zwaveEvent(hubitat.zwave.commands.wakeupv2.WakeUpIntervalReport cmd) {
 void zwaveEvent(hubitat.zwave.commands.wakeupv2.WakeUpNotification cmd, ep=0) {
 	logTrace "${cmd} (ep ${ep})"
 	logDebug "WakeUp Notification Received"
+	runWakeupCmds()
+}
 
+void runWakeupCmds() {
 	List<String> cmds = ["delay 0"]
 	cmds << batteryGetCmd()
 
@@ -368,9 +418,12 @@ void zwaveEvent(hubitat.zwave.commands.centralscenev3.CentralSceneNotification c
 
 void zwaveEvent(hubitat.zwave.commands.notificationv8.NotificationReport cmd, ep=0) {
 	logTrace "${cmd} (ep ${ep})"
-	switch (cmd.notificationType) {
+	switch (cmd.notificationType as Integer) {
+		case 0x08:  //Power Management
+			sendPowerEvent(cmd.event, cmd.eventParameter[0])
+			break
 		default:
-			logDebug "Unhandled: ${cmd}"
+			logDebug "Unhandled notificationType: ${cmd}"
 	}
 }
 
@@ -381,7 +434,7 @@ void zwaveEvent(hubitat.zwave.commands.notificationv8.NotificationReport cmd, ep
 //evt = [name, value, type, unit, desc, isStateChange]
 void sendEventLog(Map evt, Integer ep=0) {
 	//Set description if not passed in
-	evt.descriptionText = evt.desc ?: "${evt.name} set to ${evt.value}${evt.unit ?: ''}"
+	evt.descriptionText = evt.desc ?: "${evt.name} set to ${evt.value} ${evt.unit ?: ''}".trim()
 
 	//Main Device Events
 	if (device.currentValue(evt.name).toString() != evt.value.toString() || evt.isStateChange) {
@@ -398,6 +451,27 @@ void sendBasicButtonEvent(buttonId, String name) {
 	sendEventLog(name:name, value:buttonId, type:"digital", desc:desc, isStateChange:true)
 }
 
+void sendPowerEvent(Integer event, Integer parameter) {
+	String battStatus
+	switch (event as Integer) {
+		case 0x00:  //Idle State
+			battStatus = "discharging"
+			break
+		case 0x0C:  //Battery is charging
+			battStatus = "charging"
+			break
+		case 0x0D:  //Battery is fully charged
+			battStatus = "charged"
+			break
+		default:
+			logDebug "Unhandled Power Management: ${event}, ${parameter}"
+	}
+
+	if (battStatus) {
+		sendEventLog(name:"batteryStatus", value:battStatus, desc:"battery is ${battStatus}")
+	}
+}
+
 
 /*******************************************************************
  ***** Execute / Build Commands
@@ -407,27 +481,30 @@ List<String> getConfigureCmds() {
 
 	List<String> cmds = []
 
-	if (state.resyncAll) {
-		clearVariables()
-		cmds << wakeUpIntervalSetCmd(43200)
+	Integer wakeSeconds = wakeUpInt ? wakeUpInt*3600 : 43200
+	if (state.resyncAll || wakeSeconds != (device.getDataValue("zwWakeupInterval") as Integer)) {
+		logDebug "Settting WakeUp Interval to $wakeSeconds seconds"
+		cmds << wakeUpIntervalSetCmd(wakeSeconds)
 		cmds << wakeUpIntervalGetCmd()
 	}
 	if (state.resyncAll || !firmwareVersion || !state.deviceModel) {
+		cmds << mfgSpecificGetCmd()
 		cmds << versionGetCmd()
 	}
 
-	cmds += getConfigureAssocsCmds()
+	cmds += getConfigureAssocsCmds(true)
 
 	configParams.each { param ->
 		Integer paramVal = getParamValueAdj(param)
 		Integer storedVal = getParamStoredValue(param.num)
 
 		if ((paramVal != null) && (state.resyncAll || (storedVal != paramVal))) {
-			logDebug "Changing ${param.name} (#${param.num}) from ${storedVal} to ${paramVal}"
+			logDebug "Changing ${param.name} - ${param.title} (#${param.num}) from ${storedVal} to ${paramVal}"
 			cmds += configSetGetCmd(param, paramVal)
 		}
 	}
 
+	if (state.resyncAll) clearVariables()
 	state.resyncAll = false
 
 	if (cmds) updateSyncingStatus(6)
@@ -438,22 +515,43 @@ List<String> getConfigureCmds() {
 List<String> getRefreshCmds() {
 	List<String> cmds = []
 
-	cmds << versionGetCmd()
-	cmds << wakeUpIntervalGetCmd()
 	cmds << batteryGetCmd()
+	cmds << wakeUpIntervalGetCmd()
+	cmds << versionGetCmd()
 
 	return cmds ?: []
 }
 
-List getConfigureAssocsCmds() {
+List getConfigureAssocsCmds(Boolean logging=false) {
 	List<String> cmds = []
 
 	if (!state.group1Assoc || state.resyncAll) {
-		if (state.group1Assoc == false) {
-			logDebug "Adding missing lifeline association..."
-		}
+		if (logging) logDebug "Setting lifeline association..."
 		cmds << associationSetCmd(1, [zwaveHubNodeId])
 		cmds << associationGetCmd(1)
+	}
+
+	for (int i = 2; i <= maxAssocGroups; i++) {
+		List<String> cmdsEach = []
+		List settingNodeIds = getAssocDNIsSettingNodeIds(i)
+
+		//Need to remove first then add in case we are at limit
+		List oldNodeIds = state.assocNodes?."$i"?.findAll { !(it in settingNodeIds) }
+		if (oldNodeIds) {
+			if (logging) logDebug "Removing Group $i Association: ${convertIntListToHexList(oldNodeIds)} // $oldNodeIds"
+			cmdsEach << associationRemoveCmd(i, oldNodeIds)
+		}
+
+		List newNodeIds = settingNodeIds.findAll { !(it in state.assocNodes?."$i") }
+		if (newNodeIds) {
+			if (logging) logDebug "Adding Group $i Association: ${convertIntListToHexList(newNodeIds)} // $newNodeIds"
+			cmdsEach << associationSetCmd(i, newNodeIds)
+		}
+
+		if (cmdsEach || state.resyncAll) {
+			cmdsEach << associationGetCmd(i)
+			cmds += cmdsEach
+		}
 	}
 
 	return cmds
@@ -496,9 +594,11 @@ Changelog:
 2023-05-14 - Updates for power metering
 2023-05-18 - Adding requirement for getParamValueAdj in driver
 2023-05-24 - Fix for possible RuntimeException error due to bad cron string
-2023-10-25 - Less savings to the configVals data, and some new functions
+2023-10-25 - Less saving to the configVals data, and some new functions
 2023-10-26 - Added some battery shortcut functions
 2023-11-08 - Added ability to adjust settings on firmware range
+2024-01-28 - Adjusted logging settings for new / upgrade installs, added mfgSpecificReport
+2024-06-15 - Added isLongRange function, convert range to string to prevent expansion
 
 ********************************************************************/
 
@@ -572,6 +672,20 @@ void zwaveEvent(hubitat.zwave.commands.versionv2.VersionReport cmd) {
 	setDevModel(new BigDecimal(fullVersion))
 }
 
+void zwaveEvent(hubitat.zwave.commands.manufacturerspecificv2.ManufacturerSpecificReport cmd) {
+	logTrace "${cmd}"
+
+	device.updateDataValue("manufacturer",cmd.manufacturerId.toString())
+	device.updateDataValue("deviceType",cmd.productTypeId.toString())
+	device.updateDataValue("deviceId",cmd.productId.toString())
+
+	logDebug "fingerprint  mfr:\"${hubitat.helper.HexUtils.integerToHexString(cmd.manufacturerId, 2)}\", "+
+		"prod:\"${hubitat.helper.HexUtils.integerToHexString(cmd.productTypeId, 2)}\", "+
+		"deviceId:\"${hubitat.helper.HexUtils.integerToHexString(cmd.productId, 2)}\", "+
+		"inClusters:\"${device.getDataValue("inClusters")}\""+
+		(device.getDataValue("secureInClusters") ? ", secureInClusters:\"${device.getDataValue("secureInClusters")}\"" : "")
+}
+
 void zwaveEvent(hubitat.zwave.Command cmd, ep=0) {
 	logDebug "Unhandled zwaveEvent: $cmd (ep ${ep})"
 }
@@ -609,6 +723,10 @@ String mcAssociationGetCmd(Integer group) {
 
 String versionGetCmd() {
 	return secureCmd(zwave.versionV2.versionGet())
+}
+
+String mfgSpecificGetCmd() {
+	return secureCmd(zwave.manufacturerSpecificV2.manufacturerSpecificGet())
 }
 
 String switchBinarySetCmd(Integer value, Integer ep=0) {
@@ -763,7 +881,8 @@ void updateParamsList() {
 	List<Map> tmpList = []
 	paramsMap.each { name, pMap ->
 		Map tmpMap = pMap.clone()
-		tmpMap.options = tmpMap.options?.clone()
+		if (tmpMap.options) tmpMap.options = tmpMap.options?.clone()
+		if (tmpMap.range) tmpMap.range = (tmpMap.range).toString()
 
 		//Save the name
 		tmpMap.name = name
@@ -840,7 +959,7 @@ Map getParam(String search) {
 	verifyParamsList()
 	return configParams.find{ it.name == search }
 }
-Map getParam(Integer search) {
+Map getParam(Number search) {
 	verifyParamsList()
 	return configParams.find{ it.num == search }
 }
@@ -978,7 +1097,7 @@ void clearVariables() {
 	//Restore
 	if (devModel) state.deviceModel = devModel
 	if (engTime) state.energyTime = engTime
-	//setDevModel()
+	state.resyncAll = true
 }
 
 //Stash the model in a state variable
@@ -1013,6 +1132,10 @@ BigDecimal getFirmwareVersion() {
 	return ((version != null) && version.isNumber()) ? version.toBigDecimal() : 0.0
 }
 
+Boolean isLongRange() {
+	return ((device?.deviceNetworkId as Integer) > 255)
+}
+
 String convertToLocalTimeString(dt) {
 	def timeZoneId = location?.timeZone?.ID
 	if (timeZoneId) {
@@ -1041,35 +1164,6 @@ List convertHexListToIntList(String[] hexList) {
 		catch (e) { }
 	}
 	return intList
-}
-
-Integer convertLevel(level, userLevel=false) {
-	if (levelCorrection) {
-		Integer brightmax = getParamValue("maximumBrightness")
-		Integer brightmin = getParamValue("minimumBrightness")
-		brightmax = (brightmax == 99) ? 100 : brightmax
-		brightmin = (brightmin == 1) ? 0 : brightmin
-
-		if (userLevel) {
-			//This converts what the user selected into a physical level within the min/max range
-			level = ((brightmax-brightmin) * (level/100)) + brightmin
-			state.levelActual = level
-			level = validateRange(Math.round(level), brightmax, brightmin, brightmax)
-		}
-		else {
-			//This takes the true physical level and converts to what we want to show to the user
-			if (Math.round(state.levelActual ?: 0) == level) level = state.levelActual
-			else state.levelActual = level
-
-			level = ((level - brightmin) / (brightmax - brightmin)) * 100
-			level = validateRange(Math.round(level), 100, 1, 100)
-		}
-	}
-	else if (state.levelActual) {
-		state.remove("levelActual")
-	}
-
-	return level
 }
 
 Integer validateRange(val, Integer defaultVal, Integer lowVal, Integer highVal) {
@@ -1129,8 +1223,14 @@ preferences {
 void checkLogLevel(Map levelInfo = [level:null, time:null]) {
 	unschedule(logsOff)
 	//Set Defaults
-	if (settings.logLevel == null) device.updateSetting("logLevel",[value:"3", type:"enum"])
-	if (settings.logLevelTime == null) device.updateSetting("logLevelTime",[value:"30", type:"enum"])
+	if (settings.logLevel == null) {
+		device.updateSetting("logLevel",[value:"3", type:"enum"])
+		levelInfo.level = 3
+	}
+	if (settings.logLevelTime == null) {
+		device.updateSetting("logLevelTime",[value:"30", type:"enum"])
+		levelInfo.time = 30
+	}
 	//Schedule turn off and log as needed
 	if (levelInfo.level == null) levelInfo = getLogLevelInfo()
 	String logMsg = "Logging Level is: ${LOG_LEVELS[levelInfo.level]} (${levelInfo.level})"
@@ -1139,6 +1239,9 @@ void checkLogLevel(Map levelInfo = [level:null, time:null]) {
 		runIn(60*levelInfo.time, logsOff)
 	}
 	logInfo(logMsg)
+
+	//Store last level below Debug
+	if (levelInfo.level <= 2) state.lastLogLevel = levelInfo.level
 }
 
 //Function for optional command
@@ -1150,23 +1253,24 @@ void setLogLevel(String levelName, String timeName=null) {
 }
 
 Map getLogLevelInfo() {
-	Integer level = settings.logLevel as Integer ?: 3
-	Integer time = settings.logLevelTime as Integer ?: 0
+	Integer level = settings.logLevel != null ? settings.logLevel as Integer : 1
+	Integer time = settings.logLevelTime != null ? settings.logLevelTime as Integer : 30
 	return [level: level, time: time]
 }
 
 //Legacy Support
 void debugLogsOff() {
-	logWarn "Debug logging toggle disabled..."
 	device.removeSetting("logEnable")
-	device.updateSetting("debugEnable",[value:"false",type:"bool"])
+	device.updateSetting("debugEnable",[value:false, type:"bool"])
 }
 
 //Current Support
 void logsOff() {
 	logWarn "Debug and Trace logging disabled..."
 	if (logLevelInfo.level >= 3) {
-		device.updateSetting("logLevel",[value:"2", type:"enum"])
+		Integer lastLvl = state.lastLogLevel != null ? state.lastLogLevel as Integer : 2
+		device.updateSetting("logLevel",[value:lastLvl.toString(), type:"enum"])
+		logWarn "Logging Level is: ${LOG_LEVELS[lastLvl]} (${lastLvl})"
 	}
 }
 

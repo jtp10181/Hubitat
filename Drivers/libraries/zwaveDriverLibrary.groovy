@@ -15,6 +15,7 @@ Changelog:
 2023-10-26 - Added some battery shortcut functions
 2023-11-08 - Added ability to adjust settings on firmware range
 2024-01-28 - Adjusted logging settings for new / upgrade installs, added mfgSpecificReport
+2024-06-15 - Added isLongRange function, convert range to string to prevent expansion
 
 ********************************************************************/
 
@@ -297,7 +298,8 @@ void updateParamsList() {
 	List<Map> tmpList = []
 	paramsMap.each { name, pMap ->
 		Map tmpMap = pMap.clone()
-		tmpMap.options = tmpMap.options?.clone()
+		if (tmpMap.options) tmpMap.options = tmpMap.options?.clone()
+		if (tmpMap.range) tmpMap.range = (tmpMap.range).toString()
 
 		//Save the name
 		tmpMap.name = name
@@ -545,6 +547,10 @@ Integer getDeviceModelShort() {
 BigDecimal getFirmwareVersion() {
 	String version = device?.getDataValue("firmwareVersion")
 	return ((version != null) && version.isNumber()) ? version.toBigDecimal() : 0.0
+}
+
+Boolean isLongRange() {
+	return ((device?.deviceNetworkId as Integer) > 255)
 }
 
 String convertToLocalTimeString(dt) {
