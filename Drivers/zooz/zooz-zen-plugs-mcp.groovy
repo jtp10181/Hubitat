@@ -10,6 +10,9 @@
 
 Changelog:
 
+## [1.2.6] - 2024-06-15 (@jtp10181)
+  - Fix for range expansion and sharing with Hub Mesh
+
 ## [1.2.2] - 2024-04-06 (@jtp10181)
   - Added singleThreaded flag
   - Updated Library and common code
@@ -34,23 +37,20 @@ Changelog:
 
  *  Copyright 2022-2024 Jeff Page
  *
- *  Licensed under the Apache License, Version 2.0 (the "License");
- *  you may not use this file except in compliance with the License.
- *  You may obtain a copy of the License at
+ *  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
+ *  in compliance with the License. You may obtain a copy of the License at:
  *
  *      http://www.apache.org/licenses/LICENSE-2.0
  *
- *  Unless required by applicable law or agreed to in writing, software
- *  distributed under the License is distributed on an "AS IS" BASIS,
- *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *  See the License for the specific language governing permissions and
- *  limitations under the License.
+ *  Unless required by applicable law or agreed to in writing, software distributed under the License is
+ *  distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and limitations under the License.
  *
 */
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "1.2.2"
+@Field static final String VERSION = "1.2.6"
 @Field static final String DRIVER = "Zooz-Plugs-MCP"
 @Field static final String COMM_LINK = "https://community.hubitat.com/t/zooz-smart-plugs/98333"
 @Field static final Map deviceModelNames =
@@ -96,8 +96,8 @@ metadata {
 		attribute "voltageLow", "number"
 		attribute "warnings", "number"
 
-		fingerprint mfr:"027A", prod:"A000", deviceId:"A003", inClusters:"0x5E,0x25,0x85,0x8E,0x59,0x55,0x86,0x72,0x5A,0x73,0x70,0x71,0x32,0x9F,0x60,0x6C,0x7A" //Zooz ZEN25 Double Plug
-		fingerprint mfr:"027A", prod:"A000", deviceId:"A004", inClusters:"0x00,0x00" //Zooz ZEN20 Power Strip
+		fingerprint mfr:"027A", prod:"A000", deviceId:"A003", inClusters:"0x5E,0x25,0x85,0x8E,0x59,0x55,0x86,0x72,0x5A,0x73,0x70,0x71,0x32,0x9F,0x60,0x6C,0x7A", controllerType: "ZWV" //Zooz ZEN25 Double Plug
+		fingerprint mfr:"027A", prod:"A000", deviceId:"A004", inClusters:"0x00,0x00", controllerType: "ZWV" //Zooz ZEN20 Power Strip
 	}
 
 	preferences {
@@ -127,7 +127,7 @@ metadata {
 			// input "accThreshold", "number",
 			// 	title: fmtTitle("Accessory State Threshold (Watts)"),
 			// 	description: fmtDesc("• Sets accessory status when power is above threshold.<br>• 0 = Disabled"),
-			// 	defaultValue: 0, range: 0..2000, required: false
+			// 	defaultValue: 0, range: "0..2000", required: false
 
 			input "highLowEnable", "bool",
 				title: fmtTitle("Enable High/Low Attributes"),
@@ -172,44 +172,44 @@ void debugShowVars() {
 		title: "Power (Watts) Reporting Threshold",
 		size: 4, defaultVal: 10,
 		description: "Report when changed by this amount, 0 = Disabled",
-		range: 0..65535
+		range: "0..65535"
 	],
 	powerFrequency: [ num: 3,
 		title: "Power (Watts) Reporting Frequency",
 		size: 4, defaultVal: 30,
 		description: "Minimum number of MINUTES between wattage reports",
-		//range: 30..2678400 //Seconds
-		range: 1..44640 //Minutes
+		//range: "30..2678400" //Seconds
+		range: "1..44640" //Minutes
 	],
 	energyFrequency: [ num: 4,
 		title: "Energy (kWh) Reporting Frequency",
 		size: 4, defaultVal: 60,
 		description: "Minimum number of MINUTES between energy reports",
-		//range: 30..2678400 //Seconds
-		range: 1..44640 //Minutes
+		//range: "30..2678400" //Seconds
+		range: "1..44640" //Minutes
 	],
 	voltageFrequency: [ num: 5,
 		title: "Voltage (V) Reporting Frequency",
 		size: 4, defaultVal: 120,
 		description: "Minimum number of MINUTES between voltage reports",
-		//range: 30..2678400 //Seconds
-		range: 1..44640, //Minutes
-		changes: [20:[num:36, firmVer:2.03, range: 0..44640]]
+		//range: "30..2678400" //Seconds
+		range: "1..44640", //Minutes
+		changes: [20:[num:36, firmVer:2.03, range: "0..44640"]]
 	],
 	currentFrequency: [ num: 6,
 		title: "Current (Amps) Reporting Frequency",
 		size: 4, defaultVal: 60,
 		description: "Minimum number of MINUTES between amperage reports",
-		//range: 30..2678400 //Seconds
-		range: 1..44640, //Minutes
-		changes: [20:[num:25, firmVer:2.03, range: 0..44640]]
+		//range: "30..2678400" //Seconds
+		range: "1..44640", //Minutes
+		changes: [20:[num:25, firmVer:2.03, range: "0..44640"]]
 	],
 	overloadProtection: [ num: 7,
 		title: "Overload Protection *See Docs*",
 		size: 1, defaultVal: 10,
 		description: "Zooz DOES NOT recommend disabling this, as it may result in device damage and malfunction!",
-		range: 1..10,
-		changes: [20:[num:5, size:2, defaultVal:1500, range:0..1500]]
+		range: "1..10",
+		changes: [20:[num:5, size:2, defaultVal:1500, range:"0..1500"]]
 	],
 	//---Auto On/Off Timers--- CH1
 	offTimer1Enabled: [ num: 8,
@@ -220,7 +220,7 @@ void debugShowVars() {
 	],
 	offTimer1: [ num: 9,
 		title: "Auto Turn-Off Timer (CH1)",
-		size: 4, defaultVal: 0, range: 0..65535,
+		size: 4, defaultVal: 0, range: "0..65535",
 		description: "Time in minutes, 0 = Disabled",
 		changes: [20:[num:7]]
 	],
@@ -232,7 +232,7 @@ void debugShowVars() {
 	],
 	onTimer1: [ num: 11,
 		title: "Auto Turn-On Timer (CH1)",
-		size: 4, defaultVal: 0, range: 0..65535,
+		size: 4, defaultVal: 0, range: "0..65535",
 		description: "Time in minutes, 0 = Disabled",
 		changes: [20:[num:9]]
 	],
@@ -245,7 +245,7 @@ void debugShowVars() {
 	],
 	offTimer2: [ num: 13,
 		title: "Auto Turn-Off Timer (CH2)",
-		size: 4, defaultVal: 0, range: 0..65535,
+		size: 4, defaultVal: 0, range: "0..65535",
 		description: "Time in minutes, 0 = Disabled",
 		changes: [20:[num:11]]
 	],
@@ -257,7 +257,7 @@ void debugShowVars() {
 	],
 	onTimer2: [ num: 15,
 		title: "Auto Turn-On Timer (CH2)",
-		size: 4, defaultVal: 0, range: 0..65535,
+		size: 4, defaultVal: 0, range: "0..65535",
 		description: "Time in minutes, 0 = Disabled",
 		changes: [20:[num:13]]
 	],
@@ -270,7 +270,7 @@ void debugShowVars() {
 	],
 	offTimer3: [ num: null,
 		title: "Auto Turn-Off Timer (CH3)",
-		size: 4, defaultVal: 0, range: 0..65535,
+		size: 4, defaultVal: 0, range: "0..65535",
 		description: "Time in minutes, 0 = Disabled",
 		changes: [20:[num:15]]
 	],
@@ -282,7 +282,7 @@ void debugShowVars() {
 	],
 	onTimer3: [ num: null,
 		title: "Auto Turn-On Timer (CH3)",
-		size: 4, defaultVal: 0, range: 0..65535,
+		size: 4, defaultVal: 0, range: "0..65535",
 		description: "Time in minutes, 0 = Disabled",
 		changes: [20:[num:17]]
 	],
@@ -295,7 +295,7 @@ void debugShowVars() {
 	],
 	offTimer4: [ num: null,
 		title: "Auto Turn-Off Timer (CH4)",
-		size: 4, defaultVal: 0, range: 0..65535,
+		size: 4, defaultVal: 0, range: "0..65535",
 		description: "Time in minutes, 0 = Disabled",
 		changes: [20:[num:15]]
 	],
@@ -307,7 +307,7 @@ void debugShowVars() {
 	],
 	onTimer4: [ num: null,
 		title: "Auto Turn-On Timer (CH4)",
-		size: 4, defaultVal: 0, range: 0..65535,
+		size: 4, defaultVal: 0, range: "0..65535",
 		description: "Time in minutes, 0 = Disabled",
 		changes: [20:[num:17]]
 	],
@@ -814,7 +814,7 @@ void executeConfigureCmds() {
 		cmds << versionGetCmd()
 	}
 
-	cmds += getConfigureAssocsCmds()
+	cmds += getConfigureAssocsCmds(true)
 
 	configParams.each { param ->
 		Integer paramVal = getParamValueAdj(param)
@@ -889,16 +889,16 @@ void executeRefreshCmds() {
 	sendCommands(cmds,300)
 }
 
-List getConfigureAssocsCmds() {
+List getConfigureAssocsCmds(Boolean logging=false) {
 	List<String> cmds = []
 
 	if (!state.group1Assoc || state.resyncAll) {
 		if (state.group1Assoc == false) {
-			logDebug "Need to reset lifeline association..."
+			if (logging) logDebug "Clearing incorrect lifeline association..."
 			cmds << associationRemoveCmd(1,[])
 			cmds << secureCmd(zwave.multiChannelAssociationV3.multiChannelAssociationRemove(groupingIdentifier: 1, nodeId:[], multiChannelNodeIds:[]))
 		}
-		logTrace "getConfigureAssocsCmds endPoints: ${state.endPoints}"
+		if (logging) logDebug "Setting ${state.endPoints ? 'multi-channel' : 'standard'} lifeline association..."
 		if (state.endPoints > 0) {
 			cmds << secureCmd(zwave.multiChannelAssociationV3.multiChannelAssociationSet(groupingIdentifier: 1, multiChannelNodeIds: [[nodeId: zwaveHubNodeId, bitAddress:0, endPointId: 0]]))
 			cmds << mcAssociationGetCmd(1)
@@ -1023,7 +1023,7 @@ void addChild(endPoint) {
 	String devModel = state.deviceModel
 	String epName = epNames[devModel] ? epNames[devModel][endPoint] : "Outlet ${endPoint}"
 	String dni = getChildDNI(epNames[devModel] ? epName : endPoint)
-	Map properties = [name:"${device.name} - ${epName}", isComponent:false, endPoint:"${endPoint}"]
+	Map properties = [name:"${device.name} - ${epName}", isComponent:true, endPoint:"${endPoint}"]
 	logDebug "Creating '${epName}' Child Device"
 
 	def childDev
@@ -1100,6 +1100,7 @@ Changelog:
 2023-10-26 - Added some battery shortcut functions
 2023-11-08 - Added ability to adjust settings on firmware range
 2024-01-28 - Adjusted logging settings for new / upgrade installs, added mfgSpecificReport
+2024-06-15 - Added isLongRange function, convert range to string to prevent expansion
 
 ********************************************************************/
 
@@ -1382,7 +1383,8 @@ void updateParamsList() {
 	List<Map> tmpList = []
 	paramsMap.each { name, pMap ->
 		Map tmpMap = pMap.clone()
-		tmpMap.options = tmpMap.options?.clone()
+		if (tmpMap.options) tmpMap.options = tmpMap.options?.clone()
+		if (tmpMap.range) tmpMap.range = (tmpMap.range).toString()
 
 		//Save the name
 		tmpMap.name = name
@@ -1630,6 +1632,10 @@ Integer getDeviceModelShort() {
 BigDecimal getFirmwareVersion() {
 	String version = device?.getDataValue("firmwareVersion")
 	return ((version != null) && version.isNumber()) ? version.toBigDecimal() : 0.0
+}
+
+Boolean isLongRange() {
+	return ((device?.deviceNetworkId as Integer) > 255)
 }
 
 String convertToLocalTimeString(dt) {
