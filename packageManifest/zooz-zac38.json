@@ -2,17 +2,17 @@
   "packageName": "Zooz ZAC38 Range Extender",
   "author": "Jeff Page (@jtp10181)",
   "minimumHEVersion": "2.3.5",
-  "dateReleased": "2023-10-25",
+  "dateReleased": "2024-06-15",
   "documentationLink": "https://github.com/jtp10181/Hubitat/tree/main/Drivers/zooz",
   "communityLink": "https://community.hubitat.com/t/zooz-zac38/122755",
-  "releaseNotes": "Zooz ZAC38 Range Extender and Power Outage Monitor driver with all advanced features and settings",
-  "version": "1.0.0",
+  "releaseNotes": "Version [1.0.2] - 2024-06-16\n  - Update library and common code\n  - Fix for range expansion and sharing with Hub Mesh",
+  "version": "1.0.2",
   "drivers": [
     {
       "id": "7cf28006-04df-4ac0-88a7-d581a3feeec6",
       "name": "Zooz ZAC38 Range Extender",
       "namespace": "jtp10181",
-      "location": "https://jtp10181.gateway.scarf.sh/zooz-zac38-v1.0.0.groovy",
+      "location": "https://jtp10181.gateway.scarf.sh/zooz-zac38-v1.0.2.groovy",
       "required": true
     }
   ]

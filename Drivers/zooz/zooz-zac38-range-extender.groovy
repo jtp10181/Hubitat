@@ -9,6 +9,10 @@
 
 Changelog:
 
+## [1.0.2] - 2024-06-16 (@jtp10181)
+  - Update library and common code
+  - Fix for range expansion and sharing with Hub Mesh
+
 ## [1.0.0] - 2023-10-25 (@jtp10181)
   - Library code updated
   - Minor updates and code cleanup
@@ -16,25 +20,22 @@ Changelog:
 ## [0.1.0] - 2023-04-25 (@jtp10181)
   - Initial Release
 
- *  Copyright 2023 Jeff Page
+ *  Copyright 2023-2024 Jeff Page
  *
- *  Licensed under the Apache License, Version 2.0 (the "License");
- *  you may not use this file except in compliance with the License.
- *  You may obtain a copy of the License at
+ *  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
+ *  in compliance with the License. You may obtain a copy of the License at:
  *
  *      http://www.apache.org/licenses/LICENSE-2.0
  *
- *  Unless required by applicable law or agreed to in writing, software
- *  distributed under the License is distributed on an "AS IS" BASIS,
- *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *  See the License for the specific language governing permissions and
- *  limitations under the License.
+ *  Unless required by applicable law or agreed to in writing, software distributed under the License is
+ *  distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and limitations under the License.
  *
 */
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "1.0.0"
+@Field static final String VERSION = "1.0.2"
 @Field static final String DRIVER = "Zooz-ZAC38"
 @Field static final String COMM_LINK = "https://community.hubitat.com/t/zooz-zac38/122755"
 @Field static final Map deviceModelNames = ["0004:0510":"ZAC38"]
@@ -63,7 +64,7 @@ metadata {
 
 		attribute "syncStatus", "string"
 
-		fingerprint mfr:"027A", prod:"0004", deviceId:"0510", inClusters:"0x5E,0x85,0x8E,0x59,0x55,0x86,0x72,0x5A,0x87,0x73,0x9F,0x6C,0x7A,0x71,0x80,0x70,0x22" //Zooz ZAC38 Range Extender
+		fingerprint mfr:"027A", prod:"0004", deviceId:"0510", inClusters:"0x5E,0x85,0x8E,0x59,0x55,0x86,0x72,0x5A,0x87,0x73,0x9F,0x6C,0x7A,0x71,0x80,0x70,0x22", controllerType: "ZWV" //Zooz ZAC38 Range Extender
 	}
 
 	preferences {
@@ -110,7 +111,7 @@ void debugShowVars() {
 	batteryAlarm: [ num: 1,
 		title: "Low Battery Alarm Threshold",
 		size: 1, defaultVal: 10,
-		range: 0..50
+		range: "0..50"
 	],
 	thresholdReporting: [ num: 2,
 		title: "Threshold Reporting",
@@ -120,12 +121,12 @@ void debugShowVars() {
 	batteryThreshold: [ num: 3,
 		title: "Battery Level Report Threshold",
 		size: 1, defaultVal: 10,
-		range: 5..50
+		range: "5..50"
 	],
 	checkTime: [ num: 4,
 		title: "Threshold Check Time (seconds)",
 		size: 2, defaultVal: 600,
-		range: 1..65535
+		range: "1..65535"
 	],
 	intervalReporting: [ num: 5,
 		title: "Interval Reporting",
@@ -135,7 +136,7 @@ void debugShowVars() {
 	Battery: [ num: 6,
 		title: "Battery Level Auto-Report Interval (seconds)",
 		size: 2, defaultVal: 3600,
-		range: 30..65535,
+		range: "30..65535",
 	],
 ]
 
@@ -228,7 +229,8 @@ void refreshParams() {
 	if (cmds) sendCommands(cmds)
 }
 
-String setParameter(paramNum, value, size = null) {
+def setParameter(paramNum, value, size = null) {
+	paramNum = safeToInt(paramNum)
 	Map param = getParam(paramNum)
 	if (param && !size) { size = param.size	}
 
@@ -237,8 +239,8 @@ String setParameter(paramNum, value, size = null) {
 		logWarn "Syntax: setParameter(paramNum, value, size)"
 		return
 	}
-	logDebug "setParameter ( number: $paramNum, value: $value, size: $size )" + (param ? " [${param.name}]" : "")
-	return secureCmd(configSetCmd([num: paramNum, size: size], value as Integer))
+	logDebug "setParameter ( number: $paramNum, value: $value, size: $size )" + (param ? " [${param.name} - ${param.title}]" : "")
+	return configSetGetCmd([num: paramNum, size: size], value as Integer)
 }
 
 
@@ -264,7 +266,7 @@ void zwaveEvent(hubitat.zwave.commands.configurationv1.ConfigurationReport cmd) 
 		Long sizeFactor = Math.pow(256,param.size).round()
 		if (val < 0) { val += sizeFactor }
 
-		logDebug "${param.name} (#${param.num}) = ${val.toString()}"
+		logDebug "${param.name} - ${param.title} (#${param.num}) = ${val.toString()}"
 		setParamStoredValue(param.num, val)
 	}
 	else {
@@ -361,14 +363,14 @@ void executeConfigureCmds() {
 		cmds << versionGetCmd()
 	}
 
-	cmds += getConfigureAssocsCmds()
+	cmds += getConfigureAssocsCmds(true)
 
 	configParams.each { param ->
 		Integer paramVal = getParamValueAdj(param)
 		Integer storedVal = getParamStoredValue(param.num)
 
 		if ((paramVal != null) && (state.resyncAll || (storedVal != paramVal))) {
-			logDebug "Changing ${param.name} (#${param.num}) from ${storedVal} to ${paramVal}"
+			logDebug "Changing ${param.name} - ${param.title} (#${param.num}) from ${storedVal} to ${paramVal}"
 			cmds += configSetGetCmd(param, paramVal)
 		}
 	}
@@ -382,6 +384,7 @@ void executeRefreshCmds() {
 	List<String> cmds = []
 
 	if (state.resyncAll || !firmwareVersion || !state.deviceModel) {
+		cmds << mfgSpecificGetCmd()
 		cmds << versionGetCmd()
 	}
 
@@ -392,13 +395,11 @@ void executeRefreshCmds() {
 	sendCommands(cmds)
 }
 
-List getConfigureAssocsCmds() {
+List getConfigureAssocsCmds(Boolean logging=false) {
 	List<String> cmds = []
 
 	if (!state.group1Assoc || state.resyncAll) {
-		if (state.group1Assoc == false) {
-			logDebug "Adding missing lifeline association..."
-		}
+		if (logging) logDebug "Setting lifeline association..."
 		cmds << associationSetCmd(1, [zwaveHubNodeId])
 		cmds << associationGetCmd(1)
 	}
@@ -433,7 +434,11 @@ Changelog:
 2023-05-14 - Updates for power metering
 2023-05-18 - Adding requirement for getParamValueAdj in driver
 2023-05-24 - Fix for possible RuntimeException error due to bad cron string
-2023-10-25 - Less savings to the configVals data, and some new functions
+2023-10-25 - Less saving to the configVals data, and some new functions
+2023-10-26 - Added some battery shortcut functions
+2023-11-08 - Added ability to adjust settings on firmware range
+2024-01-28 - Adjusted logging settings for new / upgrade installs, added mfgSpecificReport
+2024-06-15 - Added isLongRange function, convert range to string to prevent expansion
 
 ********************************************************************/
 
@@ -470,7 +475,7 @@ void zwaveParse(String description) {
 
 //Decodes Multichannel Encapsulated Commands
 void zwaveMultiChannel(hubitat.zwave.commands.multichannelv3.MultiChannelCmdEncap cmd) {
-	def encapsulatedCmd = cmd.encapsulatedCommand(commandClassVersions)
+	hubitat.zwave.Command encapsulatedCmd = cmd.encapsulatedCommand(commandClassVersions)
 	logTrace "${cmd} --ENCAP-- ${encapsulatedCmd}"
 
 	if (encapsulatedCmd) {
@@ -482,7 +487,7 @@ void zwaveMultiChannel(hubitat.zwave.commands.multichannelv3.MultiChannelCmdEnca
 
 //Decodes Supervision Encapsulated Commands (and replies to device)
 void zwaveSupervision(hubitat.zwave.commands.supervisionv1.SupervisionGet cmd, ep=0) {
-	def encapsulatedCmd = cmd.encapsulatedCommand(commandClassVersions)
+	hubitat.zwave.Command encapsulatedCmd = cmd.encapsulatedCommand(commandClassVersions)
 	logTrace "${cmd} --ENCAP-- ${encapsulatedCmd}"
 
 	if (encapsulatedCmd) {
@@ -505,6 +510,20 @@ void zwaveEvent(hubitat.zwave.commands.versionv2.VersionReport cmd) {
 
 	logDebug "Received Version Report - Firmware: ${fullVersion}"
 	setDevModel(new BigDecimal(fullVersion))
+}
+
+void zwaveEvent(hubitat.zwave.commands.manufacturerspecificv2.ManufacturerSpecificReport cmd) {
+	logTrace "${cmd}"
+
+	device.updateDataValue("manufacturer",cmd.manufacturerId.toString())
+	device.updateDataValue("deviceType",cmd.productTypeId.toString())
+	device.updateDataValue("deviceId",cmd.productId.toString())
+
+	logDebug "fingerprint  mfr:\"${hubitat.helper.HexUtils.integerToHexString(cmd.manufacturerId, 2)}\", "+
+		"prod:\"${hubitat.helper.HexUtils.integerToHexString(cmd.productTypeId, 2)}\", "+
+		"deviceId:\"${hubitat.helper.HexUtils.integerToHexString(cmd.productId, 2)}\", "+
+		"inClusters:\"${device.getDataValue("inClusters")}\""+
+		(device.getDataValue("secureInClusters") ? ", secureInClusters:\"${device.getDataValue("secureInClusters")}\"" : "")
 }
 
 void zwaveEvent(hubitat.zwave.Command cmd, ep=0) {
@@ -546,6 +565,10 @@ String versionGetCmd() {
 	return secureCmd(zwave.versionV2.versionGet())
 }
 
+String mfgSpecificGetCmd() {
+	return secureCmd(zwave.manufacturerSpecificV2.manufacturerSpecificGet())
+}
+
 String switchBinarySetCmd(Integer value, Integer ep=0) {
 	return secureCmd(zwave.switchBinaryV1.switchBinarySet(switchValue: value), ep)
 }
@@ -579,6 +602,18 @@ String meterResetCmd(Integer ep=0) {
 	return secureCmd(zwave.meterV3.meterReset(), ep)
 }
 
+String wakeUpIntervalGetCmd() {
+	return secureCmd(zwave.wakeUpV2.wakeUpIntervalGet())
+}
+
+String wakeUpIntervalSetCmd(val) {
+	return secureCmd(zwave.wakeUpV2.wakeUpIntervalSet(seconds:val, nodeid:zwaveHubNodeId))
+}
+
+String wakeUpNoMoreInfoCmd() {
+	return secureCmd(zwave.wakeUpV2.wakeUpNoMoreInformation())
+}
+
 String batteryGetCmd() {
 	return secureCmd(zwave.batteryV1.batteryGet())
 }
@@ -588,8 +623,8 @@ String sensorMultilevelGetCmd(sensorType) {
 	return secureCmd(zwave.sensorMultilevelV11.sensorMultilevelGet(scale: scale, sensorType: sensorType))
 }
 
-String notificationGetCmd(notificationType, eventType) {
-	return secureCmd(zwave.notificationV3.notificationGet(notificationType: notificationType, v1AlarmType:0, event: eventType))
+String notificationGetCmd(notificationType, eventType, Integer ep=0) {
+	return secureCmd(zwave.notificationV3.notificationGet(notificationType: notificationType, v1AlarmType:0, event: eventType), ep)
 }
 
 String configSetCmd(Map param, Integer value) {
@@ -686,7 +721,8 @@ void updateParamsList() {
 	List<Map> tmpList = []
 	paramsMap.each { name, pMap ->
 		Map tmpMap = pMap.clone()
-		tmpMap.options = tmpMap.options?.clone()
+		if (tmpMap.options) tmpMap.options = tmpMap.options?.clone()
+		if (tmpMap.range) tmpMap.range = (tmpMap.range).toString()
 
 		//Save the name
 		tmpMap.name = name
@@ -698,8 +734,15 @@ void updateParamsList() {
 				if (changes.options) { tmpMap.options = changes.options.clone() }
 			}
 		}
+		tmpMap.changesFR.each { m, changes ->
+			if (firmware >= m.getFrom() && firmware <= m.getTo()) {
+				tmpMap.putAll(changes)
+				if (changes.options) { tmpMap.options = changes.options.clone() }
+			}
+		}
 		//Don't need this anymore
 		tmpMap.remove("changes")
+		tmpMap.remove("changesFR")
 
 		//Set DEFAULT tag on the default
 		tmpMap.options.each { k, val ->
@@ -752,18 +795,13 @@ List<Map> getConfigParams() {
 }
 
 //Get a single param by name or number
-Map getParam(def search) {
-	//logDebug "Get Param (${search} | ${search.class})"
-	Map param = [:]
-
+Map getParam(String search) {
 	verifyParamsList()
-	if (search instanceof String) {
-		param = configParams.find{ it.name == search }
-	} else {
-		param = configParams.find{ it.num == search }
-	}
-
-	return param
+	return configParams.find{ it.name == search }
+}
+Map getParam(Number search) {
+	verifyParamsList()
+	return configParams.find{ it.num == search }
 }
 
 //Convert Param Value if Needed
@@ -839,11 +877,11 @@ void scheduleCheckIn() {
 }
 
 void doCheckIn() {
-	String devModel = state.deviceModel ?: "NA"
-	String checkUri = "http://jtp10181.gateway.scarf.sh/${DRIVER}/chk-${devModel}-${VERSION}"
+	String devModel = (state.deviceModel ?: "NA") + (state.subModel ? ".${state.subModel}" : "")
+	String checkUri = "http://jtp10181.gateway.scarf.sh/${DRIVER}/chk-${devModel}-v${VERSION}"
 
 	try {
-		httpGet(uri:checkUri, timeout:4) { logDebug "Driver ${DRIVER} v${VERSION}" }
+		httpGet(uri:checkUri, timeout:4) { logDebug "Driver ${DRIVER} ${devModel} v${VERSION}" }
 		state.lastCheckInTime = (new Date()).time
 	} catch (Exception e) { }
 }
@@ -859,7 +897,7 @@ Integer getPendingChanges() {
 
 //iOS app has no way of clearing string input so workaround is to have users enter 0.
 String getAssocDNIsSetting(grp) {
-	def val = settings."assocDNI$grp"
+	String val = settings."assocDNI$grp"
 	return ((val && (val.trim() != "0")) ? val : "")
 }
 
@@ -899,7 +937,7 @@ void clearVariables() {
 	//Restore
 	if (devModel) state.deviceModel = devModel
 	if (engTime) state.energyTime = engTime
-	//setDevModel()
+	state.resyncAll = true
 }
 
 //Stash the model in a state variable
@@ -932,6 +970,10 @@ Integer getDeviceModelShort() {
 BigDecimal getFirmwareVersion() {
 	String version = device?.getDataValue("firmwareVersion")
 	return ((version != null) && version.isNumber()) ? version.toBigDecimal() : 0.0
+}
+
+Boolean isLongRange() {
+	return ((device?.deviceNetworkId as Integer) > 255)
 }
 
 String convertToLocalTimeString(dt) {
@@ -1018,7 +1060,7 @@ BigDecimal safeToDec(val, defaultVal=0, roundTo=-1) {
 	return decVal
 }
 
-boolean isDuplicateCommand(Long lastExecuted, Long allowedMil) {
+Boolean isDuplicateCommand(Long lastExecuted, Long allowedMil) {
 	!lastExecuted ? false : (lastExecuted + allowedMil > new Date().time)
 }
 
@@ -1050,8 +1092,14 @@ preferences {
 void checkLogLevel(Map levelInfo = [level:null, time:null]) {
 	unschedule(logsOff)
 	//Set Defaults
-	if (settings.logLevel == null) device.updateSetting("logLevel",[value:"3", type:"enum"])
-	if (settings.logLevelTime == null) device.updateSetting("logLevelTime",[value:"30", type:"enum"])
+	if (settings.logLevel == null) {
+		device.updateSetting("logLevel",[value:"3", type:"enum"])
+		levelInfo.level = 3
+	}
+	if (settings.logLevelTime == null) {
+		device.updateSetting("logLevelTime",[value:"30", type:"enum"])
+		levelInfo.time = 30
+	}
 	//Schedule turn off and log as needed
 	if (levelInfo.level == null) levelInfo = getLogLevelInfo()
 	String logMsg = "Logging Level is: ${LOG_LEVELS[levelInfo.level]} (${levelInfo.level})"
@@ -1060,6 +1108,9 @@ void checkLogLevel(Map levelInfo = [level:null, time:null]) {
 		runIn(60*levelInfo.time, logsOff)
 	}
 	logInfo(logMsg)
+
+	//Store last level below Debug
+	if (levelInfo.level <= 2) state.lastLogLevel = levelInfo.level
 }
 
 //Function for optional command
@@ -1071,23 +1122,24 @@ void setLogLevel(String levelName, String timeName=null) {
 }
 
 Map getLogLevelInfo() {
-	Integer level = settings.logLevel as Integer
-	Integer time = settings.logLevelTime as Integer
+	Integer level = settings.logLevel != null ? settings.logLevel as Integer : 1
+	Integer time = settings.logLevelTime != null ? settings.logLevelTime as Integer : 30
 	return [level: level, time: time]
 }
 
 //Legacy Support
 void debugLogsOff() {
-	logWarn "Debug logging toggle disabled..."
 	device.removeSetting("logEnable")
-	device.updateSetting("debugEnable",[value:"false",type:"bool"])
+	device.updateSetting("debugEnable",[value:false, type:"bool"])
 }
 
 //Current Support
 void logsOff() {
 	logWarn "Debug and Trace logging disabled..."
 	if (logLevelInfo.level >= 3) {
-		device.updateSetting("logLevel",[value:"2", type:"enum"])
+		Integer lastLvl = state.lastLogLevel != null ? state.lastLogLevel as Integer : 2
+		device.updateSetting("logLevel",[value:lastLvl.toString(), type:"enum"])
+		logWarn "Logging Level is: ${LOG_LEVELS[lastLvl]} (${lastLvl})"
 	}
 }
 
