@@ -9,6 +9,9 @@
 
 Changelog:
 
+## [1.0.4] - 2024-06-16 (@jtp10181)
+  - Update library and common code
+
 ## [1.0.2] - 2024-03-01 (@jtp10181)
   - Update library code
   - Add parameters 113, 114 and 115 for battery configuration
@@ -61,7 +64,7 @@ https://github.com/krlaframboise/SmartThings/tree/master/devicetypes/zooz/zooz-z
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "1.0.2"
+@Field static final String VERSION = "1.0.4"
 @Field static final String DRIVER = "Zooz-ZAC36"
 @Field static final String COMM_LINK = "https://community.hubitat.com/t/zooz-zac36/79426"
 @Field static final Map deviceModelNames = ["0101:0036":"ZAC36"]
@@ -97,7 +100,7 @@ metadata {
 		attribute "temperatureAlarm", "string"
 		attribute "batteryStatus", "string"
 
-		fingerprint mfr:"027A", prod:"0101", deviceId: "0036", inClusters:"0x00,0x00" //Zooz ZAC36 Titan Valve Actuator
+		fingerprint mfr:"027A", prod:"0101", deviceId: "0036", inClusters:"0x00,0x00", controllerType: "ZWV" //Zooz ZAC36 Titan Valve Actuator
 	}
 
 	preferences {
@@ -147,7 +150,7 @@ void debugShowVars() {
 
 //Association Settings
 @Field static final int maxAssocGroups = 1
-@Field static final int maxAssocNodes = 1
+@Field static final int maxAssocNodes = 5
 
 /*** Static Lists and Settings ***/
 @Field static int fahrenheitHB = 0x01
@@ -531,15 +534,15 @@ void zwaveEvent(hubitat.zwave.commands.associationv2.AssociationReport cmd) {
 		state.group1Assoc = (cmd.nodeId == [zwaveHubNodeId]) ? true : false
 	}
 	else if (grp > 1 && grp <= maxAssocGroups) {
-		logDebug "Group $grp Association: ${cmd.nodeId}"
+		String dnis = convertIntListToHexList(cmd.nodeId)?.join(", ")
+		logDebug "Confirmed Group $grp Association: " + (cmd.nodeId.size()>0 ? "${dnis} // ${cmd.nodeId}" : "None")
 
 		if (cmd.nodeId.size() > 0) {
-			state["assocNodes$grp"] = cmd.nodeId
+			if (!state.assocNodes) state.assocNodes = [:]
+			state.assocNodes["$grp"] = cmd.nodeId
 		} else {
-			state.remove("assocNodes$grp".toString())
+			state.assocNodes?.remove("$grp" as String)
 		}
-
-		String dnis = convertIntListToHexList(cmd.nodeId)?.join(", ")
 		device.updateSetting("assocDNI$grp", [value:"${dnis}", type:"string"])
 	}
 	else {
@@ -725,7 +728,7 @@ void executeConfigureCmds() {
 	//Set Temp Reporting based on hub temp scale setting
 	cmds += configSetGetCmd([num:33,size:1], temperatureScale == "F" ? 2 : 1)
 
-	cmds += getConfigureAssocsCmds()
+	cmds += getConfigureAssocsCmds(true)
 
 	configParams.each { param ->
 		Integer paramVal = getParamValueAdj(param)
@@ -766,13 +769,11 @@ void executeRefreshCmds() {
 	sendCommands(cmds,300)
 }
 
-List getConfigureAssocsCmds() {
+List getConfigureAssocsCmds(Boolean logging=false) {
 	List<String> cmds = []
 
 	if (!state.group1Assoc || state.resyncAll) {
-		if (state.group1Assoc == false) {
-			logDebug "Adding missing lifeline association..."
-		}
+		if (logging) logDebug "Setting lifeline association..."
 		cmds << associationSetCmd(1, [zwaveHubNodeId])
 		cmds << associationGetCmd(1)
 	}
@@ -782,15 +783,15 @@ List getConfigureAssocsCmds() {
 		List settingNodeIds = getAssocDNIsSettingNodeIds(i)
 
 		//Need to remove first then add in case we are at limit
-		List oldNodeIds = state."assocNodes$i"?.findAll { !(it in settingNodeIds) }
+		List oldNodeIds = state.assocNodes?."$i"?.findAll { !(it in settingNodeIds) }
 		if (oldNodeIds) {
-			logDebug "Removing Nodes: Group $i - $oldNodeIds"
+			if (logging) logDebug "Removing Group $i Association: ${convertIntListToHexList(oldNodeIds)} // $oldNodeIds"
 			cmdsEach << associationRemoveCmd(i, oldNodeIds)
 		}
 
-		List newNodeIds = settingNodeIds.findAll { !(it in state."assocNodes$i") }
+		List newNodeIds = settingNodeIds.findAll { !(it in state.assocNodes?."$i") }
 		if (newNodeIds) {
-			logDebug "Adding Nodes: Group $i - $newNodeIds"
+			if (logging) logDebug "Adding Group $i Association: ${convertIntListToHexList(newNodeIds)} // $newNodeIds"
 			cmdsEach << associationSetCmd(i, newNodeIds)
 		}
 
@@ -867,6 +868,7 @@ Changelog:
 2023-10-26 - Added some battery shortcut functions
 2023-11-08 - Added ability to adjust settings on firmware range
 2024-01-28 - Adjusted logging settings for new / upgrade installs, added mfgSpecificReport
+2024-06-15 - Added isLongRange function, convert range to string to prevent expansion
 
 ********************************************************************/
 
@@ -1149,7 +1151,8 @@ void updateParamsList() {
 	List<Map> tmpList = []
 	paramsMap.each { name, pMap ->
 		Map tmpMap = pMap.clone()
-		tmpMap.options = tmpMap.options?.clone()
+		if (tmpMap.options) tmpMap.options = tmpMap.options?.clone()
+		if (tmpMap.range) tmpMap.range = (tmpMap.range).toString()
 
 		//Save the name
 		tmpMap.name = name
@@ -1351,7 +1354,7 @@ void clearVariables() {
 	def engTime = state.energyTime
 
 	//Clears State Variables
-	atomicState.clear()
+	state.clear()
 
 	//Clear Config Data
 	configsList["${device.id}"] = [:]
@@ -1364,7 +1367,7 @@ void clearVariables() {
 	//Restore
 	if (devModel) state.deviceModel = devModel
 	if (engTime) state.energyTime = engTime
-	atomicState.resyncAll = true
+	state.resyncAll = true
 }
 
 //Stash the model in a state variable
@@ -1397,6 +1400,10 @@ Integer getDeviceModelShort() {
 BigDecimal getFirmwareVersion() {
 	String version = device?.getDataValue("firmwareVersion")
 	return ((version != null) && version.isNumber()) ? version.toBigDecimal() : 0.0
+}
+
+Boolean isLongRange() {
+	return ((device?.deviceNetworkId as Integer) > 255)
 }
 
 String convertToLocalTimeString(dt) {
