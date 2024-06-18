@@ -550,7 +550,8 @@ BigDecimal getFirmwareVersion() {
 }
 
 Boolean isLongRange() {
-	return ((device?.deviceNetworkId as Integer) > 255)
+	Integer intDNI = device ? hubitat.helper.HexUtils.hexStringToInt(device.deviceNetworkId) : null
+	return (intDNI > 255)
 }
 
 String convertToLocalTimeString(dt) {
@@ -572,7 +573,6 @@ List convertIntListToHexList(intList, pad=2) {
 
 List convertHexListToIntList(String[] hexList) {
 	def intList = []
-
 	hexList?.each {
 		try {
 			it = it.trim()

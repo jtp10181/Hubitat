@@ -973,7 +973,8 @@ BigDecimal getFirmwareVersion() {
 }
 
 Boolean isLongRange() {
-	return ((device?.deviceNetworkId as Integer) > 255)
+	Integer intDNI = device ? hubitat.helper.HexUtils.hexStringToInt(device.deviceNetworkId) : null
+	return (intDNI > 255)
 }
 
 String convertToLocalTimeString(dt) {
@@ -995,7 +996,6 @@ List convertIntListToHexList(intList, pad=2) {
 
 List convertHexListToIntList(String[] hexList) {
 	def intList = []
-
 	hexList?.each {
 		try {
 			it = it.trim()
@@ -1004,35 +1004,6 @@ List convertHexListToIntList(String[] hexList) {
 		catch (e) { }
 	}
 	return intList
-}
-
-Integer convertLevel(level, userLevel=false) {
-	if (levelCorrection) {
-		Integer brightmax = getParamValue("maximumBrightness")
-		Integer brightmin = getParamValue("minimumBrightness")
-		brightmax = (brightmax == 99) ? 100 : brightmax
-		brightmin = (brightmin == 1) ? 0 : brightmin
-
-		if (userLevel) {
-			//This converts what the user selected into a physical level within the min/max range
-			level = ((brightmax-brightmin) * (level/100)) + brightmin
-			state.levelActual = level
-			level = validateRange(Math.round(level), brightmax, brightmin, brightmax)
-		}
-		else {
-			//This takes the true physical level and converts to what we want to show to the user
-			if (Math.round(state.levelActual ?: 0) == level) level = state.levelActual
-			else state.levelActual = level
-
-			level = ((level - brightmin) / (brightmax - brightmin)) * 100
-			level = validateRange(Math.round(level), 100, 1, 100)
-		}
-	}
-	else if (state.levelActual) {
-		state.remove("levelActual")
-	}
-
-	return level
 }
 
 Integer validateRange(val, Integer defaultVal, Integer lowVal, Integer highVal) {
