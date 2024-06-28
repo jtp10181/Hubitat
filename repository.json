@@ -20,7 +20,7 @@
       "name": "Zooz Sensors Advanced Drivers",
       "category": "Utility",
       "location": "https://raw.githubusercontent.com/jtp10181/Hubitat/main/packageManifest/zooz-zen-sensors.json",
-      "description": "Zooz Sensor drivers with advanced features and settings: <br>ZSE11, ZSE18, ZSE40, ZSE41, ZSE42, ZSE43, ZSE44",
+      "description": "Zooz Sensor drivers with advanced features and settings: <br>ZSE11, ZSE18, ZSE40, ZSE41, ZSE42, ZSE43, ZSE44, ZSE70",
       "descriptive": "<p><strong>Features:</strong></p>\n<ul>\n\t<li>All configuration variables available with designated defaults per Zooz</li>\n\t<li>Pressing configure will queue up a full reconfigure next wake up.</li>\n\t<li>Pressing Refresh will queue up a full refresh next wake up.</li>\n\t<li>Normally at Wake Up it will just request the battery level to avoid excessive commands.</li>\n\t<li>If you change settings and save it will queue them up to be set at the next wake up. So you can force it to wake up right away or just leave it and let it do it on its own.</li>\n</ul>\n<p>For more info on the advanced settings check the <a href=\"https://www.support.getzooz.com/kb/section/8/\">Zooz Support Documentation</a>.<br />\nSelect your model &gt; Z-Wave Questions &gt; Advanced Settings (bottom right corner)</p>",
       "tags": [
         "Multi Sensors",
@@ -34,8 +34,8 @@
       "name": "Zooz Relays Advanced Drivers",
       "category": "Control",
       "location": "https://raw.githubusercontent.com/jtp10181/Hubitat/main/packageManifest/zooz-zen-relays.json",
-      "description": "Zooz Relay drivers with advanced features and settings: <br>ZEN17, ZEN51, ZEN52",
-      "descriptive": "<p><strong>Supported Models:</strong></p>\n\n<ul>\n\t<li>ZEN17 Companion ONLY -&nbsp;Min Firmware 1.04</li>\n\t<li>ZEN51 Relay - Min Firmware 1.40</li>\n\t<li>ZEN52 Double Relay -&nbsp;Min Firmware 1.40</li>\n</ul>\n\n<p><strong>NOTE:</strong> See Instructions on Community Post!</p>\n\n<p><strong>Features:</strong></p>\n\n<ul>\n\t<li>All configuration variables available with designated defaults per Zooz</li>\n\t<li>ZEN17 Sync from Device to grab existing settings as a starting point</li>\n\t<li>Scene Functions matching Zooz docs (10 unique actions)</li>\n</ul>\n\n<p>For more info on the advanced settings check the <a href=\"https://www.support.getzooz.com/kb/section/8/\">Zooz Support Documentation</a>.<br />\nSelect your model &gt; Z-Wave Questions &gt; Advanced Settings (bottom right corner)</p>",
+      "description": "Zooz Relay drivers with advanced features and settings: <br>ZEN16, ZEN17, ZEN51, ZEN52",
+      "descriptive": "<p><strong>Supported Models:</strong></p>\n\n<ul>\n\t<li>ZEN16 MultiRelay - Min Firmware 1.02 / v2 All</li>\n\t<li>ZEN17 Universal Relay - Min Firmware 1.04</li>\n\t<li>ZEN51 Relay - Min Firmware 1.40</li>\n\t<li>ZEN52 Double Relay - Min Firmware 1.40</li>\n</ul>\n\n<p><strong>NOTE:</strong> See Instructions on Community Post!</p>\n\n<p><strong>Features:</strong></p>\n\n<ul>\n\t<li>All configuration variables available with designated defaults per Zooz</li>\n\t<li>ZEN17 Sync from Device to grab existing settings as a starting point</li>\n\t<li>Scene Functions matching Zooz docs (10 unique actions)</li>\n</ul>\n\n<p>For more info on the advanced settings check the <a href=\"https://www.support.getzooz.com/kb/section/8/\">Zooz Support Documentation</a>.<br />\nSelect your model &gt; Z-Wave Questions &gt; Advanced Settings (bottom right corner)</p>",
       "tags": [
         "Relays",
         "Garage Doors",

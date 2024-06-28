@@ -9,6 +9,11 @@
 
 Changelog:
 
+## [1.2.2] - 2024-06-28 (@jtp10181)
+  - Added ZSE70 Outdoor Sensor to package
+  - Fixed install sequence so device will fully configure at initial pairing
+  - Update library and common code
+
 ## [1.2.0] - 2024-03-30 (@jtp10181)
   - Added ZSE43, ZSE18, and ZSE11 to HPM package
   - Updated Library code
@@ -91,23 +96,20 @@ NOTICE: This file has been created by *Jeff Page* with some code used
 
  *  Copyright 2022-2024 Jeff Page
  *
- *  Licensed under the Apache License, Version 2.0 (the "License");
- *  you may not use this file except in compliance with the License.
- *  You may obtain a copy of the License at
+ *  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
+ *  in compliance with the License. You may obtain a copy of the License at:
  *
  *      http://www.apache.org/licenses/LICENSE-2.0
  *
- *  Unless required by applicable law or agreed to in writing, software
- *  distributed under the License is distributed on an "AS IS" BASIS,
- *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *  See the License for the specific language governing permissions and
- *  limitations under the License.
+ *  Unless required by applicable law or agreed to in writing, software distributed under the License is
+ *  distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and limitations under the License.
  *
 */
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "1.2.0"
+@Field static final String VERSION = "1.2.2"
 @Field static final String DRIVER = "Zooz-Sensors"
 @Field static final String COMM_LINK = "https://community.hubitat.com/t/zooz-sensors/81074"
 @Field static final Map deviceModelNames = ["2021:2101":"ZSE40"]
@@ -136,7 +138,7 @@ metadata {
 
 		attribute "syncStatus", "string"
 
-		fingerprint mfr:"027A", prod:"2021", deviceId:"2101", inClusters:"0x5E,0x86,0x72,0x5A,0x85,0x59,0x73,0x80,0x71,0x31,0x70,0x84,0x7A,0x98" //Zooz ZSE40 4-in-1 Multisensor
+		fingerprint mfr:"027A", prod:"2021", deviceId:"2101", inClusters:"0x5E,0x86,0x72,0x5A,0x85,0x59,0x73,0x80,0x71,0x31,0x70,0x84,0x7A,0x98", controllerType: "ZWV" //Zooz ZSE40 4-in-1 Multisensor
 	}
 
 	preferences {
@@ -177,11 +179,9 @@ metadata {
 			description: fmtDesc("Range: -25.0..25.0, DEFAULT: 0"),
 			defaultValue: 0, range: "-25..25", required: false
 
-		input "wakeUpInt", "number",
+		input "wakeUpInt", "number", defaultValue: 12, range: "1..24",
 			title: fmtTitle("Wake-up Interval (hours)"),
-			description: fmtDesc("How often the device will wake up to receive commands from the hub"),
-			defaultValue: 12,
-			range: 1..24
+			description: fmtDesc("How often the device will wake up to receive commands from the hub")
 	}
 }
 
@@ -265,7 +265,7 @@ CommandClassReport
 	0x71: 3,	// Notification (notificationv3) (8)
 	0x80: 1,	// Battery (batteryv1)
 	0x84: 2,	// Wakeup (wakeupv2)
-	0x85: 2,	// Association (associationv2) (3)
+	0x85: 2,	// Association (associationv2)
 	0x86: 2,	// Version (versionv2) (3)
 ]
 
@@ -275,10 +275,13 @@ CommandClassReport
 ********************************************************************/
 void installed() {
 	logWarn "installed..."
+	state.resyncAll = true
+	runIn(2, runWakeupCmds)
+	sendCommands(getRefreshCmds(),400)
 }
 
 void fullConfigure() {
-	logWarn "configure..."
+	logWarn "fullConfigure..."
 
 	if (!pendingChanges || state.resyncAll == null) {
 		logForceWakeupMessage "Full Re-Configure"
@@ -313,7 +316,7 @@ void updated() {
 }
 
 void forceRefresh() {
-	logDebug "refresh..."
+	logDebug "forceRefresh..."
 	state.pendingRefresh = true
 	logForceWakeupMessage "Sensor Info Refresh"
 }
@@ -395,7 +398,10 @@ void zwaveEvent(hubitat.zwave.commands.wakeupv2.WakeUpIntervalReport cmd) {
 void zwaveEvent(hubitat.zwave.commands.wakeupv2.WakeUpNotification cmd, ep=0) {
 	logTrace "${cmd} (ep ${ep})"
 	logDebug "WakeUp Notification Received"
+	runWakeupCmds()
+}
 
+void runWakeupCmds() {
 	List<String> cmds = ["delay 0"]
 	cmds << batteryGetCmd()
 
@@ -413,7 +419,7 @@ void zwaveEvent(hubitat.zwave.commands.wakeupv2.WakeUpNotification cmd, ep=0) {
 	state.remove("INFO")
 	setSubModel()
 	
-	sendCommands(cmds, 400)
+	sendCommands(cmds,300)
 }
 
 void zwaveEvent(hubitat.zwave.commands.basicv1.BasicSet cmd, ep=0) {
@@ -510,6 +516,7 @@ List<String> getConfigureCmds() {
 
 	Integer wakeSeconds = wakeUpInt ? wakeUpInt*3600 : 43200
 	if (state.resyncAll || wakeSeconds != (device.getDataValue("zwWakeupInterval") as Integer)) {
+		logDebug "Settting WakeUp Interval to $wakeSeconds seconds"
 		cmds << wakeUpIntervalSetCmd(wakeSeconds)
 		cmds << wakeUpIntervalGetCmd()
 	}
@@ -518,7 +525,7 @@ List<String> getConfigureCmds() {
 		cmds << versionGetCmd()
 	}
 
-	cmds += getConfigureAssocsCmds()
+	cmds += getConfigureAssocsCmds(true)
 
 	configParams.each { param ->
 		Integer paramVal = getParamValueAdj(param)
@@ -543,8 +550,8 @@ List<String> getConfigureCmds() {
 List<String> getRefreshCmds() {
 	List<String> cmds = []
 
-	cmds << versionGetCmd()
 	cmds << wakeUpIntervalGetCmd()
+	cmds << versionGetCmd()
 
 	//Sensors
 	cmds << sensorMultilevelGetCmd(SENSOR_TYPE_TEMPERATURE)
@@ -557,13 +564,11 @@ List<String> getRefreshCmds() {
 	return cmds ?: []
 }
 
-List getConfigureAssocsCmds() {
+List getConfigureAssocsCmds(Boolean logging=false) {
 	List<String> cmds = []
 
 	if (!state.group1Assoc || state.resyncAll) {
-		if (state.group1Assoc == false) {
-			logDebug "Adding missing lifeline association..."
-		}
+		if (logging) logDebug "Setting lifeline association..."
 		cmds << associationSetCmd(1, [zwaveHubNodeId])
 		cmds << associationGetCmd(1)
 	}
@@ -618,6 +623,7 @@ Changelog:
 2023-10-26 - Added some battery shortcut functions
 2023-11-08 - Added ability to adjust settings on firmware range
 2024-01-28 - Adjusted logging settings for new / upgrade installs, added mfgSpecificReport
+2024-06-15 - Added isLongRange function, convert range to string to prevent expansion
 
 ********************************************************************/
 
@@ -900,7 +906,8 @@ void updateParamsList() {
 	List<Map> tmpList = []
 	paramsMap.each { name, pMap ->
 		Map tmpMap = pMap.clone()
-		tmpMap.options = tmpMap.options?.clone()
+		if (tmpMap.options) tmpMap.options = tmpMap.options?.clone()
+		if (tmpMap.range) tmpMap.range = (tmpMap.range).toString()
 
 		//Save the name
 		tmpMap.name = name
@@ -1150,6 +1157,11 @@ BigDecimal getFirmwareVersion() {
 	return ((version != null) && version.isNumber()) ? version.toBigDecimal() : 0.0
 }
 
+Boolean isLongRange() {
+	Integer intDNI = device ? hubitat.helper.HexUtils.hexStringToInt(device.deviceNetworkId) : null
+	return (intDNI > 255)
+}
+
 String convertToLocalTimeString(dt) {
 	def timeZoneId = location?.timeZone?.ID
 	if (timeZoneId) {
@@ -1169,7 +1181,6 @@ List convertIntListToHexList(intList, pad=2) {
 
 List convertHexListToIntList(String[] hexList) {
 	def intList = []
-
 	hexList?.each {
 		try {
 			it = it.trim()

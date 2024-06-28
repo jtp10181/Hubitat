@@ -1,6 +1,6 @@
 /*  
- *  ZSE42 Water Leak XS Sensor
- *    - Model: ZSE42 - ALL FIRMWARE
+ *  Zooz ZSE70 Outdoor Sensor
+ *    - Model: ZSE70 - ALL FIRMWARE
  *
  *  For Support, Information, and Updates:
  *  https://community.hubitat.com/t/zooz-sensors/81074
@@ -13,20 +13,6 @@ Changelog:
   - Added ZSE70 Outdoor Sensor to package
   - Fixed install sequence so device will fully configure at initial pairing
   - Update library and common code
-
-## [1.2.0] - 2024-03-30 (@jtp10181)
-  - Added ZSE43, ZSE18, and ZSE11 to HPM package
-  - Updated Library code
-  - Added Wake-up Interval Setting
-  - Added singleThreaded flag
-  - Changed some command class versions
-  - Fixed decimal bug with hardware offsets on ZSE44
-
-## [1.1.0] - 2023-11-08 (@jtp10181)
-  -Initial Release, from ZSE40 1.1.0 codebase
-
-NOTICE: This file has been created by *Jeff Page* with some code used 
-	from the original work of *Zooz* and *Kevin LaFramboise* under compliance with the Apache 2.0 License.
 
  *  Copyright 2022-2024 Jeff Page
  *
@@ -43,32 +29,37 @@ NOTICE: This file has been created by *Jeff Page* with some code used
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "1.2.0"
+@Field static final String VERSION = "1.2.2"
 @Field static final String DRIVER = "Zooz-Sensors"
 @Field static final String COMM_LINK = "https://community.hubitat.com/t/zooz-sensors/81074"
-@Field static final Map deviceModelNames = ["7000:E002":"ZSE42"]
+@Field static final Map deviceModelNames = ["0004:0006":"ZSE70"]
 
 metadata {
 	definition (
-		name: "Zooz ZSE42 Water Leak XS Sensor",
+		name: "Zooz ZSE70 Outdoor Motion Sensor",
 		namespace: "jtp10181",
 		author: "Jeff Page (@jtp10181)",
 		singleThreaded: true,
-		importUrl: "https://raw.githubusercontent.com/jtp10181/Hubitat/main/Drivers/zooz/zooz-zse42-water-leak.groovy"
+		importUrl: "https://raw.githubusercontent.com/jtp10181/Hubitat/main/Drivers/zooz/zooz-zse70-outdoor-sensor.groovy"
 	) {
 		capability "Sensor"
-		capability "WaterSensor"
+		capability "MotionSensor"
+		capability "IlluminanceMeasurement"
+		capability "TemperatureMeasurement"
 		capability "Battery"
+		capability "PowerSource"
+		capability "TamperAlert"
+		capability "Configuration"
+		capability "Refresh"
 
-		command "fullConfigure"
-		command "forceRefresh"
+		command "setPowerSource", [ [name:"Select Option*", description:"Force powerSource if detection does not work", type: "ENUM", constraints: ["battery","mains"]] ]
 
 		//DEBUGGING
 		//command "debugShowVars"
 
 		attribute "syncStatus", "string"
 
-		fingerprint mfr:"027A", prod:"7000", deviceId:"E002", inClusters:"0x5E,0x85,0x8E,0x59,0x55,0x86,0x72,0x5A,0x73,0x80,0x9F,0x71,0x87,0x30,0x70,0x84,0x6C,0x7A", controllerType: "ZWV" //Zooz ZSE42 Water Leak Sensor
+		fingerprint mfr:"027A", prod:"0004", deviceId:"0006", inClusters:"0x00,0x00", controllerType: "ZWV" //Zooz ZSE70 Outdoor Sensor
 	}
 
 	preferences {
@@ -94,9 +85,21 @@ metadata {
 			}
 		}
 
-		input "wakeUpInt", "number", defaultValue: 12, range: "1..24",
-			title: fmtTitle("Wake-up Interval (hours)"),
-			description: fmtDesc("How often the device will wake up to receive commands from the hub")
+		input "tempOffset", "decimal",
+			title: fmtTitle("Temperature Offset (Driver)"),
+			description: fmtDesc("Range: -25.0..25.0, DEFAULT: 0"),
+			defaultValue: 0, range: "-25..25", required: false
+
+		input "lightOffset", "decimal",
+			title: fmtTitle("Light/Lux Offset (Driver)"),
+			description: fmtDesc("Range: -100..100, DEFAULT: 0"),
+			defaultValue: 0, range: "-100..100", required: false
+
+		if (state.battery) {
+			input "wakeUpInt", "number", defaultValue: 12, range: "1..24",
+				title: fmtTitle("Wake-up Interval (hours)"),
+				description: fmtDesc("How often the device will wake up to receive commands from the hub")
+		}
 	}
 }
 
@@ -111,45 +114,151 @@ void debugShowVars() {
 @Field static final int maxAssocNodes = 1
 
 /*** Static Lists and Settings ***/
-//None
+//Sensor Types
+@Field static Short SENSOR_TYPE_TEMPERATURE = 0x01
+@Field static Short SENSOR_TYPE_LUMINANCE = 0x03
+@Field static Short SENSOR_TYPE_HUMIDITY = 0x05
+//Notification Types
+@Field static Short NOTIFICATION_TYPE_SECURITY = 0x07
+@Field static Short NOTIFICATION_TYPE_POWER = 0x08
+//Notification Events
+@Field static Short EVENT_PARAM_IDLE = 0x00
+@Field static Short EVENT_PARAM_TAMPER = 0x03
+@Field static Short EVENT_PARAM_TAMPER_MOVED = 0x09
+@Field static Short EVENT_PARAM_MOTION = 0x08
+@Field static Short EVENT_MAINS_DISCONNECTED = 0x02
+@Field static Short EVENT_MAINS_RECONNECTED = 0x03
+
 
 //Main Parameters Listing
 @Field static Map<String, Map> paramsMap =
 [
-	ledMode: [ num:1, 
+	motionSensitivity: [ num:1, 
+		title: "Motion Sensitivity", 
+		size: 1, defaultVal: 6, 
+		options: [0:"Disabled", 1:"1 - Least Sensitive", 2:"2", 3:"3", 4:"4", 5:"5", 6:"6", 7:"7", 8:"8 - Most Sensitive"]
+	],
+	motionClear: [ num:2, 
+		title: "Motion Clear Delay / Timeout (seconds)", 
+		size: 2, defaultVal: 30, 
+		range: "10..3600"
+	],
+	ledMode: [ num:6, 
 		title: "LED Indicator Mode", 
 		size: 1, defaultVal: 1, 
-		options: [1:"LED Blinks when Wet", 0:"LED Disabled"]
+		options: [1:"Motion Flash LED", 0:"LED Disabled"],
 	],
-	clearDelay: [ num:2,
-		title: "Leak Alert Clear Delay (seconds)",
-		size: 4, defaultVal: 0,
-		range: "0..3600"
+	duskDawnMode: [ num:16, 
+		title: "Dusk to Dawn Mode",
+		description: "Send motion reports only when below this lux level, 0 = Disabled",
+		size: 2, defaultVal: 0, 
+		range: "0..30000"
 	],
-	batteryThreshold: [ num:3,
-		title: "Battery Level Report Threshold",
-		size: 1, defaultVal: 10,
-		range: "1..50"
-	],
-	batteryLow: [ num:4, 
-		title: "Low Battery Report (%)",
+	batteryAlert: [ num:7,
+		title: "Low Battery Report Level",
 		size: 1, defaultVal: 10,
 		range: "10..50"
-	]
+	],
+	batteryInterval: [ num:8,
+		title: "Battery Power Check Interval (hours)",
+		size: 2, defaultVal: 4,
+		range: "0..744"
+	],
+	batteryThreshold: [ num:11,
+		title: "Battery Change Report Trigger",
+		size: 1, defaultVal: 2,
+		range: "0..50"
+	],
+	 //Temperature
+	 tempVerification: [ num:9,
+	 	title: "Temperature Verification Interval (seconds)",
+	 	description: "How often the sensor checks the temperature",
+	 	size: 2, defaultVal: 30,
+	 	range: "0..600"
+	 ],
+	tempInterval: [ num:17,
+		title: "Temperature Reporting Interval (seconds)",
+		description: "How often to send temperature reports, 0 = Use Change Trigger",
+		size: 2, defaultVal: 0,
+		range: "0..43200"
+	],
+	tempThreshold: [ num:12,
+		title: "Temperature Change Report Trigger",
+		description: "Temperature in °F, 0 = Disabled",
+		size: 1, defaultVal: 1,
+		range: "0..144"
+	],
+	//Light / Lux
+	lightVerification: [ num:10,
+		title: "Light/Lux Verification Interval (seconds)",
+		description: "How often the sensor checks the lux",
+		size: 2, defaultVal: 10,
+		range: "0..600"
+	],
+	lightInterval: [ num:18,
+		title: "Light/Lux Reporting Interval (seconds)",
+		description: "How often to send lux reports, 0 = Use Change Trigger",
+		size: 2, defaultVal: 0,
+		range: "0..43200"
+	],
+	lightThreshold: [ num:13,
+		title: "Light Change Report Trigger",
+		description: "Set Lux, 0 = Disabled",
+		size: 2, defaultVal: 50,
+		range: "0..30000"
+	],
+	// //Offsets
+	tempOffsetHw: [ num:14,
+		title: "Temperature Offset (Hardware)",
+		size: 1, defaultVal: 0,
+		range: "-10.0..10.0"
+	],
+	lightOffsetHw: [ num:15,
+		title: "Light/Lux Offset (Hardware)",
+		size: 1, defaultVal: 0,
+		range: "-100..100"
+	],
+	//Temp Units
+	tempUnits: [ num:5,
+		title: "Temperature Units:",
+		size: 1, defaultVal: 1,
+		options: [0:"Celsius (°C)", 1:"Fahrenheit (°F)"]
+	],
+	//Hidden Settings
+	basicReports: [ num:3, 
+		title: "Basic Set Reports on Motion", 
+		size: 1, defaultVal: 0, 
+		range: "0..7",
+		hidden: true
+	],
+	// basicMode: [ num:15, 
+	// 	title: "Basic Set Value", 
+	// 	size: 1, defaultVal: 0, 
+	// 	options: [0:"Motion = On", 1:"Motion = 0ff"],
+	// 	hidden: true
+	// ],
+	// sensorReports: [ num:16, 
+	// 	title: "Binary Sensor Reports on Motion", 
+	// 	size: 1, defaultVal: 0, 
+	// 	options: [0:"Disabled", 1:"Enabled"],
+	// 	firmVerM: [2:99,3:99,4:99],
+	// 	hidden: true
+	// ],
 ]
 
-/* ZSE42
+/* ZSE70
 CommandClassReport
 */
 
 //Set Command Class Versions
 @Field static final Map commandClassVersions = [
-	0x70: 1,	// configuration
-	0x71: 8,	// notification
-	0x80: 1,	// battery
-	0x84: 2,	// wakeup
-	0x85: 2,	// association
-	0x86: 2,	// version
+	0x31: 11,	// Sensor Multilevel (sensormultilevelv11)
+	0x70: 1,	// Configuration (configurationv1)
+	0x71: 8,	// Notification (notificationv8)
+	0x80: 1,	// Battery (batteryv1)
+	0x84: 2,	// Wakeup (wakeupv2)
+	0x85: 2,	// Association (associationv2)
+	0x86: 2,	// Version (versionv2) (3)
 ]
 
 
@@ -159,8 +268,23 @@ CommandClassReport
 void installed() {
 	logWarn "installed..."
 	state.resyncAll = true
+	sendPowerEvent(EVENT_MAINS_RECONNECTED)
 	runIn(2, runWakeupCmds)
 	sendCommands(getRefreshCmds(),400)
+}
+
+void configure() {
+	logWarn "configure..."
+
+	if (device.currentValue("powerSource") == null && !state.resyncAll) {
+		sendPowerEvent(EVENT_MAINS_DISCONNECTED)
+		runIn(2, fullConfigure)
+		List<String> cmds = getRefreshCmds()
+		if (cmds) sendCommands(cmds,300)
+	}
+	else {
+		fullConfigure()
+	}
 }
 
 void fullConfigure() {
@@ -173,7 +297,8 @@ void fullConfigure() {
 		logForceWakeupMessage "Pending Configuration Changes"
 	}
 
-	updateSyncingStatus(1)
+	updateSyncingStatus(2)
+	if (state.battery == false) runIn(1, runWakeupCmds)
 }
 
 void updated() {
@@ -193,13 +318,26 @@ void updated() {
 		state.remove("INFO")
 	}
 
-	updateSyncingStatus(1)
+	setSubModel()
+
+	updateSyncingStatus(2)
+	if (state.battery == false) {
+		device.deleteCurrentState("battery")
+		runIn(1, runWakeupCmds)
+	}
+}
+
+void refresh() {
+	logDebug "refresh..."
+	forceRefresh()
 }
 
 void forceRefresh() {
 	logDebug "forceRefresh..."
 	state.pendingRefresh = true
 	logForceWakeupMessage "Sensor Info Refresh"
+
+	if (state.battery == false) runIn(1, runWakeupCmds)
 }
 
 
@@ -209,6 +347,10 @@ void forceRefresh() {
 /*** Capabilities ***/
 
 /*** Custom Commands ***/
+void setPowerSource(String source) {
+	sendPowerEvent(source == "mains" ? EVENT_MAINS_RECONNECTED : EVENT_MAINS_DISCONNECTED)
+}
+
 
 /*******************************************************************
  ***** Z-Wave Reports
@@ -259,6 +401,14 @@ void zwaveEvent(hubitat.zwave.commands.batteryv1.BatteryReport cmd, ep=0) {
 	logTrace "${cmd} (ep ${ep})"
 
 	Integer batLvl = cmd.batteryLevel
+	if (state.battery == false) {
+		if (batLvl == 0xFF) {
+			logDebug "Skipping ${cmd} | powerSource is mains"
+			return
+		} else {
+			sendPowerEvent(EVENT_MAINS_DISCONNECTED)
+		}
+	}
 	if (batLvl == 0xFF) {
 		batLvl = 1
 		logWarn "LOW BATTERY WARNING"
@@ -298,23 +448,45 @@ void runWakeupCmds() {
 	state.resyncAll = false
 	state.pendingRefresh = false
 	state.remove("INFO")
+	setSubModel()
 	
 	sendCommands(cmds,300)
 }
 
-void zwaveEvent(hubitat.zwave.commands.sensorbinaryv2.SensorBinaryReport cmd, ep=0) {
+void zwaveEvent(hubitat.zwave.commands.basicv1.BasicSet cmd, ep=0) {
 	logTrace "${cmd} (ep ${ep})"
-	//Ignoring these, handled by NotificationReport
+	sendEventLog(name:"motion", value:(cmd.value ? "active":"inactive"))
+}
+
+void zwaveEvent(hubitat.zwave.commands.sensormultilevelv11.SensorMultilevelReport cmd, ep=0) {
+	logTrace "${cmd} (ep ${ep})"	
+	switch (cmd.sensorType) {
+		case SENSOR_TYPE_TEMPERATURE: //0x01
+			String temp = convertTemperatureIfNeeded(cmd.scaledSensorValue, (cmd.scale ? "F" : "C"), cmd.precision)
+			BigDecimal offset = safeToDec(settings?.tempOffset,0)
+			BigDecimal tempOS = safeToDec(temp,0) + offset
+			logDebug "Temperature Offset by ${offset} from ${temp} to ${tempOS}"
+			sendEventLog(name:"temperature", value:(safeToDec(tempOS,0,Math.min(cmd.precision,1))), unit:"°${temperatureScale}")
+			break
+		case SENSOR_TYPE_LUMINANCE: //0x03
+			BigDecimal offset = safeToDec(settings?.lightOffset,0)
+			BigDecimal lightOS = safeToDec(cmd.scaledSensorValue,0) + offset
+			logDebug "Light/Lux Offset by ${offset} from ${cmd.scaledSensorValue} to ${lightOS}"
+			sendEventLog(name:"illuminance", value:(Math.round(lightOS)), unit:"lx")
+			break
+		default:
+			logDebug "Unhandled sensorType: ${cmd}"
+	}
 }
 
 void zwaveEvent(hubitat.zwave.commands.notificationv8.NotificationReport cmd, ep=0) {
 	logTrace "${cmd} (ep ${ep})"
-
-	switch (cmd.notificationType as Integer) {
-		case 0x05:  //Water Alarm
-			if      (cmd.event == 0x00) sendEventLog(name:"water", value:"dry", ep)
-			else if (cmd.event == 0x02) sendEventLog(name:"water", value:"wet", ep)
-			else    logDebug "Unhandled event: ${cmd}"
+	switch (cmd.notificationType) {
+		case NOTIFICATION_TYPE_SECURITY:
+			sendSecurityEvent(cmd.event, cmd.eventParameter[0])
+			break
+		case NOTIFICATION_TYPE_POWER: //Power Management
+			sendPowerEvent(cmd.event, cmd.eventParameter[0])
 			break
 		default:
 			logDebug "Unhandled notificationType: ${cmd}"
@@ -340,6 +512,45 @@ void sendEventLog(Map evt, Integer ep=0) {
 	sendEvent(evt)
 }
 
+void sendSecurityEvent(event, parameter) {
+	Boolean cleared
+	Integer eventAdj = event
+	//Idle Event the parameter is the event to clear
+	if (event == EVENT_PARAM_IDLE) {
+		eventAdj = parameter
+		cleared = true
+	}
+	
+	switch (eventAdj) {
+		case EVENT_PARAM_TAMPER:
+		case EVENT_PARAM_TAMPER_MOVED:
+			sendEventLog(name:"tamper", value:(cleared ? "clear":"detected"))
+			break
+		case EVENT_PARAM_MOTION:
+			sendEventLog(name:"motion", value:(cleared ? "inactive":"active"))
+			break
+		default:
+			logDebug "Unhandled Security Event: ${event}, ${parameter}"
+	}
+}
+
+void sendPowerEvent(event, parameter=null) {
+	switch (event) {
+		case 0x00: break  //Idle State - ignored
+		case 0x02:  //AC mains disconnected
+			sendEventLog(name:"powerSource", value:"battery")
+			state.battery = true
+			break
+		case 0x03:  //AC mains re-connected
+			sendEventLog(name:"powerSource", value:"mains")
+			device.deleteCurrentState("battery")
+			state.battery = false
+			break
+		default:
+			logDebug "Unhandled Power Management: ${event}, ${parameter}"
+	}
+}
+
 
 /*******************************************************************
  ***** Execute / Build Commands
@@ -350,7 +561,7 @@ List<String> getConfigureCmds() {
 	List<String> cmds = []
 
 	Integer wakeSeconds = wakeUpInt ? wakeUpInt*3600 : 43200
-	if (state.resyncAll || wakeSeconds != (device.getDataValue("zwWakeupInterval") as Integer)) {
+	if (state.battery && (state.resyncAll || wakeSeconds != (device.getDataValue("zwWakeupInterval") as Integer))) {
 		logDebug "Settting WakeUp Interval to $wakeSeconds seconds"
 		cmds << wakeUpIntervalSetCmd(wakeSeconds)
 		cmds << wakeUpIntervalGetCmd()
@@ -374,6 +585,7 @@ List<String> getConfigureCmds() {
 
 	if (state.resyncAll) {
 		clearVariables()
+		state.battery = (device.currentValue("powerSource") == "battery")
 	}
 	state.resyncAll = false
 
@@ -387,7 +599,19 @@ List<String> getRefreshCmds() {
 
 	cmds << wakeUpIntervalGetCmd()
 	cmds << versionGetCmd()
-	cmds << notificationGetCmd(0x05, 0x00)  //Water Alarm
+
+	//Sensors
+	cmds << sensorMultilevelGetCmd(SENSOR_TYPE_TEMPERATURE)
+	cmds << sensorMultilevelGetCmd(SENSOR_TYPE_LUMINANCE)
+	cmds << sensorMultilevelGetCmd(SENSOR_TYPE_HUMIDITY)
+	//These don't work
+	//cmds << notificationGetCmd(NOTIFICATION_TYPE_SECURITY, EVENT_PARAM_TAMPER)
+	//cmds << notificationGetCmd(NOTIFICATION_TYPE_SECURITY, EVENT_PARAM_MOTION)
+
+	//Power
+	//cmds << notificationGetCmd(NOTIFICATION_TYPE_POWER, EVENT_PARAM_IDLE)  //Power Management - Idle
+	//cmds << notificationGetCmd(NOTIFICATION_TYPE_POWER, EVENT_MAINS_DISCONNECTED)  //Power Management - Mains Disconnected
+	cmds << notificationGetCmd(NOTIFICATION_TYPE_POWER, EVENT_MAINS_RECONNECTED)  //Power Management - Mains Reconnected
 
 	return cmds ?: []
 }
@@ -405,9 +629,13 @@ List getConfigureAssocsCmds(Boolean logging=false) {
 }
 
 private logForceWakeupMessage(msg) {
-	String helpText = "Quickly press the internal button 4 times to wake the device."
+	if (state.battery == false) return
+	String helpText = "You can force a wake up by clicking the Z-Wave button once."
 	logWarn "${msg} will execute the next time the device wakes up.  ${helpText}"
 	state.INFO = "*** ${msg} *** Waiting for device to wake up.  ${helpText}"
+}
+
+private setSubModel() {
 }
 
 
@@ -420,7 +648,23 @@ void fixParamsMap() {
 }
 
 Integer getParamValueAdj(Map param) {
-	return getParamValue(param)
+	BigDecimal paramVal = getParamValue(param)
+
+	switch(param.name) {
+		case "tempOffsetHw":
+		case "humidOffsetHw":
+			//Convert -10.0..10.0 range to 0..200
+			paramVal = (paramVal * 10) + 100
+			paramVal = validateRange(paramVal, 100, 0, 200)
+			break
+		case "lightOffsetHw":
+			//Convert -100..100 range to 0..200
+			paramVal = paramVal + 100
+			paramVal = validateRange(paramVal, 100, 0, 200)
+			break
+	}
+
+	return (paramVal as Integer)
 }
 
 
