@@ -11,6 +11,15 @@ Changelog:
 ## Known Issues
   - Do not try to scan multiple devices at once
 
+## [0.3.0] - 2024-06-28 (@jtp10181)
+  - Pushing some older changes up in prep for more updates
+  - Added ability to set multichannel lifeline
+  - Added Set Wake Interval command
+  - Added Set Parameter command (to manually set parameters)
+  - Added Command Class Report
+  - Added command to remove states and data entries from device
+  - Fixed range expansion issue with Hub Mesh (can cause java.lang.OutOfMemoryError)
+
 ## [0.2.0] - 2021-08-06 (@jtp10181)
   ### Added
   - Get Info command to fetch device info and restore to data fields
@@ -43,28 +52,40 @@ Changelog:
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "0.1.0" 
+@Field static final String VERSION = "0.3.0" 
 
 metadata {
 	definition (
 		name: "Z-Wave Universal Scanner",
 		namespace: "jtp10181",
 		author: "Jeff Page (@jtp10181)",
-		//importUrl: "https://raw.githubusercontent.com/jtp10181/hubitat/master/Drivers/zooz/"
+		importUrl: "https://raw.githubusercontent.com/jtp10181/Hubitat/main/Drivers/generic/zwave-universial-scanner.groovy"
 	) {
 		capability "Actuator"
 		capability "Configuration"
 		capability "Refresh"
 
 		command "getInfo"
-		command "syncFromDevice"
-		command "setLifelineAssociation"
-		command "deleteChild", [[name:"Child DNI*", description:"DNI from Child or ALL to remove all", type: "STRING"]]
+		command "commandClassReport"
+
+		command "setLifelineAssociation", [[name:"Select Option*", type: "ENUM", constraints: ["Single Channel", "Multi-Channel"]] ]
+		command "setWakeInterval", [[name:"Wake Up Interval", description:"Wake Up Interval (in hours)", type: "NUMBER"]]
+
 		command "scanParameters", [[name:"First Parameter", description:"Provide the first valid parameter to start scanning from", type: "NUMBER"]]
+		command "syncFromDevice"
+		command "setParameter",[[name:"parameterNumber*",type:"NUMBER", description:"Parameter Number"],
+			[name:"value*",type:"NUMBER", description:"Parameter Value"],
+			[name:"size",type:"NUMBER", description:"Parameter Size"]]
+
+		command "deleteChild", [[name:"Child DNI*", description:"DNI from Child or ALL to remove all", type: "STRING"]]
+		command "removeData",[[name:"dataType*", type: "ENUM", description: "Type of Data to Remove", constraints: ["State", "StateVariable", "DeviceData"]],
+							  [name:"dataName*",type:"STRING", description:"Enter exact name of field to delete"]]
+
 		command "setLogLevel", [[name:"Select Level*", description:"Log this type of message and above", type: "ENUM", constraints: debugOpts] ]
 
 		//DEBUGGING
-		//command "debugShowVars"
+		// command "debugShowVars"
+		// command "testCommands"
 
 		attribute "syncStatus", "string"
 	}
@@ -88,14 +109,14 @@ metadata {
 						title: fmtTitle("${param.title}"),
 						description: fmtDesc("• Parameter #${param.num}, Range: ${(param.range).toString()}, DEFAULT: ${param.defaultVal}" + (param?.description ? "<br>• ${param?.description}" : '')),
 						defaultValue: paramVal,
-						range: param.range,
+						range: "${(param.range).toString()}",
 						required: false
 				}
 			}
 		}
 
 		//Help Text at very bottom
-		input name: "infoText", type: "number",
+		input name: "infoText", type: "hidden",
 			title: fmtTitle("******************************************<br>" +
 				"HIGHLY RECOMMEND after Scan Parameters to Sync from Device and then Refresh the page before saving below for the first time!")
 
@@ -103,7 +124,7 @@ metadata {
 		input "scanInfo", "bool", title: fmtTitle("Scan for Parameter Info"), defaultValue: false
 
 		//Logging Level Options
-		input name: "logLevel", type: "enum", title: fmtTitle("Logging Level (Permenant)"), defaultValue: 3, options: debugOpts
+		input name: "logLevel", type: "enum", title: fmtTitle("Logging Level (Permanent)"), defaultValue: 3, options: debugOpts
 
 
 	}
@@ -124,11 +145,19 @@ void debugShowVars() {
 	log.warn "settings ${settings.hashCode()} ${settings}"
 }
 
+void testCommands() {
+	List<String> cmds = []
+	//Request NIF
+	// sendHubCommand(new hubitat.device.HubAction("0102", hubitat.device.Protocol.ZWAVE))
+	// cmds << zwave.zwaveCmdClassV1.requestNodeInfo() 
+	// sendCommands(cmds)
+}
+
 //Set Command Class Versions
 @Field static final Map commandClassVersions = [
 	0x60: 3,	// Multi Channel
 	0x6C: 1,	// Supervision (supervision)
-	0x70: 3,	// Configuration (configuration)
+	0x70: 4,	// Configuration (configuration)
 	0x72: 2,	// Manufacturer Specific (manufacturerspecific)
 	0x86: 2,	// Version (version)
 ]
@@ -201,11 +230,34 @@ void getInfo() {
 	sendCommands(cmds)
 }
 
-void setLifelineAssociation() {
+void setLifelineAssociation(chan) {
 	List<String> cmds = []
-	logDebug "Setting lifeline association..."
-	cmds << associationSetCmd(1, [zwaveHubNodeId])
-	cmds << associationGetCmd(1)
+	logDebug "Setting lifeline association for ${chan}"
+
+	//Remove all group 1 associations
+	cmds << secureCmd(zwave.multiChannelAssociationV3.multiChannelAssociationRemove(groupingIdentifier: 1, nodeId:[], multiChannelNodeIds:[]))
+
+	if (chan == "Multi-Channel") {
+		cmds << secureCmd(zwave.multiChannelAssociationV3.multiChannelAssociationSet(groupingIdentifier: 1, multiChannelNodeIds: [[nodeId: zwaveHubNodeId, bitAddress:0, endPointId: 0]]))
+		cmds << secureCmd(zwave.multiChannelAssociationV3.multiChannelAssociationGet(groupingIdentifier: group))
+	}
+	else {
+		cmds << associationSetCmd(1, [zwaveHubNodeId])
+		cmds << associationGetCmd(1)
+	}
+
+	sendCommands(cmds)
+}
+
+void commandClassReport() {
+	List<String> cmds = []
+	List<Integer> ic = getDataValue("inClusters").split(",").collect{ hexStrToUnsignedInt(it) }
+	ic += getDataValue("secureInClusters")?.split(",").collect{ hexStrToUnsignedInt(it) }
+
+	ic.each {
+		if (it) cmds << secureCmd(zwave.versionV1.versionCommandClassGet(requestedCommandClass:it))
+	}
+
 	sendCommands(cmds)
 }
 
@@ -232,16 +284,67 @@ void scanParameters(param=1) {
 	sendCommands(cmd)
 }
 
+String setParameter(paramNum, value, size = null) {
+	paramNum = safeToInt(paramNum)
+	Map param = getParam(paramNum)
+	if (param && !size) { size = param.size	}
+
+	if (paramNum == null || value == null || size == null) {
+		logWarn "Incomplete parameter list supplied..."
+		logWarn "Syntax: setParameter(paramNum, value, size)"
+		return
+	}
+	logDebug "setParameter ( number: $paramNum, value: $value, size: $size )" + (param ? " [${param.name}]" : "")
+	return configSetCmd([num: paramNum, size: size], value as Integer)
+}
+
+void setWakeInterval(wakeInt) {
+	wakeInt = safeToInt(wakeInt)
+
+	logDebug "setWakeInterval ( $wakeInt )"
+	state.pendingWakeUpInt = wakeInt
+}
+
+void removeData(String dataType, String dataName) {
+	log.debug "removeData(${dataType}, ${dataName})"
+
+	switch (dataType) {
+		case "State":
+			device.deleteCurrentState("${dataName}".toString())
+			break
+		case "StateVariable":
+			state.remove("${dataName}".toString())
+			break
+		case "DeviceData":
+			removeDataValue("${dataName}".toString())
+			break
+		default:
+			log.warn "removeSaveData invalid dataType: ${dataType}"
+	}
+}
+
+
 /*******************************************************************
  ***** Z-Wave Reports
 ********************************************************************/
 void parse(String description) {
-	hubitat.zwave.Command cmd = zwave.parse(description, commandClassVersions)
-	
-	if (cmd) {
-		logTrace "parse: ${description} --PARSED-- ${cmd}"
-		zwaveEvent(cmd)
-	} else {
+
+	if (description =~ /command: 700F/) {
+		description = description.replace("FF FF FF FF", "7F FF FF FE")
+	}
+
+	try { 
+		hubitat.zwave.Command cmd = zwave.parse(description, commandClassVersions)
+
+		if (cmd) {
+			logTrace "parse: ${description} --PARSED-- ${cmd}"
+			zwaveEvent(cmd)
+		} else {
+			logWarn "Unable to parse: ${description}"
+		}
+	}
+	catch (Exception err) {
+		log.error "parse error: ${err}"
 		logWarn "Unable to parse: ${description}"
 	}
 }
@@ -276,7 +379,10 @@ void zwaveEvent(hubitat.zwave.commands.versionv2.VersionReport cmd) {
 	logTrace "${cmd}"
 
 	String fullVersion = String.format("%d.%02d",cmd.firmware0Version,cmd.firmware0SubVersion)
+	String zwaveVersion = String.format("%d.%02d",cmd.zWaveProtocolVersion,cmd.zWaveProtocolSubVersion)
 	device.updateDataValue("firmwareVersion", fullVersion)
+	device.updateDataValue("protocolVersion", zwaveVersion)
+	device.updateDataValue("hardwareVersion", "${cmd.hardwareVersion}")
 
 	logDebug "Received Version Report - Firmware: ${fullVersion}"
 	//setDevModel(new BigDecimal(fullVersion))
@@ -310,14 +416,28 @@ void zwaveEvent(hubitat.zwave.commands.configurationv3.ConfigurationReport cmd) 
 
 void zwaveEvent(hubitat.zwave.commands.associationv2.AssociationReport cmd) {
 	logTrace "${cmd}"
-	Integer grp = cmd.groupingIdentifier
 
-	if (grp == 1) {
+	if (cmd.groupingIdentifier == 1) {
 		logDebug "Lifeline Association: ${cmd.nodeId}"
 	}
 	else {
 		logDebug "Unhandled Group: $cmd"
 	}
+}
+
+void zwaveEvent(hubitat.zwave.commands.multichannelassociationv3.MultiChannelAssociationReport cmd) {
+	logTrace "${cmd}"
+
+	if (cmd.groupingIdentifier == 1) {
+		logDebug "Lifeline Association: ${cmd.nodeId} | MC: ${cmd.multiChannelNodeIds}"
+	}
+	else {
+		logDebug "Unhandled Group: $cmd"
+	}
+}
+
+void zwaveEvent(hubitat.zwave.commands.versionv1.VersionCommandClassReport cmd) {
+    logInfo "--- CommandClassReport - class:0x${intToHexStr(cmd.requestedCommandClass)}, version:${cmd.commandClassVersion}"
 }
 
 void zwaveEvent(hubitat.zwave.commands.configurationv3.ConfigurationPropertiesReport cmd) {
@@ -330,7 +450,7 @@ void zwaveEvent(hubitat.zwave.commands.configurationv3.ConfigurationPropertiesRe
 		paramScan[cmd.parameterNumber] = [
 			num: cmd.parameterNumber, format: cmd.format,
 			size: cmd.size, defaultVal: cmd.defaultValue,
-			range: "${cmd.minValue}..${cmd.maxValue}",
+			range: ("${cmd.minValue}..${cmd.maxValue}").toString(),
 			title: "Parameter #${cmd.parameterNumber}",
 			description: ""
 		]
@@ -390,25 +510,66 @@ void zwaveEvent(hubitat.zwave.commands.manufacturerspecificv2.ManufacturerSpecif
 	logInfo "fingerprint  mfr:\"${hubitat.helper.HexUtils.integerToHexString(cmd.manufacturerId, 2)}\", "+
 		"prod:\"${hubitat.helper.HexUtils.integerToHexString(cmd.productTypeId, 2)}\", "+
 		"deviceId:\"${hubitat.helper.HexUtils.integerToHexString(cmd.productId, 2)}\", "+
-		"inClusters:\"${device.getDataValue("inClusters")}\""
+		"inClusters:\"${device.getDataValue("inClusters")}\""+
+		(device.getDataValue("secureInClusters") ? ", secureInClusters:\"${device.getDataValue("secureInClusters")}\"" : "")
 }
 
 void zwaveEvent(hubitat.zwave.commands.manufacturerspecificv2.DeviceSpecificReport cmd) {
 	logTrace "${cmd}"
 
 	switch (cmd.deviceIdType) {
-		case 1: //Serial Numberr
-			String serialNumber
+		case 1: //Serial Number
+			String serialNumber = ""
 			if (cmd.deviceIdDataFormat == 1) {
 				serialNumber = convertIntListToHexList(cmd.deviceIdData).join()
 			} else {
-				serialNumber = ""
 				cmd.deviceIdData.each { serialNumber += (char)it }
 			}
 			logDebug "Device Serial Number: $serialNumber"
 			device.updateDataValue("serialNumber", serialNumber)
 			break
 	}
+}
+
+void zwaveEvent(hubitat.zwave.commands.wakeupv2.WakeUpIntervalReport cmd) {
+	logTrace "${cmd}"
+	BigDecimal wakeHrs = safeToDec(cmd.seconds/3600,0,2)
+	logDebug "WakeUp Interval is $cmd.seconds seconds ($wakeHrs hours)"
+	device.updateDataValue("zwWakeupInterval", "${cmd.seconds}")
+}
+
+void zwaveEvent(hubitat.zwave.commands.wakeupv2.WakeUpNotification cmd, ep=0) {
+	logTrace "${cmd} (ep ${ep})"
+	logDebug "WakeUp Notification Received"
+
+	List<String> cmds = ["delay 0"]
+	cmds << batteryGetCmd()
+
+	Integer newWakeUpInt = (state.pendingWakeUpInt as Integer)
+	if (newWakeUpInt != null) {
+		Integer wakeSeconds = newWakeUpInt ? newWakeUpInt*3600 : 43200
+		if (wakeSeconds != (device.getDataValue("zwWakeupInterval") as Integer)) {
+			cmds << wakeUpIntervalSetCmd(wakeSeconds)
+			cmds << wakeUpIntervalGetCmd()
+		}
+		state.remove("pendingWakeUpInt")
+		state.remove("wakeInterval")
+	}
+
+	//Refresh all if requested
+	// if (state.pendingRefresh) { cmds += getRefreshCmds() }
+	//Any configuration needed
+	// cmds += getConfigureCmds()
+
+	//This needs a longer delay
+	// cmds << "delay 1400" << wakeUpNoMoreInfoCmd()
+
+	//Clear pending status
+	// state.resyncAll = false
+	// state.pendingRefresh = false
+	// state.remove("INFO")
+	
+	sendCommands(cmds, 400)
 }
 
 void zwaveEvent(hubitat.zwave.Command cmd, ep=0) {
@@ -473,6 +634,22 @@ String mfgSpecificGetCmd() {
 
 String deviceSpecificGetCmd(type=0) {
 	return secureCmd(zwave.manufacturerSpecificV2.deviceSpecificGet(deviceIdType:type))
+}
+
+String wakeUpIntervalGetCmd() {
+	return secureCmd(zwave.wakeUpV2.wakeUpIntervalGet())
+}
+
+String wakeUpIntervalSetCmd(val) {
+	return secureCmd(zwave.wakeUpV2.wakeUpIntervalSet(seconds:val, nodeid:zwaveHubNodeId))
+}
+
+String wakeUpNoMoreInfoCmd() {
+	return secureCmd(zwave.wakeUpV2.wakeUpNoMoreInformation())
+}
+
+String batteryGetCmd() {
+	return secureCmd(zwave.batteryV1.batteryGet())
 }
 
 /*******************************************************************
