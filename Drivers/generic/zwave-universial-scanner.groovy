@@ -11,6 +11,9 @@ Changelog:
 ## Known Issues
   - Do not try to scan multiple devices at once
 
+## [0.4.0] - 2024-XX-XX (@jtp10181)
+  - Refactor code to get ready for library merges
+
 ## [0.3.0] - 2024-06-28 (@jtp10181)
   - Pushing some older changes up in prep for more updates
   - Added ability to set multichannel lifeline
@@ -52,13 +55,16 @@ Changelog:
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "0.3.0" 
+@Field static final String VERSION = "0.3.0"
+@Field static final String DRIVER = "ZWave-Scanner"
+@Field static final String COMM_LINK = "https://community.hubitat.com/t/z-wave-universal-device-scanner/97912"
 
 metadata {
 	definition (
 		name: "Z-Wave Universal Scanner",
 		namespace: "jtp10181",
 		author: "Jeff Page (@jtp10181)",
+		singleThreaded: true,
 		importUrl: "https://raw.githubusercontent.com/jtp10181/Hubitat/main/Drivers/generic/zwave-universial-scanner.groovy"
 	) {
 		capability "Actuator"
@@ -95,12 +101,12 @@ metadata {
 		//Saved Parameters
 		configParams.each { param ->
 			if (!param.hidden) {
-				Integer paramVal = getParamValue(param)
 				if (param.options) {
+					Integer paramVal = getParamValue(param)
 					input "configParam${param.num}", "enum",
 						title: fmtTitle("${param.title}"),
 						description: fmtDesc("• Parameter #${param.num}, Selected: ${paramVal}" + (param?.description ? "<br>• ${param?.description}" : '')),
-						defaultValue: paramVal,
+						defaultValue: param.defaultVal,
 						options: param.options,
 						required: false
 				}
@@ -108,7 +114,7 @@ metadata {
 					input "configParam${param.num}", "number",
 						title: fmtTitle("${param.title}"),
 						description: fmtDesc("• Parameter #${param.num}, Range: ${(param.range).toString()}, DEFAULT: ${param.defaultVal}" + (param?.description ? "<br>• ${param?.description}" : '')),
-						defaultValue: paramVal,
+						defaultValue: param.defaultVal,
 						range: "${(param.range).toString()}",
 						required: false
 				}
@@ -123,35 +129,26 @@ metadata {
 		input "scanName", "bool", title: fmtTitle("Scan for Parameter Name"), defaultValue: false
 		input "scanInfo", "bool", title: fmtTitle("Scan for Parameter Info"), defaultValue: false
 
-		//Logging Level Options
-		input name: "logLevel", type: "enum", title: fmtTitle("Logging Level (Permanent)"), defaultValue: 3, options: debugOpts
-
-
 	}
 }
 
-//Preference Helpers
-String fmtDesc(String str) {
-	return "<div style='font-size: 85%; font-style: italic; padding: 1px 0px 4px 2px;'>${str}</div>"
-}
-String fmtTitle(String str) {
-	return "<strong>${str}</strong>"
-}
-
 void debugShowVars() {
-	log.warn "paramScan ${paramScan.hashCode()} ${paramScan}"
-	//log.warn "paramsList ${paramsList.hashCode()} ${paramsList}"
-	//log.warn "paramsMap ${paramsMap.hashCode()} ${paramsMap}"
 	log.warn "settings ${settings.hashCode()} ${settings}"
+	// log.warn "paramsList ${paramsList.hashCode()} ${paramsList}"
+	// log.warn "paramsMap ${paramsMap.hashCode()} ${paramsMap}"
+
+	log.warn "paramScan ${paramScan.hashCode()} ${paramScan}"
 }
 
 void testCommands() {
 	List<String> cmds = []
 	//Request NIF
-	// sendHubCommand(new hubitat.device.HubAction("0102", hubitat.device.Protocol.ZWAVE))
-	// cmds << zwave.zwaveCmdClassV1.requestNodeInfo() 
+	// cmds << zwave.zwaveCmdClassV1.requestNodeInfo()
+	// cmds << "0102"
 	// sendCommands(cmds)
 }
+
+/*** Static Lists and Settings ***/
 
 //Set Command Class Versions
 @Field static final Map commandClassVersions = [
@@ -161,9 +158,6 @@ void testCommands() {
 	0x72: 2,	// Manufacturer Specific (manufacturerspecific)
 	0x86: 2,	// Version (version)
 ]
-
-/*** Static Lists and Settings ***/
-@Field static final Map debugOpts = [0:"Error", 1:"Warn", 2:"Info", 3:"Debug", 4:"Trace"]
 
 
 /*******************************************************************
@@ -200,12 +194,9 @@ List<String> refresh() {
 /*******************************************************************
  ***** Driver Commands
 ********************************************************************/
-void setLogLevel(String selection) {
-	Short level = debugOpts.find{ selection.equalsIgnoreCase(it.value) }.key
-	device.updateSetting("logLevel",[value:"${level}", type:"enum"])
-	logInfo "Logging Level is: ${level}"
-}
+/*** Capabilities ***/
 
+/*** Custom Commands ***/
 void syncFromDevice() {
 	sendEvent(name:"syncStatus", value:"About to Sync Settings from Device")
 	state.deviceSync = true
@@ -375,19 +366,6 @@ void zwaveEvent(hubitat.zwave.commands.supervisionv1.SupervisionGet cmd, ep=0) {
 	sendCommands(secureCmd(zwave.supervisionV1.supervisionReport(sessionID: cmd.sessionID, reserved: 0, moreStatusUpdates: false, status: 0xFF, duration: 0), ep))
 }
 
-void zwaveEvent(hubitat.zwave.commands.versionv2.VersionReport cmd) {
-	logTrace "${cmd}"
-
-	String fullVersion = String.format("%d.%02d",cmd.firmware0Version,cmd.firmware0SubVersion)
-	String zwaveVersion = String.format("%d.%02d",cmd.zWaveProtocolVersion,cmd.zWaveProtocolSubVersion)
-	device.updateDataValue("firmwareVersion", fullVersion)
-	device.updateDataValue("protocolVersion", zwaveVersion)
-	device.updateDataValue("hardwareVersion", "${cmd.hardwareVersion}")
-
-	logDebug "Received Version Report - Firmware: ${fullVersion}"
-	//setDevModel(new BigDecimal(fullVersion))
-}
-
 void zwaveEvent(hubitat.zwave.commands.configurationv3.ConfigurationReport cmd) {
 	logTrace "${cmd}"
 	updateSyncingStatus()
@@ -500,19 +478,7 @@ void zwaveEvent(hubitat.zwave.commands.configurationv3.ConfigurationInfoReport c
 	}
 }
 
-void zwaveEvent(hubitat.zwave.commands.manufacturerspecificv2.ManufacturerSpecificReport cmd) {
-	logTrace "${cmd}"
 
-	device.updateDataValue("manufacturer",cmd.manufacturerId.toString())
-	device.updateDataValue("deviceType",cmd.productTypeId.toString())
-	device.updateDataValue("deviceId",cmd.productId.toString())
-
-	logInfo "fingerprint  mfr:\"${hubitat.helper.HexUtils.integerToHexString(cmd.manufacturerId, 2)}\", "+
-		"prod:\"${hubitat.helper.HexUtils.integerToHexString(cmd.productTypeId, 2)}\", "+
-		"deviceId:\"${hubitat.helper.HexUtils.integerToHexString(cmd.productId, 2)}\", "+
-		"inClusters:\"${device.getDataValue("inClusters")}\""+
-		(device.getDataValue("secureInClusters") ? ", secureInClusters:\"${device.getDataValue("secureInClusters")}\"" : "")
-}
 
 void zwaveEvent(hubitat.zwave.commands.manufacturerspecificv2.DeviceSpecificReport cmd) {
 	logTrace "${cmd}"
@@ -570,6 +536,83 @@ void zwaveEvent(hubitat.zwave.commands.wakeupv2.WakeUpNotification cmd, ep=0) {
 	// state.remove("INFO")
 	
 	sendCommands(cmds, 400)
+}
+
+
+/*******************************************************************
+ ***** Event Senders
+********************************************************************/
+
+
+/*******************************************************************
+ ***** Execute / Build Commands
+********************************************************************/
+List<String> getConfigureCmds() {
+	logDebug "getConfigureCmds..."
+
+	List<String> cmds = []
+
+	if (state.resyncAll || !firmwareVersion) {
+		cmds << versionGetCmd()
+	}
+
+	configParams.each { param ->
+		Integer paramVal = getParamValue(param, true)
+		Integer storedVal = getParamStoredValue(param.num)
+
+		if ((paramVal != null) && (state.resyncAll || (storedVal != paramVal))) {
+			logDebug "Changing ${param.title} (#${param.num}) from ${storedVal} to ${paramVal}"
+			cmds += configSetGetCmd(param, paramVal)
+		}
+	}
+
+	if (state.resyncAll) clearVariables()
+	state.remove("resyncAll")
+
+	if (cmds) updateSyncingStatus(6)
+
+	return cmds ?: []
+}
+
+List<String> getRefreshCmds() {
+	List<String> cmds = []
+	cmds << versionGetCmd()
+
+	return cmds ?: []
+}
+
+
+//#include jtp10181.zwaveDriverLibrary
+
+
+/*******************************************************************
+ ***** Z-Wave Reports (COMMON)
+********************************************************************/
+void zwaveEvent(hubitat.zwave.commands.versionv2.VersionReport cmd) {
+	logTrace "${cmd}"
+
+	String fullVersion = String.format("%d.%02d",cmd.firmware0Version,cmd.firmware0SubVersion)
+	String zwaveVersion = String.format("%d.%02d",cmd.zWaveProtocolVersion,cmd.zWaveProtocolSubVersion)
+	device.updateDataValue("firmwareVersion", fullVersion)
+	device.updateDataValue("protocolVersion", zwaveVersion)
+	device.updateDataValue("hardwareVersion", "${cmd.hardwareVersion}")
+
+	logDebug "Received Version Report - Firmware: ${fullVersion}"
+	//setDevModel(new BigDecimal(fullVersion))
+}
+
+void zwaveEvent(hubitat.zwave.commands.manufacturerspecificv2.ManufacturerSpecificReport cmd) {
+	logTrace "${cmd}"
+
+	device.updateDataValue("manufacturer",cmd.manufacturerId.toString())
+	device.updateDataValue("deviceType",cmd.productTypeId.toString())
+	device.updateDataValue("deviceId",cmd.productId.toString())
+
+	logInfo "fingerprint  mfr:\"${hubitat.helper.HexUtils.integerToHexString(cmd.manufacturerId, 2)}\", "+
+		"prod:\"${hubitat.helper.HexUtils.integerToHexString(cmd.productTypeId, 2)}\", "+
+		"deviceId:\"${hubitat.helper.HexUtils.integerToHexString(cmd.productId, 2)}\", "+
+		"inClusters:\"${device.getDataValue("inClusters")}\""+
+		(device.getDataValue("secureInClusters") ? ", secureInClusters:\"${device.getDataValue("secureInClusters")}\"" : "")
 }
 
 void zwaveEvent(hubitat.zwave.Command cmd, ep=0) {
@@ -672,62 +715,6 @@ String multiChannelEncap(hubitat.zwave.Command cmd, ep) {
 	}
 	return cmd.format()
 }
-
-/*******************************************************************
- ***** Execute / Build Commands
-********************************************************************/
-List<String> getConfigureCmds() {
-	logDebug "getConfigureCmds..."
-
-	List<String> cmds = []
-
-	if (state.resyncAll || !firmwareVersion) {
-		cmds << versionGetCmd()
-	}
-
-	configParams.each { param ->
-		Integer paramVal = getParamValue(param, true)
-		Integer storedVal = getParamStoredValue(param.num)
-
-		if ((paramVal != null) && (state.resyncAll || (storedVal != paramVal))) {
-			logDebug "Changing ${param.title} (#${param.num}) from ${storedVal} to ${paramVal}"
-			cmds += configSetGetCmd(param, paramVal)
-		}
-	}
-
-	if (state.resyncAll) clearVariables()
-	state.remove("resyncAll")
-
-	if (cmds) updateSyncingStatus(6)
-
-	return cmds ?: []
-}
-
-List<String> getRefreshCmds() {
-	List<String> cmds = []
-	cmds << versionGetCmd()
-
-	return cmds ?: []
-}
-
-void clearVariables() {
-	device.removeDataValue("configVals")
-	configsList["${device.idAsLong}"] = [:]
-}
-
-Integer getPendingChanges() {
-	Integer configChanges = configParams.count { param ->
-		Integer paramVal = getParamValue(param, true)
-		((paramVal != null) && (paramVal != getParamStoredValue(param.num)))
-	}
-
-	return (configChanges)
-}
-
-
-/*******************************************************************
- ***** Event Senders
-********************************************************************/
 
 
 /*******************************************************************
@@ -834,6 +821,14 @@ Integer getParamValue(Map param, Boolean adjust=false) {
 	return paramVal
 }
 
+//Preference Helpers
+String fmtDesc(String str) {
+	return "<div style='font-size: 85%; font-style: italic; padding: 1px 0px 4px 2px;'>${str}</div>"
+}
+String fmtTitle(String str) {
+	return "<strong>${str}</strong>"
+}
+
 /*** Other Helper Functions ***/
 void updateSyncingStatus(Integer delay=2) {
 	runIn(delay, refreshSyncStatus)
@@ -847,6 +842,20 @@ void refreshSyncStatus() {
 		sendEvent(name:"syncStatus", value:"REFRESH the Page, then Save Preferences")
 		state.remove("deviceSync")
 	}
+}
+
+Integer getPendingChanges() {
+	Integer configChanges = configParams.count { param ->
+		Integer paramVal = getParamValue(param, true)
+		((paramVal != null) && (paramVal != getParamStoredValue(param.num)))
+	}
+
+	return (configChanges)
+}
+
+void clearVariables() {
+	device.removeDataValue("configVals")
+	configsList["${device.idAsLong}"] = [:]
 }
 
 BigDecimal getFirmwareVersion() {
@@ -880,6 +889,20 @@ BigDecimal safeToDec(val, defaultVal=0, roundTo=-1) {
 /*******************************************************************
  ***** Logging Functions
 ********************************************************************/
+
+@Field static final Map debugOpts = [0:"Error", 1:"Warn", 2:"Info", 3:"Debug", 4:"Trace"]
+
+preferences {
+	//Logging Level Options
+	input name: "logLevel", type: "enum", title: fmtTitle("Logging Level (Permanent)"), defaultValue: 3, options: debugOpts
+}
+
+void setLogLevel(String selection) {
+	Short level = debugOpts.find{ selection.equalsIgnoreCase(it.value) }.key
+	device.updateSetting("logLevel",[value:"${level}", type:"enum"])
+	logInfo "Logging Level is: ${level}"
+}
+
 void logsOff() {
 	// logWarn "Debug logging disabled..."
 	// device.updateSetting("debugEnable",[value:"false",type:"bool"])
