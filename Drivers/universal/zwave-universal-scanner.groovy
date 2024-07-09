@@ -65,7 +65,7 @@ metadata {
 		namespace: "jtp10181",
 		author: "Jeff Page (@jtp10181)",
 		singleThreaded: true,
-		importUrl: "https://raw.githubusercontent.com/jtp10181/Hubitat/main/Drivers/generic/zwave-universial-scanner.groovy"
+		importUrl: "https://raw.githubusercontent.com/jtp10181/Hubitat/main/Drivers/universal/zwave-universal-scanner.groovy"
 	) {
 		capability "Actuator"
 		capability "Configuration"
