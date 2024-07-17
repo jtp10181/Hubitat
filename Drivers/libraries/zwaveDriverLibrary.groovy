@@ -85,7 +85,18 @@ void zwaveEvent(hubitat.zwave.commands.versionv2.VersionReport cmd) {
 	device.updateDataValue("protocolVersion", zwaveVersion)
 	device.updateDataValue("hardwareVersion", "${cmd.hardwareVersion}")
 
-	logDebug "Received Version Report - Firmware: ${fullVersion}"
+	if (cmd.targetVersions) {
+		Map tVersions = [:]
+		cmd.targetVersions.each {
+			tVersions[it.target] = String.format("%d.%02d",it.version,it.subVersion)
+			device.updateDataValue("firmware${it.target}Version", tVersions[it.target])
+		}
+		logDebug "Received Version Report - Main Firmware: ${fullVersion} | Targets: ${tVersions}"
+	}
+	else {
+		logDebug "Received Version Report - Firmware: ${fullVersion}"
+	}
+	
 	setDevModel(new BigDecimal(fullVersion))
 }
 
@@ -104,7 +115,7 @@ void zwaveEvent(hubitat.zwave.commands.manufacturerspecificv2.ManufacturerSpecif
 }
 
 void zwaveEvent(hubitat.zwave.Command cmd, ep=0) {
-	logDebug "Unhandled zwaveEvent: $cmd (ep ${ep})"
+	logDebug "Unhandled zwaveEvent: $cmd (ep ${ep}) [${getObjectClassName(cmd)}]"
 }
 
 
@@ -232,13 +243,13 @@ String secureCmd(String cmd) {
 	return zwaveSecureEncap(cmd)
 }
 String secureCmd(hubitat.zwave.Command cmd, ep=0) {
-	return zwaveSecureEncap(multiChannelEncap(cmd, ep))
+	return zwaveSecureEncap(multiChannelCmd(cmd, ep))
 }
 
 //MultiChannel Encapsulate if needed
-//This is called from secureCmd or supervisionEncap, do not call directly
-String multiChannelEncap(hubitat.zwave.Command cmd, ep) {
-	//logTrace "multiChannelEncap: ${cmd} (ep ${ep})"
+//This is called from secureCmd or superviseCmd, do not call directly
+String multiChannelCmd(hubitat.zwave.Command cmd, ep) {
+	//logTrace "multiChannelCmd: ${cmd} (ep ${ep})"
 	if (ep > 0) {
 		cmd = zwave.multiChannelV3.multiChannelCmdEncap(destinationEndPoint:ep).encapsulate(cmd)
 	}
@@ -257,7 +268,7 @@ Integer getParamStoredValue(Integer paramNum) {
 	return safeToInt(configsMap[paramNum], null)
 }
 
-void setParamStoredValue(Integer paramNum, Integer value) {
+void setParamStoredValue(Integer paramNum, Number value) {
 	//Using Data (Map) instead of State Variables
 	TreeMap configsMap = getParamStoredMap()
 	configsMap[paramNum] = value
@@ -283,7 +294,7 @@ Map getParamStoredMap() {
 	return configsMap
 }
 
-//Parameter List Functions
+/*** Parameter List Functions ***/
 //This will rebuild the list for the current model and firmware only as needed
 //paramsList Structure: MODEL:[FIRMWARE:PARAM_MAPS]
 //PARAM_MAPS [num, name, title, description, size, defaultVal, options, firmVer]
@@ -407,7 +418,7 @@ String fmtDesc(String str) {
 	return "<div style='font-size: 85%; font-style: italic; padding: 1px 0px 4px 2px;'>${str}</div>"
 }
 String fmtHelpInfo(String str) {
-	String info = "${DRIVER} v${VERSION}"
+	String info = "${PACKAGE} ${DRIVER} v${VERSION}".trim()
 	String prefLink = "<a href='${COMM_LINK}' target='_blank'>${str}<br><div style='font-size: 70%;'>${info}</div></a>"
 	String topStyle = "style='font-size: 18px; padding: 1px 12px; border: 2px solid Crimson; border-radius: 6px;'" //SlateGray
 	String topLink = "<a ${topStyle} href='${COMM_LINK}' target='_blank'>${str}<br><div style='font-size: 14px;'>${info}</div></a>"
@@ -433,33 +444,32 @@ void refreshSyncStatus() {
 }
 
 void updateLastCheckIn() {
-	def nowDate = new Date()
+	Date nowDate = new Date()
 	state.lastCheckInDate = convertToLocalTimeString(nowDate)
 
 	Long lastExecuted = state.lastCheckInTime ?: 0
 	Long allowedMil = 24 * 60 * 60 * 1000   //24 Hours
 	if (lastExecuted + allowedMil <= nowDate.time) {
 		state.lastCheckInTime = nowDate.time
-		if (lastExecuted) runIn(4, doCheckIn)
+		if (lastExecuted) runIn(2, doCheckIn)
 		scheduleCheckIn()
 	}
 }
 
 void scheduleCheckIn() {
-	def cal = Calendar.getInstance()
-	cal.add(Calendar.MINUTE, -1)
-	Integer hour = cal[Calendar.HOUR_OF_DAY]
-	Integer minute = cal[Calendar.MINUTE]
-	schedule( "0 ${minute} ${hour} * * ?", doCheckIn)
+	unschedule("doCheckIn")
+	runIn(86340, doCheckIn)
 }
 
 void doCheckIn() {
-	String devModel = (state.deviceModel ?: "NA") + (state.subModel ? ".${state.subModel}" : "")
-	String checkUri = "http://jtp10181.gateway.scarf.sh/${DRIVER}/chk-${devModel}-v${VERSION}"
+	scheduleCheckIn()
+	String pkg = PACKAGE ?: DRIVER
+	String devModel = (state.deviceModel ?: (PACKAGE ? DRIVER : "NA")) + (state.subModel ? ".${state.subModel}" : "")
+	String checkUri = "http://jtp10181.gateway.scarf.sh/${pkg}/chk-${devModel}-v${VERSION}"
 
 	try {
-		httpGet(uri:checkUri, timeout:4) { logDebug "Driver ${DRIVER} ${devModel} v${VERSION}" }
-		state.lastCheckInTime = (new Date()).time
+		httpGet(uri:checkUri, timeout:4) { logDebug "Driver ${pkg} ${devModel} v${VERSION}" }
+		state.lastCheckInTime = now()
 	} catch (Exception e) { }
 }
 
@@ -638,7 +648,7 @@ BigDecimal safeToDec(val, defaultVal=0, roundTo=-1) {
 }
 
 Boolean isDuplicateCommand(Long lastExecuted, Long allowedMil) {
-	!lastExecuted ? false : (lastExecuted + allowedMil > new Date().time)
+	!lastExecuted ? false : (lastExecuted + allowedMil > now())
 }
 
 

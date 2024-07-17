@@ -132,6 +132,22 @@
         "ZWave",
         "Tools & Utilities"
       ]
+    },
+    {
+      "id": "772da74e-af07-4205-beff-8bdaa3ec3e82",
+      "name": "Universal Z-Wave Drivers",
+      "category": "Control",
+      "location": "https://raw.githubusercontent.com/jtp10181/Hubitat/main/packageManifest/universal-zwave-drivers.json",
+      "description": "Package of Universal Drivers and Utilities for modern Z-Wave devices",
+      "descriptive": "",
+      "tags": [
+        "Tools & Utilities",
+        "Relays",
+        "Lights & Switches",
+        "Buttons",
+        "Misc. Devices",
+        "ZWave"
+      ]
     }
   ]
 }

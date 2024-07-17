@@ -1,0 +1,35 @@
+{
+  "packageName": "Universal Z-Wave Drivers",
+  "author": "Jeff Page (@jtp10181)",
+  "minimumHEVersion": "2.3.8",
+  "dateReleased": "2024-07-16",
+  "documentationLink": "https://github.com/jtp10181/Hubitat/tree/main/Drivers/universal",
+  "communityLink": "https://community.hubitat.com/t/universal-z-wave-drivers/140325",
+  "releaseNotes": "Drivers [0.4.0] - 2024-07-16\n  - Added full associations detection and support\n  - Added scene/button detection and support\n  - Configure will run any scans that are missing\n\nScanner [0.4.0] - 2024-07-16\n  - Refactor code to get ready for library merges\n  - Merge library and universal switch code improvements\n  - Settings stored data changed to JSON string\n  - Added friendly names to CC Report\n  - Added Basic On/Off commands to test most devices\n  - Parameter query will now sync settings from device automatically\n  - Added full associations detection and support\n  - Configure will run any scans that are missing",
+  "drivers": [
+    {
+      "id": "d7510486-3362-4808-a0f7-7144fd90654f",
+      "name": "Z-Wave Universal Scanner",
+      "namespace": "jtp10181",
+      "location": "https://jtp10181.gateway.scarf.sh/Uni-ZW/zwave-universal-scanner.groovy",
+      "required": true,
+      "version": "0.4.0"
+    },
+    {
+      "id": "2a2ef806-cada-4d29-a878-39d60721ebb0",
+      "name": "Universal Z-Wave Switch",
+      "namespace": "jtp10181",
+      "location": "https://jtp10181.gateway.scarf.sh/Uni-ZW/universal-zwave-switch.groovy",
+      "required": false,
+      "version": "0.4.0"
+    },
+    {
+      "id": "2c6419db-518b-45d2-9db7-bddf348218bc",
+      "name": "Universal Z-Wave Dimmer",
+      "namespace": "jtp10181",
+      "location": "https://jtp10181.gateway.scarf.sh/Uni-ZW/universal-zwave-dimmer.groovy",
+      "required": false,
+      "version": "0.4.0"
+    }
+  ]
+}

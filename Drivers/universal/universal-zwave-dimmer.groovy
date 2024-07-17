@@ -11,6 +11,11 @@ Changelog:
 ## Known Issues
   - Do not try to scan multiple devices at once
 
+## [0.4.0] - 2024-07-16 (@jtp10181)
+  - Added full associations detection and support
+  - Added scene/button detection and support
+  - Configure will run any scans that are missing
+
 ## [0.1.0] - 2024-07-07 (@jtp10181)
   - Initial Release based from Universal Scanner
   - Added supervised commands support
@@ -32,7 +37,7 @@ import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
 import groovy.transform.Field
 
-@Field static final String VERSION = "0.1.0"
+@Field static final String VERSION = "0.4.0"
 @Field static final String PACKAGE = "Uni-ZW"
 @Field static final String DRIVER = "Dimmer"
 @Field static final String COMM_LINK = "https://community.hubitat.com/t/universal-z-wave-drivers/140325"
@@ -51,6 +56,10 @@ metadata {
 		capability "ChangeLevel"
 		capability "Configuration"
 		capability "Refresh"
+		capability "PushableButton"
+		capability "HoldableButton"
+		capability "ReleasableButton"
+		capability "DoubleTapableButton"
 
 		//Modified from default to add duration argument
 		command "startLevelChange", [
@@ -61,7 +70,7 @@ metadata {
 			[name:"value*",type:"NUMBER", description:"Parameter Value"],
 			[name:"size",type:"NUMBER", description:"Parameter Size"]]
 
-		command "queryDevice", [[name: "option*", type: "ENUM", constraints: ["Parameters", "Sync Only"]]]
+		command "queryDevice", [[name: "option*", type: "ENUM", constraints: ["Parameters", "Associations", "Sync Only"]]]
 
 		//DEBUGGING
 		// command "debugShowVars"
@@ -102,6 +111,13 @@ metadata {
 				description: fmtDesc("To discover settings for your device, run Query Device (Parameters) and watch the Current States for updates")
 		}
 
+		assocSettings.findAll{ it.num > 1 }.each { assoc ->
+			// logDebug "parameters assocSettings ${assoc}"
+			input "assocDNI${assoc.num}", "string", required: false,
+				title: fmtTitle("Associations - Group ${assoc.num} (${assoc.name})"),
+				description: fmtDesc("${assoc.name} - Supports up to ${assoc.maxNodes} Hex Device IDs separated by commas. Save as blank or 0 to clear.")
+		}
+
 		input "supervisedCmds", "bool",
 			title: fmtTitle("Supervised Commands") + "<em> (Experimental)</em>",
 			description: fmtDesc("This can increase reliability when the device is paired with security, but may not work correctly on all devices."),
@@ -129,26 +145,29 @@ void debugShowVars() {
 	// log.warn "paramsList ${paramsList.hashCode()} ${paramsList}"
 	// log.warn "paramsMap ${paramsMap.hashCode()} ${paramsMap}"
 	log.warn "paramScan ${paramScan.hashCode()} ${paramScan}"
+	log.warn "assocScan ${assocScan.hashCode()} ${assocScan}"
 	log.warn "supervisedPackets ${supervisedPackets.hashCode()} ${supervisedPackets}"
 }
 
 //Association Settings
-@Field static final int maxAssocGroups = 1
-@Field static final int maxAssocNodes = 1
+// @Field static final int maxAssocGroups = 1
+// @Field static final int maxAssocNodes = 1
 
 /*** Static Lists and Settings ***/
 @Field static Map<String, Long> turningOn = new java.util.concurrent.ConcurrentHashMap()
 
 //Set Command Class Versions
 @Field static final Map commandClassVersions = [
-	0x25: 2,	// Switch Binary (switchbinary)
-	0x26: 4,	// Switch Multilevel (switchmultilevel)
+	0x5B: 3,	// Central Scene
+	0x25: 2,	// Switch Binary (switchBinary)
+	0x26: 4,	// Switch Multilevel (switchMultilevel)
 	0x60: 3,	// Multi Channel
 	0x6C: 1,	// Supervision (supervision)
 	0x70: 3,	// Configuration (configuration)
-	0x72: 2,	// Manufacturer Specific (manufacturerspecific)
-	0x85: 2,	// Association (associationv2)
-	0x8E: 3,	// Multi Channel Association (multichannelassociationv3)
+	0x72: 2,	// Manufacturer Specific (manufacturerSpecific)
+	0x85: 2,	// Association (association)
+	0x8E: 3,	// Multi Channel Association (multiChannelAssociation)
+	0x59: 3,	// Association Group Information (associationGrpInfo)
 	0x86: 2,	// Version (version)
 ]
 
@@ -169,17 +188,41 @@ void initialize() {
 List<String> configure() {
 	logWarn "configure..."
 
+	state.remove("deviceSync")
+	state.remove("queryParams")
+	state.remove("queryAssoc")
+
 	if (!pendingChanges || state.resyncAll == null) {
 		logDebug "Enabling Full Re-Sync"
-		clearVariables()
 		state.resyncAll = true
 	}
 
-	List<String> cmds = ["delay 0"]
+	List<String> cmds = []
+	Integer totalDelay = 100
+	if (!device.getDataValue("zwAssociations")) {
+		logWarn "Queuing up full Associations Query"
+		runInMillis(totalDelay, scanAssociations)
+		totalDelay += 2000
+	}
+	if ((state.configCCVer == null || state.configCCVer >= 3) && !device.getDataValue("parameters")) {
+		logWarn "Queuing up full Parameters Query"
+		runInMillis(totalDelay, scanParamsCC)
+		totalDelay += 5000
+	}
+	if (state.numberOfButtons == null) sendEvent(name:"numberOfButtons", value: 0)
+	if (state.endPoints == null) state.endPoints = 0
+
+	cmds << secureCmd(zwave.multiChannelV3.multiChannelEndPointGet())
+	cmds << secureCmd(zwave.centralSceneV3.centralSceneSupportedGet())
+	cmds << "delay ${totalDelay}"
+
 	cmds += getRefreshCmds()
 	cmds << "delay 2000"
 	cmds += getConfigureCmds()
 
+	if (state.resyncAll) clearVariables()
+
+	updateSyncingStatus(6)
 	return cmds ? delayBetween(cmds, 300) : []
 }
 
@@ -240,19 +283,25 @@ String stopLevelChange() {
 	return switchMultilevelStopLvChCmd()
 }
 
+//Button commands required with capabilities
+void push(buttonId) { sendBasicButtonEvent(buttonId, "pushed") }
+void hold(buttonId) { sendBasicButtonEvent(buttonId, "held") }
+void release(buttonId) { sendBasicButtonEvent(buttonId, "released") }
+void doubleTap(buttonId) { sendBasicButtonEvent(buttonId, "doubleTapped") }
+
 /*** Custom Commands ***/
 void queryDevice(option) {
-	if (option == "Parameters") {
-		String cmd = secureCmd(zwave.versionV2.versionCommandClassGet(requestedCommandClass:0x70))
-		sendEvent(name:"queryStatus", value:"Probing for Support...")
-		sendCommands(cmd)
-	}
-	else if (option == "Sync Only") {
-		syncFromDevice()
-	}
-	else {
-		logWarn "queryDevice unrecognized option: ${option}"
-	}
+	if (option == "Parameters") 			scanParamsCC()
+	else if (option == "Associations")		scanAssociations()
+	else if (option == "Sync Only")			syncFromDevice()
+	else logWarn "queryDevice unrecognized option: ${option}"
+}
+
+void scanParamsCC() {
+	state.queryParams = true
+	String cmd = secureCmd(zwave.versionV2.versionCommandClassGet(requestedCommandClass:0x70))
+	sendEvent(name:"queryStatus", value:"Probing for Config Support...")
+	sendCommands(cmd)
 }
 
 void scanParameters(param=1) {
@@ -261,8 +310,18 @@ void scanParameters(param=1) {
 	Map args = [parameterNumber: param]
 	String cmd = secureCmd(new hubitat.zwave.commands.configurationv3.ConfigurationPropertiesGet(args))
 	sendEvent(name:"queryStatus", value:"Scanning ($param)")
-
 	sendCommands(cmd)
+}
+
+void scanAssociations() {
+	logDebug "scanAssociations probing for number of association groups"
+	state.queryAssoc = true
+	assocScan = [:]
+	List<String> cmds = []
+	cmds << secureCmd(zwave.associationV2.associationGroupingsGet())
+	cmds << secureCmd(zwave.multiChannelAssociationV2.multiChannelAssociationGroupingsGet())
+	sendEvent(name:"queryStatus", value:"Probing for Association Groups...")
+	sendCommands(cmds)
 }
 
 void syncFromDevice() {
@@ -342,6 +401,41 @@ void zwaveEvent(hubitat.zwave.commands.configurationv3.ConfigurationReport cmd) 
 	}
 }
 
+//Association Scanning
+void zwaveEvent(hubitat.zwave.commands.associationv2.AssociationGroupingsReport cmd) {
+	logTrace "${cmd}"
+
+	logDebug "Association Groups Report found ${cmd.supportedGroupings} groups"
+	//assocScan[0] = [groups: cmd.supportedGroupings]
+	state.assocGroups = cmd.supportedGroupings
+
+	if (cmd.supportedGroupings) {
+		List<String> cmds = []
+		for (int i = 1; i <= cmd.supportedGroupings; i++) {
+			cmds << associationGetCmd(i)
+		}
+		sendEvent(name:"queryStatus", value:"Checking (${cmd.supportedGroupings}) Groups...")
+		sendCommands(cmds, 500)
+	}
+}
+
+//Association Scanning
+void zwaveEvent(hubitat.zwave.commands.multichannelassociationv3.MultiChannelAssociationGroupingsReport cmd) {
+	logTrace "${cmd}"
+
+	logDebug "Multi-Channel Association Groups Report found ${cmd.supportedGroupings} groups"
+}
+
+//Association Scanning (Name)
+void zwaveEvent(hubitat.zwave.commands.associationgrpinfov3.AssociationGroupNameReport cmd) {
+	logTrace "${cmd}"
+	
+	String name = new String(cmd.name as byte[])
+	if (assocScan[cmd.groupingIdentifier] != null){
+		assocScan[cmd.groupingIdentifier].name = name
+	}
+}
+
 //Associations
 void zwaveEvent(hubitat.zwave.commands.associationv2.AssociationReport cmd) {
 	logTrace "${cmd}"
@@ -349,9 +443,41 @@ void zwaveEvent(hubitat.zwave.commands.associationv2.AssociationReport cmd) {
 
 	Integer grp = cmd.groupingIdentifier
 
+	//Handle Query / Scan responses
+	if (state.queryAssoc && grp > 0) {
+		assocScan[cmd.groupingIdentifier] = [
+			num: cmd.groupingIdentifier,
+			maxNodes: cmd.maxNodesSupported
+		]
+
+		//Got the last one, schedule processing
+		if (grp >= maxAssocGroups) {
+			runIn (2, processAssocScan)
+		}
+
+		List<String> cmds = []
+		cmds << secureCmd(zwave.associationGrpInfoV1.associationGroupNameGet(groupingIdentifier: grp))
+		// cmds << secureCmd(zwave.associationGrpInfoV1.associationGroupCommandListGet(groupingIdentifier: grp))
+		sendCommands(cmds)
+	}
+
 	if (grp == 1) {
-		logDebug "Lifeline Association: ${cmd.nodeId}"
-		state.group1Assoc = (cmd.nodeId == [zwaveHubNodeId]) ? true : false
+		if (!state.endPoints) {
+			logDebug "Lifeline Association: ${cmd.nodeId}"
+			state.group1Assoc = (cmd.nodeId == [zwaveHubNodeId]) ? true : false
+		}
+	}
+	else if (grp > 1 && grp <= maxAssocGroups) {
+		String dnis = convertIntListToHexList(cmd.nodeId)?.join(", ")
+		logDebug "Confirmed Group $grp Association: " + (cmd.nodeId.size()>0 ? "${dnis} // ${cmd.nodeId}" : "None")
+
+		if (cmd.nodeId.size() > 0) {
+			if (!state.assocNodes) state.assocNodes = [:]
+			state.assocNodes["$grp"] = cmd.nodeId
+		} else {
+			state.assocNodes?.remove("$grp" as String)
+		}
+		device.updateSetting("assocDNI$grp", [value:"${dnis}", type:"string"])
 	}
 	else {
 		logDebug "Unhandled Group: $cmd"
@@ -361,9 +487,16 @@ void zwaveEvent(hubitat.zwave.commands.associationv2.AssociationReport cmd) {
 //Associations (MultiChannel)
 void zwaveEvent(hubitat.zwave.commands.multichannelassociationv3.MultiChannelAssociationReport cmd) {
 	logTrace "${cmd}"
+	updateSyncingStatus()
+
+	List mcNodes = []
+	cmd.multiChannelNodeIds.each {mcNodes += "${it.nodeId}:${it.endPointId}"}
 
 	if (cmd.groupingIdentifier == 1) {
-		logDebug "Lifeline Association: ${cmd.nodeId} | MC: ${cmd.multiChannelNodeIds}"
+		if (state.endPoints) {
+			logDebug "Lifeline Association: ${cmd.nodeId} | MC: ${mcNodes}"
+			state.group1Assoc = (mcNodes == ["${zwaveHubNodeId}:0"] ? true : false)
+		}
 	}
 	else {
 		logDebug "Unhandled Group: $cmd"
@@ -398,7 +531,29 @@ String digitalCheck() {
 //Handle device that sends Hail instead of status updates
 void zwaveEvent(hubitat.zwave.commands.hailv1.Hail cmd, ep=0) {
 	logTrace "${cmd} (ep ${ep})"
-	sendCommands(switchMultilevelGetCmd())
+	sendCommands(getRefreshCmds())
+}
+
+//Command Class Reports
+void zwaveEvent(hubitat.zwave.commands.versionv2.VersionCommandClassReport cmd) {
+	logTrace "${cmd}"
+
+	Integer ccNum = (cmd.requestedCommandClass as Integer)
+	Integer ccVer = (cmd.commandClassVersion as Integer)
+	logInfo "--- CommandClassReport - class:0x${intToHexStr(ccNum)}, version:${ccVer}"
+
+	if (ccNum == 0x70 && state.queryParams) {
+		state.configCCVer = ccVer
+		if (ccVer >= 3) {
+			logDebug "Device reports Configuration CC v${ccVer}, supports fetching properties"
+			runInMillis(500, scanParameters)
+		}
+		else {
+			logWarn "Device reports Configuration CC v${ccVer}, DOES NOT support fetching properties"
+			sendEvent(name:"queryStatus", value:"Parameter Query not supported by device")
+			state.remove("queryParams")
+		}
+	}
 }
 
 //Parameter Scanning
@@ -435,7 +590,8 @@ void zwaveEvent(hubitat.zwave.commands.configurationv3.ConfigurationPropertiesRe
 	}
 	else {
 		logDebug "Received Param $cmd.parameterNumber (${status}), that was the last one"
-		sendEvent(name:"queryStatus", value:"Scanning Final Cleanup... please wait")
+		sendEvent(name:"queryStatus", value:"Query Complete... wait for processing")
+		state.remove("queryParams")
 		runIn(4, processParamScan)
 	}
 
@@ -467,18 +623,79 @@ void zwaveEvent(hubitat.zwave.commands.configurationv3.ConfigurationInfoReport c
 	}
 }
 
-void zwaveEvent(hubitat.zwave.commands.versionv2.VersionCommandClassReport cmd) {
+//Multi-Channel Detection
+void zwaveEvent(hubitat.zwave.commands.multichannelv3.MultiChannelEndPointReport cmd, ep=0) {
+	logTrace "${cmd} (ep ${ep})"
+
+	if (cmd.endPoints > 0) {
+		logDebug "Endpoints (${cmd.endPoints}) Detected and Enabled"
+		state.endPoints = cmd.endPoints
+		//runIn(1,createChildDevices)
+	}
+}
+
+//Central Scene (buttons) Detection
+void zwaveEvent(hubitat.zwave.commands.centralscenev3.CentralSceneSupportedReport cmd) {
 	logTrace "${cmd}"
 
-	//cmd.commandClassVersion
-	if ((cmd.commandClassVersion as Integer) >= 3) {
-		logDebug "Device reports Configuration CC v${cmd.commandClassVersion}, supports fetching properties"
-		runInMillis(500, scanParameters)
+	//Figure out the max key presses per button
+	Integer maxTaps = 1
+	cmd.supportedKeyAttributes.each {
+		if (it.keyPress5x) maxTaps=5
+		else if (it.keyPress4x && maxTaps < 4) maxTaps=4
+		else if (it.keyPress3x && maxTaps < 3) maxTaps=3
+		else if (it.keyPress2x && maxTaps < 2) maxTaps=2
+		else if (it.keyPress1x && maxTaps < 1) maxTaps=1
 	}
-	else {
-		logWarn "Device reports Configuration CC v${cmd.commandClassVersion}, DOES NOT support fetching properties"
-		sendEvent(name:"queryStatus", value:"Parameter Query not supported by device")
+	Integer nob = cmd.supportedScenes * maxTaps
+	state.numberOfButtons = [cmd.supportedScenes, nob]
+	sendEvent(name:"numberOfButtons", value: nob)
+	logDebug "CentralSceneSupportedReport: Actual Buttons: ${cmd.supportedScenes}, maxTaps ${maxTaps}, numberofButtons: ${nob}"
+
+	//Save to device data
+	Map csMap = [
+		supportedScenes: cmd.supportedScenes,
+		identical: cmd.identical,
+		supportedKeyAttributes: cmd.supportedKeyAttributes,
+		numberOfButtons: nob,
+		maxTaps: maxTaps
+	]
+
+	String csJson = JsonOutput.toJson(csMap) as String
+	device.updateDataValue("zwCentralScene", csJson)
+}
+
+//Central Scene (buttons)
+void zwaveEvent(hubitat.zwave.commands.centralscenev3.CentralSceneNotification cmd, ep=0){
+	logTrace "${cmd} (ep ${ep})"
+
+	Integer physicalButtons = state.numberOfButtons?.getAt(0)
+	Integer btnBaseNum = cmd.sceneNumber ?: 0
+	Map sceneEvt = [name: "", value: btnBaseNum, desc: "", type:"physical", isStateChange:true]
+	Integer keyAtt = cmd.keyAttributes as Integer
+	String btnDesc = ""
+
+	if (!physicalButtons || !btnBaseNum) return
+
+	//DoubleTapped
+	if (keyAtt == 3) {
+		sceneEvt.name = "doubleTapped"
+		sceneEvt.desc = "button ${sceneEvt.value} ${sceneEvt.name}"
+		sendEventLog(sceneEvt)
 	}
+
+	if (keyAtt == 2) sceneEvt.name = "held"
+	else if (keyAtt == 1) sceneEvt.name = "released"
+	else sceneEvt.name = "pushed"
+
+	if (keyAtt >= 3) {
+		//Adjust button number
+		btnDesc = " [button ${btnBaseNum} pushed ${keyAtt - 1}x]"
+		sceneEvt.value = btnBaseNum + (physicalButtons * (keyAtt - 2))
+	}
+
+	sceneEvt.desc = "button ${sceneEvt.value} ${sceneEvt.name}${btnDesc}"
+	sendEventLog(sceneEvt)
 }
 
 void zwaveEvent(hubitat.zwave.commands.manufacturerspecificv2.DeviceSpecificReport cmd) {
@@ -534,6 +751,12 @@ void sendSwitchEvents(rawVal, String type, Integer ep=0) {
 	}
 }
 
+void sendBasicButtonEvent(buttonId, String name) {
+	String desc = "button ${buttonId} ${name} (digital)"
+	sendEventLog(name:name, value:buttonId, type:"digital", desc:desc, isStateChange:true)
+}
+
+
 /*******************************************************************
  ***** Execute / Build Commands
 ********************************************************************/
@@ -580,9 +803,20 @@ List getConfigureAssocsCmds(Boolean logging=false) {
 	List<String> cmds = []
 
 	if (!state.group1Assoc || state.resyncAll) {
-		if (logging) logDebug "Setting lifeline association..."
-		cmds << associationSetCmd(1, [zwaveHubNodeId])
-		cmds << associationGetCmd(1)
+		if (state.group1Assoc == false) {
+			if (logging) logDebug "Clearing incorrect lifeline association..."
+			cmds << associationRemoveCmd(1,[])
+			cmds << secureCmd(zwave.multiChannelAssociationV3.multiChannelAssociationRemove(groupingIdentifier: 1, nodeId:[], multiChannelNodeIds:[]))
+		}
+		if (logging) logDebug "Setting ${state.endPoints ? 'multi-channel' : 'standard'} lifeline association..."
+		if (state.endPoints > 0) {
+			cmds << secureCmd(zwave.multiChannelAssociationV3.multiChannelAssociationSet(groupingIdentifier: 1, multiChannelNodeIds: [[nodeId: zwaveHubNodeId, bitAddress:0, endPointId: 0]]))
+			cmds << mcAssociationGetCmd(1)
+		}
+		else {
+			cmds << associationSetCmd(1, [zwaveHubNodeId])
+			cmds << associationGetCmd(1)
+		}
 	}
 
 	for (int i = 2; i <= maxAssocGroups; i++) {
@@ -669,14 +903,84 @@ void processParamScan() {
 			v.remove("descTmp")
 		}
 		//Save to List
-		paramsMap += paramScan[k]
+		paramsMap += v
 	}
 	//Dump list to device data
 	String paramsJson = JsonOutput.toJson(paramsMap) as String
 	device.updateDataValue("parameters", paramsJson)
-	//sendEvent(name:"queryStatus", value:"Scan Complete - REFRESH the Page")
+	sendEvent(name:"queryStatus", value:"Parameter Processing Completed")
 	logDebug "processParamScan Completed"
+	state.remove("queryParams")
+	paramScan.clear()
 	syncFromDevice()
+}
+
+//Gets full list of params
+List<Map> getConfigParams() {
+	//logDebug "Get Config Params"
+	if (!device) return []
+	List<Map> paramsMap = []
+	String paramsJson = device.getDataValue("parameters")
+	if (paramsJson) {
+		try {
+			paramsMap = (new JsonSlurper().parseText(paramsJson)) as List
+		}
+		catch(Exception e) {
+			logWarn("Invalid dataValue (parameters): ${e}")
+			device.removeDataValue("parameters")
+		}
+	}
+	return paramsMap
+}
+
+
+//assocScan Structure: ASSOC_NUM:[ASSOC_INFO]
+//ASSOC_INFO [num, name, maxNodes]
+@Field static Map<String, Map> assocScan = new java.util.concurrent.ConcurrentHashMap()
+
+//Process the scanned associations and save to data
+void processAssocScan() {
+	List<Map> assocMaps = []
+	assocScan.each { num, assoc ->
+		if (num > 0) { assocMaps += assoc }
+	}
+	//Dump list to device data
+	String assocJson = JsonOutput.toJson(assocMaps) as String
+	device.updateDataValue("zwAssociations", assocJson)
+	sendEvent(name:"queryStatus", value:"Association Processing Completed")
+	logDebug "processAssocScan Completed"
+	state.remove("queryAssoc")
+	assocScan.clear()
+}
+
+//Gets full list of Associations
+List<Map> getAssocSettings() {
+	if (!device) return []
+	List<Map> assocMap = []
+	String assocJson = device.getDataValue("zwAssociations")
+	if (assocJson) {
+		try {
+			assocMap = (new JsonSlurper().parseText(assocJson)) as List
+		}
+		catch(Exception e) {
+			logWarn("Invalid dataValue (associations): ${e}")
+			device.removeDataValue("zwAssociations")
+		}
+	}
+	// logDebug "getAssocSettings ${assocMap}"
+	return assocMap
+}
+
+//Get max groups from state or stored data if needed
+Integer getMaxAssocGroups() {
+	if (state.assocGroups) {
+		return state.assocGroups
+	}
+	else {
+		Integer groups = assocSettings.size() ?: 1
+		state.assocGroups = groups
+		return groups
+	}
 }
 
 
@@ -805,7 +1109,7 @@ void zwaveEvent(hubitat.zwave.commands.manufacturerspecificv2.ManufacturerSpecif
 }
 
 void zwaveEvent(hubitat.zwave.Command cmd, ep=0) {
-	logDebug "Unhandled zwaveEvent: $cmd (ep ${ep})"
+	logDebug "Unhandled zwaveEvent: $cmd (ep ${ep}) [${getObjectClassName(cmd)}]"
 }
 
 
@@ -957,7 +1261,7 @@ String multiChannelCmd(hubitat.zwave.Command cmd, ep) {
 @Field static Map<String, Short> sessionIDs = new java.util.concurrent.ConcurrentHashMap()
 @Field static final Map supervisedStatus = [0x00:"NO SUPPORT", 0x01:"WORKING", 0x02:"FAILED", 0xFF:"SUCCESS"]
 @Field static final Integer SUPERVISED_RETRIES = 2
-@Field static final Integer SUPERVISED_DELAY_MS = 500
+@Field static final Integer SUPERVISED_DELAY_MS = 1000
 
 String superviseCmd(hubitat.zwave.Command cmd, ep=0) {
 	//logTrace "superviseCmd: ${cmd} (ep ${ep})"
@@ -1003,7 +1307,7 @@ void supervisionCheck(Map data) {
 	Integer packetsCount = supervisedPackets[device.id]?.size() ?: 0
 	logTrace "Supervision Check #${num} Session ${sID}, Packet Count: ${packetsCount}"
 
-	if (supervisedPackets[device.id].containsKey(sID)) {
+	if (supervisedPackets[device.id]?.containsKey(sID)) {
 		if (supervisedPackets[device.id][sID].working) {
 			logDebug "Supervision Session ${sID} is WORKING status, will not retry"
 			supervisedPackets[device.id].remove(sID)
@@ -1036,18 +1340,19 @@ void zwaveEvent(hubitat.zwave.commands.supervisionv1.SupervisionReport cmd, ep=0
 	Integer status = (cmd.status as Integer)
 
 	switch (status) {
-		case 0x00: // "No Support"
-		case 0x02: // "Failed"
-			logWarn "Supervision ${supervisedStatus[status]} (sessionID: ${sID}, status: ${status})"
-			break
 		case 0x01: // "Working" - This is as good as success, device got the message
-			logDebug "Supervision ${supervisedStatus[status]} (sessionID: ${sID}, status: ${status})"
+			logDebug "Supervised Command ${supervisedStatus[status]} (sessionID: ${sID})"
 			if (supervisedPackets[device.id].containsKey(sID)) {
 				supervisedPackets[device.id][sID].working = true
 			}
 			break
 		case 0xFF: // "Success"
-			logDebug "Supervision ${supervisedStatus[status]} (sessionID: ${sID}, status: ${status})"
+			logDebug "Supervised Command ${supervisedStatus[status]} (sessionID: ${sID})"
+			supervisedPackets[device.id].remove(sID)
+			break
+		case 0x00: // "No Support"
+		case 0x02: // "Failed"
+			logWarn "Supervised Command ${supervisedStatus[status]} (sessionID: ${sID})"
 			supervisedPackets[device.id].remove(sID)
 			break
 	}
@@ -1096,25 +1401,6 @@ Map getParamStoredMap() {
 //Verify the list and build if its not populated
 void verifyParamsList() {
 	//NOT USED
-}
-
-//Gets full list of params
-List<Map> getConfigParams() {
-	//logDebug "Get Config Params"
-	if (!device) return []
-	List<Map> paramsMap = []
-	String paramsJson = device.getDataValue("parameters")
-	if (paramsJson) {
-		try {
-			paramsMap = (new JsonSlurper().parseText(paramsJson)) as Map
-		}
-		catch(Exception e) {
-			logWarn("Invalid dataValue (parameters): ${e}")
-			device.removeDataValue("parameters")
-		}
-	}
-	//logDebug "${paramsMap}"
-	return paramsMap
 }
 
 //Get a single param by name or number
@@ -1177,7 +1463,7 @@ void refreshSyncStatus() {
 	sendEvent(name:"syncStatus", value:(changes ? "${changes} Pending Changes" : "Synced"))
 	device.updateDataValue("configVals", getParamStoredMap()?.inspect())
 	if (changes==0 && state.deviceSync) {
-		sendEvent(name:"queryStatus", value:"Scan Complete -<br> REFRESH the Page, then Save")
+		sendEvent(name:"queryStatus", value:"Sync Complete -<br> REFRESH the Page, then Save")
 		state.remove("deviceSync")
 	}
 }
@@ -1230,6 +1516,7 @@ String getAssocDNIsSetting(grp) {
 List getAssocDNIsSettingNodeIds(grp) {
 	String dni = getAssocDNIsSetting(grp)
 	List nodeIds = convertHexListToIntList(dni.split(","))
+	Integer maxAssocNodes = assocSettings.find{ it.num = grp }?.maxNodes ?: 1
 
 	if (dni && !nodeIds) {
 		logWarn "'${dni}' is not a valid value for the 'Device Associations - Group ${grp}' setting.  All z-wave devices have a 2 character Device Network ID and if you're entering more than 1, use commas to separate them."
