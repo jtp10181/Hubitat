@@ -2,34 +2,34 @@
   "packageName": "Zooz Modules Advanced Drivers",
   "author": "Jeff Page (@jtp10181)",
   "minimumHEVersion": "2.3.4",
-  "dateReleased": "2024-04-05",
+  "dateReleased": "2024-09-14",
   "documentationLink": "https://github.com/jtp10181/Hubitat/tree/main/Drivers/zooz",
   "communityLink": "https://community.hubitat.com/t/zooz-zen54/114592",
-  "releaseNotes": "ZEN53 [1.0.4] - 2024-04-05\n  - Added singleThreaded flag\n  - Added option to set position to 0 when closed\n  - Updated Library and common code\n\nZEN54 [1.1.4] - 2023-07-09\n  - Fixed MissingMethodException (var type) issue with startLevelChange\n\nZEN55 [1.0.0] - 2023-05-28\n  - Updated to current library code\n",
+  "releaseNotes": "Version [1.2.0] - 2024-09-14\n  - Added singleThreaded flag (if not already present)\n  - Update library and common code\n  - Fix for range expansion and sharing with Hub Mesh\n  - [ZEN53] Added new paramters 19/20 for FW 1.40\n  - [ZEN54] Added option to set level to 0 when turned off\n  - [ZEN54] Fix setLevel to work with mobile app sending values as strings\n  - [ZEN55] Added device Healthcheck / healthStatus",
   "drivers": [
     {
       "id": "20e32090-b2a1-40f5-ab50-4c918e7a5cd6",
       "name": "Zooz ZEN53 DC Motor Controller",
       "namespace": "jtp10181",
-      "location": "https://jtp10181.gateway.scarf.sh/zooz-zen53-v1.0.4.groovy",
+      "location": "https://jtp10181.gateway.scarf.sh/zooz-zen53-v1.2.0.groovy",
       "required": false,
-      "version": "1.0.4"
+      "version": "1.2.0"
     },
     {
       "id": "a05b12ed-d367-435f-816c-6f268f59fd50",
       "name": "Zooz ZEN54 0-10V Advanced",
       "namespace": "jtp10181",
-      "location": "https://jtp10181.gateway.scarf.sh/zooz-zen54-v1.1.4.groovy",
+      "location": "https://jtp10181.gateway.scarf.sh/zooz-zen54-v1.2.0.groovy",
       "required": false,
-      "version": "1.1.4"
+      "version": "1.2.0"
     },
     {
       "id": "75b9aef5-4a7b-460f-a879-d5e35153d7c6",
       "name": "Zooz ZEN55 DC Signal Sensor",
       "namespace": "jtp10181",
-      "location": "https://jtp10181.gateway.scarf.sh/zooz-zen55-v1.0.0.groovy",
+      "location": "https://jtp10181.gateway.scarf.sh/zooz-zen55-v1.2.0.groovy",
       "required": false,
-      "version": "1.0.0"
+      "version": "1.2.0"
     }
   ]
 }

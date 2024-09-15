@@ -9,6 +9,11 @@
 
 Changelog:
 
+## [1.2.0] - 2024-09-14 (@jtp10181)
+  - Update library and common code
+  - Added new paramters 19/20 for FW 1.40
+  - Fix for range expansion and sharing with Hub Mesh
+
 ## [1.0.4] - 2024-04-05 (@jtp10181)
   - Added singleThreaded flag
   - Added option to set position to 0 when closed
@@ -27,25 +32,22 @@ Changelog:
 ## [0.1.0] - 2023-04-24 (@jtp10181)
   - Initial Release
 
- *  Copyright 2023 Jeff Page
+ *  Copyright 2023-2024 Jeff Page
  *
- *  Licensed under the Apache License, Version 2.0 (the "License");
- *  you may not use this file except in compliance with the License.
- *  You may obtain a copy of the License at
+ *  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
+ *  in compliance with the License. You may obtain a copy of the License at:
  *
  *      http://www.apache.org/licenses/LICENSE-2.0
  *
- *  Unless required by applicable law or agreed to in writing, software
- *  distributed under the License is distributed on an "AS IS" BASIS,
- *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *  See the License for the specific language governing permissions and
- *  limitations under the License.
+ *  Unless required by applicable law or agreed to in writing, software distributed under the License is
+ *  distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and limitations under the License.
  *
 */
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "1.0.4"
+@Field static final String VERSION = "1.2.0"
 @Field static final String DRIVER = "Zooz-ZEN53"
 @Field static final String COMM_LINK = "https://community.hubitat.com/t/zooz-zen53/117790"
 @Field static final Map deviceModelNames = ["0904:0219":"ZEN53"]
@@ -76,7 +78,7 @@ metadata {
 
 		attribute "syncStatus", "string"
 
-		fingerprint mfr:"027A", prod:"0904", deviceId:"0219", inClusters:"0x00,0x00" //Zooz ZEN53 DC Motor Controller
+		fingerprint mfr:"027A", prod:"0904", deviceId:"0219", inClusters:"0x00,0x00", controllerType: "ZWV" //Zooz ZEN53 DC Motor Controller
 	}
 
 	preferences {
@@ -102,11 +104,21 @@ metadata {
 			}
 		}
 
-		for(int i in 2..maxAssocGroups) {
-			input "assocDNI$i", "string",
-				title: fmtTitle("Device Associations - Group $i"),
-				description: fmtDesc("Supports up to ${maxAssocNodes} Hex Device IDs separated by commas. Check device documentation for more info. Save as blank or 0 to clear."),
-				required: false
+		if (!isLongRange()) {
+			input "assocEnabled", "bool", defaultValue: false,
+				title: fmtTitle("Show Association Settings"),
+				description: fmtDesc("Turn on and Save to show the Association Settings")
+
+			if (assocEnabled) {
+				for(int i in 2..maxAssocGroups) {
+					input "assocDNI$i", "string", required: false,
+						title: fmtTitle("Device Associations - Group $i"),
+						description: fmtDesc("Supports up to ${maxAssocNodes} Hex Device IDs separated by commas. Check device documentation for more info. Save as blank or 0 to clear.")
+				}
+			}
+		} else {
+			input "assocEnabled", "hidden", title: fmtTitle("Associations Not Available"),
+				description: fmtDesc("Associations are not available when device is paired in Long Range mode")
 		}
 
 		input "openPosition", "enum", title: fmtTitle("Open Command Behavior"), defaultValue: 0xFF,
@@ -157,13 +169,27 @@ void debugShowVars() {
 		title: "Motor Cycle Duration for Shutter Mode",
 		description: "[0 = Use Limit Switches, 100 = 1 second]",
 		size: 2, defaultVal: 6000,
-		range: 0..65535
+		range: "0..65535"
 	],
 	cycleVenetian: [ num: 4,
 		title: "Motor Cycle Duration for Venetian Mode",
 		description: "[0 = Use Limit Switches, 100 = 1 second]",
 		size: 2, defaultVal: 1000,
-		range: 0..65535
+		range: "0..65535"
+	],
+	cycleOpen: [ num: 19,
+		title: "Motor Cycle Duration for Up/Open",
+		description: "[0 = Disabled, 100 = 1 second]  If this setting is used it will override parameters 3/4",
+		size: 2, defaultVal: 0,
+		range: "0..65535",
+		firmVer: 1.40
+	],
+	cycleClose: [ num: 20,
+		title: "Motor Cycle Duration for Down/Closed",
+		description: "[0 = Disabled, 100 = 1 second]  If this setting is used it will override parameters 3/4",
+		size: 2, defaultVal: 0,
+		range: "0..65535",
+		firmVer: 1.40
 	],
 	paddleProgramming: [ num: 8,
 		title: "External Switch Pairing",
@@ -190,13 +216,13 @@ void debugShowVars() {
 		title: "Auto Close Timer",
 		size: 4, defaultVal: 0,
 		description: "0 - Disabled",
-		range: 0..86400,
+		range: "0..86400",
 	],
 	onTimer: [ num: 10,
 		title: "Auto Open Timer",
 		size: 4, defaultVal: 0,
 		description: "0 - Disabled",
-		range: 0..86400,
+		range: "0..86400",
 	],
 	timerUnits: [ num: 12,
 		title: "Auto Timer Units",
@@ -256,6 +282,7 @@ CommandClassReport - class:0x9F, version:1    (Security 2)
 	0x6A: 1,	// (Window Covering)
 	0x6C: 1,	// supervisionv1
 	0x70: 1,	// configurationv1
+	0x72: 2,	// manufacturerspecificv2
 	0x85: 2,	// associationv2
 	0x86: 2,	// versionv2
 	0x8E: 3,	// multichannelassociationv3
@@ -319,7 +346,7 @@ def setPosition(level) {
 	return getSetLevelCmds(level)
 }
 
-List<String> startPositionChange(direction) {
+def startPositionChange(direction) {
 	Boolean upDown = (direction == "close") ? true : false
 	Integer durationVal = validateRange(duration, getParamValue("holdRampRate") as Integer, 0, 127)
 	logDebug "startPositionChange($direction)"
@@ -332,7 +359,7 @@ List<String> startPositionChange(direction) {
 	return delayBetween(cmds, 200)
 }
 
-String stopPositionChange() {
+def stopPositionChange() {
 	logDebug "stopPositionChange()"
 	return switchMultilevelStopLvChCmd()
 }
@@ -441,15 +468,15 @@ void zwaveEvent(hubitat.zwave.commands.associationv2.AssociationReport cmd) {
 		state.group1Assoc = (cmd.nodeId == [zwaveHubNodeId]) ? true : false
 	}
 	else if (grp > 1 && grp <= maxAssocGroups) {
-		logDebug "Group $grp Association: ${cmd.nodeId}"
+		String dnis = convertIntListToHexList(cmd.nodeId)?.join(", ")
+		logDebug "Confirmed Group $grp Association: " + (cmd.nodeId.size()>0 ? "${dnis} // ${cmd.nodeId}" : "None")
 
 		if (cmd.nodeId.size() > 0) {
-			state["assocNodes$grp"] = cmd.nodeId
+			if (!state.assocNodes) state.assocNodes = [:]
+			state.assocNodes["$grp"] = cmd.nodeId
 		} else {
-			state.remove("assocNodes$grp".toString())
+			state.assocNodes?.remove("$grp" as String)
 		}
-
-		String dnis = convertIntListToHexList(cmd.nodeId)?.join(", ")
 		device.updateSetting("assocDNI$grp", [value:"${dnis}", type:"string"])
 	}
 	else {
@@ -539,7 +566,7 @@ void executeConfigureCmds() {
 		cmds << versionGetCmd()
 	}
 
-	cmds += getConfigureAssocsCmds()
+	cmds += getConfigureAssocsCmds(true)
 
 	configParams.each { param ->
 		Integer paramVal = getParamValueAdj(param)
@@ -569,13 +596,11 @@ void executeRefreshCmds() {
 	sendCommands(cmds)
 }
 
-List getConfigureAssocsCmds() {
+List getConfigureAssocsCmds(Boolean logging=false) {
 	List<String> cmds = []
 
 	if (!state.group1Assoc || state.resyncAll) {
-		if (state.group1Assoc == false) {
-			logDebug "Adding missing lifeline association..."
-		}
+		if (logging) logDebug "Setting lifeline association..."
 		cmds << associationSetCmd(1, [zwaveHubNodeId])
 		cmds << associationGetCmd(1)
 	}
@@ -585,15 +610,15 @@ List getConfigureAssocsCmds() {
 		List settingNodeIds = getAssocDNIsSettingNodeIds(i)
 
 		//Need to remove first then add in case we are at limit
-		List oldNodeIds = state."assocNodes$i"?.findAll { !(it in settingNodeIds) }
+		List oldNodeIds = state.assocNodes?."$i"?.findAll { !(it in settingNodeIds) }
 		if (oldNodeIds) {
-			logDebug "Removing Nodes: Group $i - $oldNodeIds"
+			if (logging) logDebug "Removing Group $i Association: ${convertIntListToHexList(oldNodeIds)} // $oldNodeIds"
 			cmdsEach << associationRemoveCmd(i, oldNodeIds)
 		}
 
-		List newNodeIds = settingNodeIds.findAll { !(it in state."assocNodes$i") }
+		List newNodeIds = settingNodeIds.findAll { !(it in state.assocNodes?."$i") }
 		if (newNodeIds) {
-			logDebug "Adding Nodes: Group $i - $newNodeIds"
+			if (logging) logDebug "Adding Group $i Association: ${convertIntListToHexList(newNodeIds)} // $newNodeIds"
 			cmdsEach << associationSetCmd(i, newNodeIds)
 		}
 
@@ -669,7 +694,9 @@ Changelog:
 2023-10-25 - Less saving to the configVals data, and some new functions
 2023-10-26 - Added some battery shortcut functions
 2023-11-08 - Added ability to adjust settings on firmware range
-2024-01-28 - Adjusted logging settings for new / upgrade installs, added mfgSpecificReport
+2024-01-28 - Adjusted logging settings for new / upgrade installs; added mfgSpecificReport
+2024-06-15 - Added isLongRange function; convert range to string to prevent expansion
+2024-07-16 - Support for multi-target version reports; adjust checkIn logic
 
 ********************************************************************/
 
@@ -739,7 +766,18 @@ void zwaveEvent(hubitat.zwave.commands.versionv2.VersionReport cmd) {
 	device.updateDataValue("protocolVersion", zwaveVersion)
 	device.updateDataValue("hardwareVersion", "${cmd.hardwareVersion}")
 
-	logDebug "Received Version Report - Firmware: ${fullVersion}"
+	if (cmd.targetVersions) {
+		Map tVersions = [:]
+		cmd.targetVersions.each {
+			tVersions[it.target] = String.format("%d.%02d",it.version,it.subVersion)
+			device.updateDataValue("firmware${it.target}Version", tVersions[it.target])
+		}
+		logDebug "Received Version Report - Main Firmware: ${fullVersion} | Targets: ${tVersions}"
+	}
+	else {
+		logDebug "Received Version Report - Firmware: ${fullVersion}"
+	}
+	
 	setDevModel(new BigDecimal(fullVersion))
 }
 
@@ -758,7 +796,7 @@ void zwaveEvent(hubitat.zwave.commands.manufacturerspecificv2.ManufacturerSpecif
 }
 
 void zwaveEvent(hubitat.zwave.Command cmd, ep=0) {
-	logDebug "Unhandled zwaveEvent: $cmd (ep ${ep})"
+	logDebug "Unhandled zwaveEvent: $cmd (ep ${ep}) [${getObjectClassName(cmd)}]"
 }
 
 
@@ -886,13 +924,13 @@ String secureCmd(String cmd) {
 	return zwaveSecureEncap(cmd)
 }
 String secureCmd(hubitat.zwave.Command cmd, ep=0) {
-	return zwaveSecureEncap(multiChannelEncap(cmd, ep))
+	return zwaveSecureEncap(multiChannelCmd(cmd, ep))
 }
 
 //MultiChannel Encapsulate if needed
-//This is called from secureCmd or supervisionEncap, do not call directly
-String multiChannelEncap(hubitat.zwave.Command cmd, ep) {
-	//logTrace "multiChannelEncap: ${cmd} (ep ${ep})"
+//This is called from secureCmd or superviseCmd, do not call directly
+String multiChannelCmd(hubitat.zwave.Command cmd, ep) {
+	//logTrace "multiChannelCmd: ${cmd} (ep ${ep})"
 	if (ep > 0) {
 		cmd = zwave.multiChannelV3.multiChannelCmdEncap(destinationEndPoint:ep).encapsulate(cmd)
 	}
@@ -911,7 +949,7 @@ Integer getParamStoredValue(Integer paramNum) {
 	return safeToInt(configsMap[paramNum], null)
 }
 
-void setParamStoredValue(Integer paramNum, Integer value) {
+void setParamStoredValue(Integer paramNum, Number value) {
 	//Using Data (Map) instead of State Variables
 	TreeMap configsMap = getParamStoredMap()
 	configsMap[paramNum] = value
@@ -937,7 +975,7 @@ Map getParamStoredMap() {
 	return configsMap
 }
 
-//Parameter List Functions
+/*** Parameter List Functions ***/
 //This will rebuild the list for the current model and firmware only as needed
 //paramsList Structure: MODEL:[FIRMWARE:PARAM_MAPS]
 //PARAM_MAPS [num, name, title, description, size, defaultVal, options, firmVer]
@@ -952,7 +990,8 @@ void updateParamsList() {
 	List<Map> tmpList = []
 	paramsMap.each { name, pMap ->
 		Map tmpMap = pMap.clone()
-		tmpMap.options = tmpMap.options?.clone()
+		if (tmpMap.options) tmpMap.options = tmpMap.options?.clone()
+		if (tmpMap.range) tmpMap.range = (tmpMap.range).toString()
 
 		//Save the name
 		tmpMap.name = name
@@ -1060,7 +1099,7 @@ String fmtDesc(String str) {
 	return "<div style='font-size: 85%; font-style: italic; padding: 1px 0px 4px 2px;'>${str}</div>"
 }
 String fmtHelpInfo(String str) {
-	String info = "${DRIVER} v${VERSION}"
+	String info = ((PACKAGE ?: '') + " ${DRIVER} v${VERSION}").trim()
 	String prefLink = "<a href='${COMM_LINK}' target='_blank'>${str}<br><div style='font-size: 70%;'>${info}</div></a>"
 	String topStyle = "style='font-size: 18px; padding: 1px 12px; border: 2px solid Crimson; border-radius: 6px;'" //SlateGray
 	String topLink = "<a ${topStyle} href='${COMM_LINK}' target='_blank'>${str}<br><div style='font-size: 14px;'>${info}</div></a>"
@@ -1086,33 +1125,32 @@ void refreshSyncStatus() {
 }
 
 void updateLastCheckIn() {
-	def nowDate = new Date()
+	Date nowDate = new Date()
 	state.lastCheckInDate = convertToLocalTimeString(nowDate)
 
 	Long lastExecuted = state.lastCheckInTime ?: 0
 	Long allowedMil = 24 * 60 * 60 * 1000   //24 Hours
 	if (lastExecuted + allowedMil <= nowDate.time) {
 		state.lastCheckInTime = nowDate.time
-		if (lastExecuted) runIn(4, doCheckIn)
+		if (lastExecuted) runIn(2, doCheckIn)
 		scheduleCheckIn()
 	}
 }
 
 void scheduleCheckIn() {
-	def cal = Calendar.getInstance()
-	cal.add(Calendar.MINUTE, -1)
-	Integer hour = cal[Calendar.HOUR_OF_DAY]
-	Integer minute = cal[Calendar.MINUTE]
-	schedule( "0 ${minute} ${hour} * * ?", doCheckIn)
+	unschedule("doCheckIn")
+	runIn(86340, doCheckIn)
 }
 
 void doCheckIn() {
-	String devModel = (state.deviceModel ?: "NA") + (state.subModel ? ".${state.subModel}" : "")
-	String checkUri = "http://jtp10181.gateway.scarf.sh/${DRIVER}/chk-${devModel}-v${VERSION}"
+	scheduleCheckIn()
+	String pkg = PACKAGE ?: DRIVER
+	String devModel = (state.deviceModel ?: (PACKAGE ? DRIVER : "NA")) + (state.subModel ? ".${state.subModel}" : "")
+	String checkUri = "http://jtp10181.gateway.scarf.sh/${pkg}/chk-${devModel}-v${VERSION}"
 
 	try {
-		httpGet(uri:checkUri, timeout:4) { logDebug "Driver ${DRIVER} ${devModel} v${VERSION}" }
-		state.lastCheckInTime = (new Date()).time
+		httpGet(uri:checkUri, timeout:4) { logDebug "Driver ${pkg} ${devModel} v${VERSION}" }
+		state.lastCheckInTime = now()
 	} catch (Exception e) { }
 }
 
@@ -1202,6 +1240,11 @@ BigDecimal getFirmwareVersion() {
 	return ((version != null) && version.isNumber()) ? version.toBigDecimal() : 0.0
 }
 
+Boolean isLongRange() {
+	Integer intDNI = device ? hubitat.helper.HexUtils.hexStringToInt(device.deviceNetworkId) : null
+	return (intDNI > 255)
+}
+
 String convertToLocalTimeString(dt) {
 	def timeZoneId = location?.timeZone?.ID
 	if (timeZoneId) {
@@ -1221,7 +1264,6 @@ List convertIntListToHexList(intList, pad=2) {
 
 List convertHexListToIntList(String[] hexList) {
 	def intList = []
-
 	hexList?.each {
 		try {
 			it = it.trim()
@@ -1287,7 +1329,7 @@ BigDecimal safeToDec(val, defaultVal=0, roundTo=-1) {
 }
 
 Boolean isDuplicateCommand(Long lastExecuted, Long allowedMil) {
-	!lastExecuted ? false : (lastExecuted + allowedMil > new Date().time)
+	!lastExecuted ? false : (lastExecuted + allowedMil > now())
 }
 
 
