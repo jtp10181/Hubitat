@@ -363,8 +363,10 @@ void verifyParamsList() {
 	String devModel = state.deviceModel
 	BigDecimal firmware = firmwareVersion
 	if (!paramsMap.settings?.fixed) fixParamsMap()
-	if (paramsList[devModel] == null) updateParamsList()
-	if (paramsList[devModel][firmware] == null) updateParamsList()
+	if (devModel) {
+		if (paramsList[devModel] == null) updateParamsList()
+		else if (paramsList[devModel][firmware] == null) updateParamsList()
+	}
 }
 
 //Gets full list of params
@@ -442,6 +444,7 @@ void refreshSyncStatus() {
 	Integer changes = pendingChanges
 	sendEvent(name:"syncStatus", value:(changes ? "${changes} Pending Changes" : "Synced"))
 	device.updateDataValue("configVals", getParamStoredMap()?.inspect())
+	if (changes==0 && state.deviceSync) { state.remove("deviceSync") }
 }
 
 void updateLastCheckIn() {
@@ -678,7 +681,7 @@ preferences {
 
 //Call this function from within updated() and configure() with no parameters: checkLogLevel()
 void checkLogLevel(Map levelInfo = [level:null, time:null]) {
-	unschedule(logsOff)
+	unschedule("logsOff")
 	//Set Defaults
 	if (settings.logLevel == null) {
 		device.updateSetting("logLevel",[value:"3", type:"enum"])

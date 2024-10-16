@@ -1,6 +1,6 @@
 /*
  *  Zooz ZEN17 Universal Relay
- *    - Model: ZEN17 - MINIMUM FIRMWARE 1.04
+ *    - Model: ZEN17 - MINIMUM FIRMWARE 1.04 (to 2.10)
  *
  *  For Support, Information, and Updates:
  *  https://community.hubitat.com/t/zooz-relays-advanced/98194
@@ -9,11 +9,21 @@
 
 Changelog:
 
+## [1.3.0] - 2024-10-15 (@jtp10181)
+  - Added singleThreaded flag
+  - Update library and common code
+  - Fix for range expansion and sharing with Hub Mesh
+  - First configure will sync settings from device instead of forcing defaults
+  - Force debug logging when configure is run
+  - Changed Set Parameter to update displayed settings
+  - Updated some parameter options and descriptions
+  - Added parameter 28 for firmware 2.0 (800LR)
+
 ## [1.2.0] - 2024-01-31 (@jtp10181)
   - Initial release based on ZEN16 driver
   - Supersedes the companion driver
   - Updated library code (logging fixes)
-  - Updated setParamater function to request value back
+  - Updated setParameter function to request value back
 
  *  Copyright 2023-2024 Jeff Page
  *
@@ -33,7 +43,7 @@ Changelog:
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "1.2.0"
+@Field static final String VERSION = "1.3.0"
 @Field static final String DRIVER = "Zooz-ZEN17"
 @Field static final String COMM_LINK = "https://community.hubitat.com/t/zooz-relays-advanced/98194"
 @Field static final Map deviceModelNames = ["7000:A00A":"ZEN17"]
@@ -43,6 +53,7 @@ metadata {
 		name: "Zooz ZEN17 Universal Relay Advanced",
 		namespace: "jtp10181",
 		author: "Jeff Page (@jtp10181)",
+		singleThreaded: true,
 		importUrl: "https://raw.githubusercontent.com/jtp10181/Hubitat/main/Drivers/zooz/zooz-zen17-universal-relay.groovy"
 	) {
 		capability "Actuator"
@@ -61,7 +72,7 @@ metadata {
 
 		attribute "syncStatus", "string"
 
-		fingerprint mfr:"027A", prod:"7000", deviceId:"A00A", inClusters:"0x00,0x00" //Zooz ZEN17 Universal Relay
+		fingerprint mfr:"027A", prod:"7000", deviceId:"A00A", inClusters:"0x00,0x00", controllerType: "ZWV" //Zooz ZEN17 Universal Relay
 	}
 
 	preferences {
@@ -115,18 +126,18 @@ void debugShowVars() {
 
 /*** Static Lists and Settings ***/
 @Field static final Map inputTypes = [
-	0:"Momentary (for lights only)",
-	1:"Toggle Switch On/Off",
-	2:"Toggle Switch State Change",
-	3:"Garage Door Momentary (Z-Wave control)",
-	4:"Water Sensor",
-	5:"Heat Sensor",
-	6:"Motion Sensor",
-	7:"Contact Sensor",
-	8:"Carbon Monoxide (CO) Sensor",
-	9:"Carbon Dioxide (CO₂) Sensor",
-	10:"Dry Contact Switch/Sensor",
-	11:"R: Garage Door / Sw: Contact Sensor"
+	0:"0: Momentary (for lights only)",
+	1:"1: Toggle Switch On/Off",
+	2:"2: Toggle Switch State Change",
+	3:"3: Garage Door Momentary (Z-Wave control)",
+	4:"4: Water Sensor",
+	5:"5: Heat Sensor",
+	6:"6: Motion Sensor",
+	7:"7: Contact Sensor",
+	8:"8: Carbon Monoxide (CO) Sensor",
+	9:"9: Carbon Dioxide (CO₂) Sensor",
+	10:"10: Dry Contact Switch/Sensor",
+	11:"11: R- Garage Door / Sw- Contact Sensor"
 ]
 @Field static final Map inputCapabilities = [
 	4:"WaterSensor",
@@ -134,7 +145,7 @@ void debugShowVars() {
 	6:"MotionSensor",
 	7:"ContactSensor",
 	8:"CarbonMonoxideDetector ",
-	9:"CarbonDioxideMeasurement",
+	9:"CarbonDioxideDetector",
 	10:"Switch",
 	11:"ContactSensor"
 ]
@@ -165,15 +176,15 @@ void debugShowVars() {
 	],
 	inputSw1: [ num:2,
 		title: "Input Type for S1C terminals",
-		description: "Power Cycle the device after changing this setting",
+		description: "Power Cycle the device after changing this setting.<br> * 800LR may require exclude/include to work!",
 		size: 1, defaultVal: 2,
 		options: [:]  //inputTypes
 	],
 	controlSw1: [ num:10,
-		title: "Input Control S1",
-		description: "Should switch input automatically activate the Relay",
+		title: "Input Trigger R1",
+		description: "Should the input automatically activate the Relay",
 		size: 1, defaultVal: 1,
-		options: [1:"Activate Relay and Status", 0:"Send Input Status Only"]
+		options: [1:"Yes: Activate Relay", 0:"No: Report Input Status Only"]
 	],
 	reverseSw1: [ num:19,
 		title: "Reverse Sensor Values on S1C",
@@ -184,15 +195,15 @@ void debugShowVars() {
 	],
 	inputSw2: [ num:3,
 		title: "Input Type for S2C terminals",
-		description: "Power Cycle the device after changing this setting",
+		description: "Power Cycle the device after changing this setting.<br> * 800LR may require exclude/include to work!",
 		size: 1, defaultVal: 2,
 		options: [:]  //inputTypes
 	],
 	controlSw2: [ num:11,
-		title: "Input Control S2",
-		description: "Should switch input automatically activate the Relay",
+		title: "Input Trigger R2",
+		description: "Should the input automatically activate the Relay",
 		size: 1, defaultVal: 1,
-		options: [1:"Activate Relay and Status", 0:"Send Input Status Only"]
+		options: [1:"Yes: Activate Relay", 0:"No: Report Input Status Only"]
 	],
 	reverseSw2: [ num:20,
 		title: "Reverse Sensor Values on S2C",
@@ -252,14 +263,14 @@ void debugShowVars() {
 	],
 	durationS1: [ num:25,
 		title: "Input Trigger Duration S1",
-		description: "[1 = 0.1s, 100 = 10s]  *See Docs for more information*",
+		description: "[1 = 0.1s, 100 = 10s]  The amount of time contact needs to be made at the input for the status to be reported.",
 		size: 1, defaultVal: 5,
 		range: "0..100",
 		firmVer: 1.30
 	],
 	durationS2: [ num:26,
 		title: "Input Trigger Duration S2",
-		description: "[1 = 0.1s, 100 = 10s]  *See Docs for more information*",
+		description: "[1 = 0.1s, 100 = 10s]  The amount of time contact needs to be made at the input for the status to be reported.",
 		size: 1, defaultVal: 5,
 		range: "0..100",
 		firmVer: 1.30
@@ -268,10 +279,17 @@ void debugShowVars() {
 		title: "Fixed Input Actions",
 		description: "For special scenarios only *See Docs for more information*",
 		size: 1, defaultVal: 0,
-		options: [0:"Disabled", 1:"IN1 for ON on R1, IN2 for OFF on R1",
-			2:"IN1 for ON on R2, IN2 for OFF on R2", 3:"IN1 for ON on R1 and R2, IN2 for OFF on R1 and R2"],
+		options: [0:"0: Disabled", 1:"1: S1 for ON on R1, S2 for OFF on R1",
+			2:"2: S1 for ON on R2, S2 for OFF on R2", 3:"3: S1 for ON on R1 and R2, S2 for OFF on R1 and R2"],
 		firmVer: 1.30
 	],
+	simulR1R2: [ num:28,
+		title: "Simultaneous Operation of R1/R2 ",
+		description: "Both R1/R2 are triggered together from S1/C input or hub commands. S2/C input is automatically separated from R2.",
+		size: 1, defaultVal: 0,
+		options: [0:"Disabled", 1:"Enabled"],
+		firmVer: 2.00
+	]
 ]
 
 /* ZEN17
@@ -299,6 +317,7 @@ CommandClassReport - class:0x9F, version:1   (Security 2)
 	0x60: 3,	// multiChannel
 	0x6C: 1,	// supervision
 	0x70: 2,	// configuration
+	0x72: 2,	// manufacturerSpecific
 	0x85: 2,	// association
 	0x86: 2,	// version
 	0x8E: 3,	// multiChannelAssociation
@@ -310,25 +329,25 @@ CommandClassReport - class:0x9F, version:1   (Security 2)
 ********************************************************************/
 void installed() {
 	logWarn "installed..."
-	initialize()
-}
-
-void initialize() {
-	logWarn "initialize..."
-	refresh()
+	state.deviceSync = true
 }
 
 void configure() {
 	logWarn "configure..."
-	checkLogLevel()   //Checks and sets scheduled turn off
+	setLogLevel(LOG_LEVELS[3], LOG_TIMES[30])   //Force Debug for 30 minutes
 
-	if (!pendingChanges || state.resyncAll == null) {
-		logDebug "Enabling Full Re-Sync"
+	if (!pendingChanges) {
+		logWarn "Enabling Full Settings Re-Sync"
 		clearVariables()
 		state.resyncAll = true
 	}
+	if (state.deviceSync || state.resyncAll == null) {
+		logWarn "First Configure - syncing settings from device"
+		state.deviceSync = true
+		runIn(14, createChildDevices)
+	}
 
-	updateSyncingStatus(6)
+	updateSyncingStatus(8)
 	executeProbeCmds()
 	runIn(2, executeRefreshCmds)
 	runIn(5, executeConfigureCmds)
@@ -345,10 +364,10 @@ void updated() {
 			String epNum = ep.substring(0, ep.length() - 1)
 			Integer inputType = getParamValue("inputSw${epNum}" as String)
 			String logMsg = null
-			logDebug "Sensor endPoint ${ep} found, selected Input Type ${inputType}:${inputTypes[inputType]}"
+			logDebug "Sensor endPoint ${ep} found, selected Input Type - ${inputTypes[inputType]}"
 			switch (inputType) {
 				case 0..3:
-					logMsg = "Sensor Child ${ep} is not needed with Input Type ${inputType}:${inputTypes[inputType]}."
+					logMsg = "Sensor Child ${ep} is not needed with Input Type - ${inputTypes[inputType]}."
 					break
 				case 4..11:
 					if (!child.hasCapability(inputCapabilities[inputType])) {
@@ -375,9 +394,11 @@ void updated() {
 	}
 	device.updateSetting("childCleanup",[value:"false",type:"bool"])
 
+	if (pendingChanges) updateSyncingStatus(4)
+
 	executeProbeCmds()
-	runIn(1, executeConfigureCmds)
-	runIn(3, createChildDevices)
+	runIn(1, createChildDevices)
+	runIn(2, executeConfigureCmds)
 }
 
 void refresh() {
@@ -425,12 +446,12 @@ def setParameter(paramNum, value, size = null) {
 	if (param && !size) { size = param.size	}
 
 	if (paramNum == null || value == null || size == null) {
-		logWarn "Incomplete parameter list supplied..."
-		logWarn "Syntax: setParameter(paramNum, value, size)"
+		logWarn "Incomplete parameter list... Syntax: setParameter(paramNum, value, size)"
 		return
 	}
+
+	if (param) { state.setParam = true }
 	logDebug "setParameter ( number: $paramNum, value: $value, size: $size )" + (param ? " [${param.name} - ${param.title}]" : "")
-	// return configSetCmd([num: paramNum, size: size], value as Integer)
 	return configSetGetCmd([num: paramNum, size: size], value as Integer)
 }
 
@@ -456,6 +477,7 @@ def componentRefresh(cd) {
 ********************************************************************/
 void parse(String description) {
 	zwaveParse(description)
+	setSubModel()
 }
 void zwaveEvent(hubitat.zwave.commands.multichannelv3.MultiChannelCmdEncap cmd) {
 	zwaveMultiChannel(cmd)
@@ -469,7 +491,7 @@ void zwaveEvent(hubitat.zwave.commands.configurationv1.ConfigurationReport cmd) 
 	updateSyncingStatus()
 
 	Map param = getParam(cmd.parameterNumber)
-	Integer val = cmd.scaledConfigurationValue
+	Long val = cmd.scaledConfigurationValue
 
 	if (param) {
 		//Convert scaled signed integer to unsigned
@@ -481,6 +503,12 @@ void zwaveEvent(hubitat.zwave.commands.configurationv1.ConfigurationReport cmd) 
 	}
 	else {
 		logDebug "Parameter #${cmd.parameterNumber} = ${val.toString()}"
+	}
+
+	if (param && (state.deviceSync || state.setParam)) {
+		state.remove("setParam")
+		if (param.options) { device.updateSetting("configParam${cmd.parameterNumber}", [value:"${val}", type:"enum"]) }
+		else               { device.updateSetting("configParam${cmd.parameterNumber}", [value:(val as Long), type:"number"]) }
 	}
 }
 
@@ -540,52 +568,42 @@ void zwaveEvent(hubitat.zwave.commands.multichannelv3.MultiChannelEndPointReport
 	if (cmd.endPoints > 0) {
 		logDebug "Endpoints (${cmd.endPoints}) Detected and Enabled"
 		state.endPoints = cmd.endPoints
-		runIn(1,createChildDevices)
+		createChildDevices()
 	}
 }
 
+@Field static final Map notify2Sensor = [5:6, 4:5, 7:12, 6:10, 2:3, 3:4, 0:1]
+@Field static final Map sensorName = [6:"Water", 5:"Heat", 12:"Motion", 10:"Contact", 3:"CO", 4:"CO2", 1:"Switch"]
+//SensorBinary is deprecated so primarily relying on NotificationReport
 void zwaveEvent(hubitat.zwave.commands.sensorbinaryv2.SensorBinaryReport cmd, ep=0) {
 	logTrace "${cmd} (ep ${ep})"
-	//SensorBinary is depreciated so using NotificationReport
+	Integer sType = cmd.sensorType as Integer
+
+	//Handles bug in ZEN17 800LR where input type 10 only sends SensorBinary
+	if ([6,5,12,10,3,4,1].contains(sType)) {
+		logDebug "${sensorName[sType]} -- ${cmd} (ep ${ep})"
+		sendSensorEvents(sType, cmd.sensorValue, ep)
+	} else {
+		logDebug "Unhandled: ${cmd} (ep ${ep})"
+	}
 }
 
 //Unplug and restart device after making changes or these are not accurate
 void zwaveEvent(hubitat.zwave.commands.notificationv8.NotificationReport cmd, ep=0) {
 	logTrace "${cmd} (ep ${ep})"
-	String sensorEp = "${ep}S"
+	Integer nType = cmd.notificationType as Integer
 
-	switch (cmd.notificationType as Integer) {
-		case 0x05:  //Water
-			logDebug "${cmd} (ep ${ep}) -- Water"
-			sendEventLog(name:"water", value:(cmd.event ? "wet" : "dry"), sensorEp)
-			break
-		case 0x04:  //Heat
-			logDebug "${cmd} (ep ${ep}) -- Heat"
-			sendEventLog(name:"switch", value:(cmd.event ? "on" : "off"), sensorEp)
-			break
-		case 0x07:  //Home Security
-			logDebug "${cmd} (ep ${ep}) -- Motion"
-			sendEventLog(name:"motion", value:(cmd.event ? "active" : "inactive"), sensorEp)
-			break
-		case 0x06:  //Access Control - Door/Window
-			logDebug "${cmd} (ep ${ep}) -- Contact"
-			if      (cmd.event == 0x16) sendEventLog(name:"contact", value:"open", sensorEp)
-			else if (cmd.event == 0x17) sendEventLog(name:"contact", value:"closed", sensorEp)
-			break
-		case 0x02:  //CO
-			logDebug "${cmd} (ep ${ep}) -- CO"
-			sendEventLog(name:"carbonMonoxide", value:(cmd.event ? "detected" : "clear"), sensorEp)
-			break
-		case 0x03:  //CO2
-			logDebug "${cmd} (ep ${ep}) -- CO2"
-			sendEventLog(name:"carbonDioxide", value:(cmd.event ? "detected" : "clear"), sensorEp)
-			break
-		case 0x00:  //Generic (Switch)
-			logDebug "${cmd} (ep ${ep}) -- Dry Contact Switch"
-			sendEventLog(name:"switch", value:(cmd.event ? "on" : "off"), sensorEp)
-			break
-		default:
-			logDebug "Unhandled: ${cmd} (ep ${ep})"
+	if ([5,4,7,6,2,3,0].contains(nType)) {
+		Integer sType = notify2Sensor[nType]
+		Integer value = cmd.event as Integer
+
+		//Access Control - Door/Window (closed)
+		if (cmd.notificationType == 0x06 && cmd.event == 0x17) { value = 0 }
+
+		logDebug "${sensorName[sType]} -- NotificationReport(notificationType: ${nType}, event: ${cmd.event}) (ep ${ep}) [sensorType: ${sType}, value: ${value}]"
+		sendSensorEvents(sType, value, ep)
+	} else {
+		logDebug "Unhandled: ${cmd} (ep ${ep})"
 	}
 }
 
@@ -613,7 +631,8 @@ void sendEventLog(Map evt, ep=0) {
 			}
 		}
 		else {
-			logErr "No device for endpoint (${ep}). Press Configure to create child devices."
+			if (state.deviceSync) { logDebug "No device for endpoint (${ep}) has been created yet..." }
+			else { logErr "No device for endpoint (${ep}). Press Save Preferences (or Configure) to create child devices." }
 		}
 		return
 	}
@@ -626,6 +645,21 @@ void sendEventLog(Map evt, ep=0) {
 	}
 	//Always send event to update last activity
 	sendEvent(evt)
+}
+
+// Water: 6, Heat: 5, Motion: 12 (0C), Contact: 10 (0A), CO: 3, CO2: 4, Switch: 1
+void sendSensorEvents(sensorType, rawVal, Integer ep=0) {
+	Integer sType = sensorType as Integer
+	String sensorEp = "${ep}S"
+
+	if (sType==6)       sendEventLog(name:"water", value:(rawVal ? "wet" : "dry"), sensorEp)  //Water
+	else if (sType==5)  sendEventLog(name:"switch", value:(rawVal ? "on" : "off"), sensorEp)  //Heat
+	else if (sType==12) sendEventLog(name:"motion", value:(rawVal ? "active" : "inactive"), sensorEp)  //Motion
+	else if (sType==10) sendEventLog(name:"contact", value:(rawVal ? "open" : "closed"), sensorEp)  //Contact - Door/Window
+	else if (sType==3)  sendEventLog(name:"carbonMonoxide", value:(rawVal ? "detected" : "clear"), sensorEp)  //CO
+	else if (sType==4)  sendEventLog(name:"carbonDioxide", value:(rawVal ? "detected" : "clear"), sensorEp)  //CO2
+	else if (sType==1)  sendEventLog(name:"switch", value:(rawVal ? "on" : "off"), sensorEp)  //Generic (Dry Contact Switch)
+	else                logDebug "Unhandled sendSensorEvents: (sensorType: ${sensorType}, value: ${rawVal}) (ep ${ep})"
 }
 
 void sendSwitchEvents(rawVal, String type, Integer ep=0) {
@@ -654,13 +688,18 @@ void executeConfigureCmds() {
 		cmds << versionGetCmd()
 	}
 
-	cmds += getConfigureAssocsCmds()
+	cmds += getConfigureAssocsCmds(true)
 
 	configParams.each { param ->
 		Integer paramVal = getParamValueAdj(param)
 		Integer storedVal = getParamStoredValue(param.num)
 
-		if ((paramVal != null) && (state.resyncAll || (storedVal != paramVal))) {
+		if (state.deviceSync) {
+			device.removeSetting("configParam${param.num}")
+			logDebug "Getting ${param.title} (#${param.num}) from device"
+			cmds += configGetCmd(param)
+		}
+		else if (paramVal != null && (state.resyncAll || storedVal != paramVal)) {
 			logDebug "Changing ${param.name} - ${param.title} (#${param.num}) from ${storedVal} to ${paramVal}"
 			cmds += configSetGetCmd(param, paramVal)
 		}
@@ -668,7 +707,7 @@ void executeConfigureCmds() {
 
 	state.resyncAll = false
 
-	if (cmds) runIn(5, refreshParams)
+	if (cmds) runInMillis((cmds.size()*300)+2000, refreshParams)
 	if (cmds) sendCommands(cmds,300)
 }
 
@@ -678,7 +717,7 @@ void executeProbeCmds() {
 	List<String> cmds = []
 
 	//End Points Check
-	if (state.endPoints == null) {
+	if (state.endPoints == null || state.resyncAll) {
 		logDebug "Probing for Multiple End Points"
 		cmds << secureCmd(zwave.multiChannelV3.multiChannelEndPointGet())
 		state.endPoints = 0
@@ -690,7 +729,7 @@ void executeProbeCmds() {
 void executeRefreshCmds() {
 	List<String> cmds = []
 
-	if (state.resyncAll || !firmwareVersion || !state.deviceModel) {
+	if (state.resyncAll || state.deviceSync || !firmwareVersion || !state.deviceModel) {
 		cmds << mfgSpecificGetCmd()
 		cmds << versionGetCmd()
 	}
@@ -703,20 +742,21 @@ void executeRefreshCmds() {
 		cmds += getChildRefreshCmds(endPoint)
 	}
 
-	sendCommands(cmds,300)
+	if (cmds) sendCommands(cmds,300)
 }
 
-List getConfigureAssocsCmds() {
+List getConfigureAssocsCmds(Boolean logging=false) {
 	List<String> cmds = []
 
 	if (!state.group1Assoc || state.resyncAll) {
 		if (state.group1Assoc == false) {
-			logDebug "Need to reset lifeline association..."
+			if (logging) logDebug "Clearing incorrect lifeline association..."
 			cmds << associationRemoveCmd(1,[])
 			cmds << secureCmd(zwave.multiChannelAssociationV3.multiChannelAssociationRemove(groupingIdentifier: 1, nodeId:[], multiChannelNodeIds:[]))
 		}
-		logTrace "getConfigureAssocsCmds endPoints: ${state.endPoints}"
+		if (logging) logDebug "Setting ${state.endPoints ? 'multi-channel' : 'standard'} lifeline association..."
 		if (state.endPoints > 0) {
+			cmds << associationRemoveCmd(1,[])
 			cmds << secureCmd(zwave.multiChannelAssociationV3.multiChannelAssociationSet(groupingIdentifier: 1, multiChannelNodeIds: [[nodeId: zwaveHubNodeId, bitAddress:0, endPointId: 0]]))
 			cmds << mcAssociationGetCmd(1)
 		}
@@ -742,8 +782,18 @@ List getChildRefreshCmds(Integer endPoint) {
 	List<String> cmds = []
 	cmds << switchBinaryGetCmd(endPoint)
 	cmds << notificationGetCmd(0xFF, 0x00, endPoint)
-	//cmds << secureCmd(zwave.sensorBinaryV2.sensorBinaryGet(sensorType:0xFF), endPoint)
 	return cmds
+}
+
+private setSubModel() {
+	if (!state.subModel) {
+		String devModel = state.deviceModel
+		Integer firmVerM = firmwareVersion as Integer
+		if (devModel == "ZEN17" && firmVerM > 0) {
+			if (firmVerM == 2) { state.subModel = "800LR" }
+			else { state.subModel = "v${firmVerM}" }
+		}
+	}
 }
 
 
@@ -786,6 +836,7 @@ Integer getParamValueAdj(Map param) {
 ********************************************************************/
 /*** Child Creation Functions ***/
 void createChildDevices() {
+	logDebug "Checking for child devices (${state.endPoints}) endpoints..."
 	endPointList.each { endPoint ->
 		if (!getChildByEP(endPoint)) {
 			logDebug "Creating new child device for endPoint ${endPoint}, did not find existing"
@@ -848,14 +899,13 @@ void addChild(endPoint, inputType=null) {
 
 /*** Child Common Functions ***/
 private getChildByEP(endPoint) {
-	String devModel = state.deviceModel
 	endPoint = endPoint.toString()
 	//Searching using endPoint data value
 	def childDev = childDevices?.find { it.getDataValue("endPoint") == endPoint }
 	if (childDev) logTrace "Found Child for endPoint ${endPoint} using data.endPoint: ${childDev.displayName} (${childDev.deviceNetworkId})"
 	//If not found try deeper search using the child DNIs
 	else {
-		childDev = childDevices?.find  { ch ->
+		childDev = childDevices?.find { ch ->
 			String ep = null
 			List<String> dni = ch.deviceNetworkId.split('-')
 			if (dni.size() <= 1) return false
@@ -908,7 +958,9 @@ Changelog:
 2023-10-25 - Less saving to the configVals data, and some new functions
 2023-10-26 - Added some battery shortcut functions
 2023-11-08 - Added ability to adjust settings on firmware range
-2024-01-28 - Adjusted logging settings for new / upgrade installs, added mfgSpecificReport
+2024-01-28 - Adjusted logging settings for new / upgrade installs; added mfgSpecificReport
+2024-06-15 - Added isLongRange function; convert range to string to prevent expansion
+2024-07-16 - Support for multi-target version reports; adjust checkIn logic
 
 ********************************************************************/
 
@@ -978,7 +1030,18 @@ void zwaveEvent(hubitat.zwave.commands.versionv2.VersionReport cmd) {
 	device.updateDataValue("protocolVersion", zwaveVersion)
 	device.updateDataValue("hardwareVersion", "${cmd.hardwareVersion}")
 
-	logDebug "Received Version Report - Firmware: ${fullVersion}"
+	if (cmd.targetVersions) {
+		Map tVersions = [:]
+		cmd.targetVersions.each {
+			tVersions[it.target] = String.format("%d.%02d",it.version,it.subVersion)
+			device.updateDataValue("firmware${it.target}Version", tVersions[it.target])
+		}
+		logDebug "Received Version Report - Main Firmware: ${fullVersion} | Targets: ${tVersions}"
+	}
+	else {
+		logDebug "Received Version Report - Firmware: ${fullVersion}"
+	}
+	
 	setDevModel(new BigDecimal(fullVersion))
 }
 
@@ -997,7 +1060,7 @@ void zwaveEvent(hubitat.zwave.commands.manufacturerspecificv2.ManufacturerSpecif
 }
 
 void zwaveEvent(hubitat.zwave.Command cmd, ep=0) {
-	logDebug "Unhandled zwaveEvent: $cmd (ep ${ep})"
+	logDebug "Unhandled zwaveEvent: $cmd (ep ${ep}) [${getObjectClassName(cmd)}]"
 }
 
 
@@ -1125,13 +1188,13 @@ String secureCmd(String cmd) {
 	return zwaveSecureEncap(cmd)
 }
 String secureCmd(hubitat.zwave.Command cmd, ep=0) {
-	return zwaveSecureEncap(multiChannelEncap(cmd, ep))
+	return zwaveSecureEncap(multiChannelCmd(cmd, ep))
 }
 
 //MultiChannel Encapsulate if needed
-//This is called from secureCmd or supervisionEncap, do not call directly
-String multiChannelEncap(hubitat.zwave.Command cmd, ep) {
-	//logTrace "multiChannelEncap: ${cmd} (ep ${ep})"
+//This is called from secureCmd or superviseCmd, do not call directly
+String multiChannelCmd(hubitat.zwave.Command cmd, ep) {
+	//logTrace "multiChannelCmd: ${cmd} (ep ${ep})"
 	if (ep > 0) {
 		cmd = zwave.multiChannelV3.multiChannelCmdEncap(destinationEndPoint:ep).encapsulate(cmd)
 	}
@@ -1150,7 +1213,7 @@ Integer getParamStoredValue(Integer paramNum) {
 	return safeToInt(configsMap[paramNum], null)
 }
 
-void setParamStoredValue(Integer paramNum, Integer value) {
+void setParamStoredValue(Integer paramNum, Number value) {
 	//Using Data (Map) instead of State Variables
 	TreeMap configsMap = getParamStoredMap()
 	configsMap[paramNum] = value
@@ -1176,7 +1239,7 @@ Map getParamStoredMap() {
 	return configsMap
 }
 
-//Parameter List Functions
+/*** Parameter List Functions ***/
 //This will rebuild the list for the current model and firmware only as needed
 //paramsList Structure: MODEL:[FIRMWARE:PARAM_MAPS]
 //PARAM_MAPS [num, name, title, description, size, defaultVal, options, firmVer]
@@ -1191,7 +1254,8 @@ void updateParamsList() {
 	List<Map> tmpList = []
 	paramsMap.each { name, pMap ->
 		Map tmpMap = pMap.clone()
-		tmpMap.options = tmpMap.options?.clone()
+		if (tmpMap.options) tmpMap.options = tmpMap.options?.clone()
+		if (tmpMap.range) tmpMap.range = (tmpMap.range).toString()
 
 		//Save the name
 		tmpMap.name = name
@@ -1243,8 +1307,10 @@ void verifyParamsList() {
 	String devModel = state.deviceModel
 	BigDecimal firmware = firmwareVersion
 	if (!paramsMap.settings?.fixed) fixParamsMap()
-	if (paramsList[devModel] == null) updateParamsList()
-	if (paramsList[devModel][firmware] == null) updateParamsList()
+	if (devModel) {
+		if (paramsList[devModel] == null) updateParamsList()
+		else if (paramsList[devModel][firmware] == null) updateParamsList()
+	}
 }
 
 //Gets full list of params
@@ -1299,7 +1365,7 @@ String fmtDesc(String str) {
 	return "<div style='font-size: 85%; font-style: italic; padding: 1px 0px 4px 2px;'>${str}</div>"
 }
 String fmtHelpInfo(String str) {
-	String info = "${DRIVER} v${VERSION}"
+	String info = ((PACKAGE ?: '') + " ${DRIVER} v${VERSION}").trim()
 	String prefLink = "<a href='${COMM_LINK}' target='_blank'>${str}<br><div style='font-size: 70%;'>${info}</div></a>"
 	String topStyle = "style='font-size: 18px; padding: 1px 12px; border: 2px solid Crimson; border-radius: 6px;'" //SlateGray
 	String topLink = "<a ${topStyle} href='${COMM_LINK}' target='_blank'>${str}<br><div style='font-size: 14px;'>${info}</div></a>"
@@ -1322,36 +1388,36 @@ void refreshSyncStatus() {
 	Integer changes = pendingChanges
 	sendEvent(name:"syncStatus", value:(changes ? "${changes} Pending Changes" : "Synced"))
 	device.updateDataValue("configVals", getParamStoredMap()?.inspect())
+	if (changes==0 && state.deviceSync) { state.remove("deviceSync") }
 }
 
 void updateLastCheckIn() {
-	def nowDate = new Date()
+	Date nowDate = new Date()
 	state.lastCheckInDate = convertToLocalTimeString(nowDate)
 
 	Long lastExecuted = state.lastCheckInTime ?: 0
 	Long allowedMil = 24 * 60 * 60 * 1000   //24 Hours
 	if (lastExecuted + allowedMil <= nowDate.time) {
 		state.lastCheckInTime = nowDate.time
-		if (lastExecuted) runIn(4, doCheckIn)
+		if (lastExecuted) runIn(2, doCheckIn)
 		scheduleCheckIn()
 	}
 }
 
 void scheduleCheckIn() {
-	def cal = Calendar.getInstance()
-	cal.add(Calendar.MINUTE, -1)
-	Integer hour = cal[Calendar.HOUR_OF_DAY]
-	Integer minute = cal[Calendar.MINUTE]
-	schedule( "0 ${minute} ${hour} * * ?", doCheckIn)
+	unschedule("doCheckIn")
+	runIn(86340, doCheckIn)
 }
 
 void doCheckIn() {
-	String devModel = (state.deviceModel ?: "NA") + (state.subModel ? ".${state.subModel}" : "")
-	String checkUri = "http://jtp10181.gateway.scarf.sh/${DRIVER}/chk-${devModel}-v${VERSION}"
+	scheduleCheckIn()
+	String pkg = PACKAGE ?: DRIVER
+	String devModel = (state.deviceModel ?: (PACKAGE ? DRIVER : "NA")) + (state.subModel ? ".${state.subModel}" : "")
+	String checkUri = "http://jtp10181.gateway.scarf.sh/${pkg}/chk-${devModel}-v${VERSION}"
 
 	try {
-		httpGet(uri:checkUri, timeout:4) { logDebug "Driver ${DRIVER} ${devModel} v${VERSION}" }
-		state.lastCheckInTime = (new Date()).time
+		httpGet(uri:checkUri, timeout:4) { logDebug "Driver ${pkg} ${devModel} v${VERSION}" }
+		state.lastCheckInTime = now()
 	} catch (Exception e) { }
 }
 
@@ -1393,7 +1459,7 @@ void clearVariables() {
 	def engTime = state.energyTime
 
 	//Clears State Variables
-	atomicState.clear()
+	state.clear()
 
 	//Clear Config Data
 	configsList["${device.id}"] = [:]
@@ -1406,7 +1472,7 @@ void clearVariables() {
 	//Restore
 	if (devModel) state.deviceModel = devModel
 	if (engTime) state.energyTime = engTime
-	atomicState.resyncAll = true
+	state.resyncAll = true
 }
 
 //Stash the model in a state variable
@@ -1441,6 +1507,11 @@ BigDecimal getFirmwareVersion() {
 	return ((version != null) && version.isNumber()) ? version.toBigDecimal() : 0.0
 }
 
+Boolean isLongRange() {
+	Integer intDNI = device ? hubitat.helper.HexUtils.hexStringToInt(device.deviceNetworkId) : null
+	return (intDNI > 255)
+}
+
 String convertToLocalTimeString(dt) {
 	def timeZoneId = location?.timeZone?.ID
 	if (timeZoneId) {
@@ -1460,7 +1531,6 @@ List convertIntListToHexList(intList, pad=2) {
 
 List convertHexListToIntList(String[] hexList) {
 	def intList = []
-
 	hexList?.each {
 		try {
 			it = it.trim()
@@ -1526,7 +1596,7 @@ BigDecimal safeToDec(val, defaultVal=0, roundTo=-1) {
 }
 
 Boolean isDuplicateCommand(Long lastExecuted, Long allowedMil) {
-	!lastExecuted ? false : (lastExecuted + allowedMil > new Date().time)
+	!lastExecuted ? false : (lastExecuted + allowedMil > now())
 }
 
 
@@ -1555,7 +1625,7 @@ preferences {
 
 //Call this function from within updated() and configure() with no parameters: checkLogLevel()
 void checkLogLevel(Map levelInfo = [level:null, time:null]) {
-	unschedule(logsOff)
+	unschedule("logsOff")
 	//Set Defaults
 	if (settings.logLevel == null) {
 		device.updateSetting("logLevel",[value:"3", type:"enum"])

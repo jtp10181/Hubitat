@@ -1,6 +1,6 @@
 /*
  *  Zooz ZEN51 Relay Advanced
- *    - Model: ZEN51 - MINIMUM FIRMWARE 1.40
+ *    - Model: ZEN51 - MINIMUM FIRMWARE 1.40 (to 1.70)
  *
  *  For Support, Information, and Updates:
  *  https://community.hubitat.com/t/zooz-relays-advanced/98194
@@ -9,7 +9,16 @@
 
 Changelog:
 
-## [1.2.0 - 2024-01-31 (@jtp10181)
+## [1.3.0] - 2024-10-15 (@jtp10181)
+  - Added singleThreaded flag
+  - Update library and common code
+  - Fix for range expansion and sharing with Hub Mesh
+  - First configure will sync settings from device instead of forcing defaults
+  - Force debug logging when configure is run
+  - Changed Set Parameter to update displayed settings
+  - Added parameter 12 for firmware 1.70
+
+## [1.2.0] - 2024-01-31 (@jtp10181)
   - Updated library code (logging fixes)
   - Added setParamater command
 
@@ -52,7 +61,7 @@ Changelog:
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "1.2.0"
+@Field static final String VERSION = "1.3.0"
 @Field static final String DRIVER = "Zooz-ZEN51"
 @Field static final String COMM_LINK = "https://community.hubitat.com/t/zooz-relays-advanced/98194"
 @Field static final Map deviceModelNames = ["0104:0201":"ZEN51", "0904:0201":"ZEN51"]
@@ -62,6 +71,7 @@ metadata {
 		name: "Zooz ZEN51 Relay Advanced",
 		namespace: "jtp10181",
 		author: "Jeff Page (@jtp10181)",
+		singleThreaded: true,
 		importUrl: "https://raw.githubusercontent.com/jtp10181/Hubitat/main/Drivers/zooz/zooz-zen51-relay.groovy"
 	) {
 		capability "Actuator"
@@ -85,8 +95,8 @@ metadata {
 
 		attribute "syncStatus", "string"
 
-		fingerprint mfr:"027A", prod:"0104", deviceId:"0201", inClusters:"0x5E,0x55,0x9F,0x6C,0x25,0x70,0x85,0x59,0x8E,0x86,0x72,0x5A,0x73,0x7A,0x22,0x5B,0x87" //Zooz ZEN51 Relay
-		fingerprint mfr:"027A", prod:"0904", deviceId:"0201", inClusters:"0x00,0x00" //Zooz ZEN51 Relay LR
+		fingerprint mfr:"027A", prod:"0104", deviceId:"0201", inClusters:"0x5E,0x55,0x9F,0x6C,0x25,0x70,0x85,0x59,0x8E,0x86,0x72,0x5A,0x73,0x7A,0x22,0x5B,0x87", controllerType: "ZWV" //Zooz ZEN51 Relay
+		fingerprint mfr:"027A", prod:"0904", deviceId:"0201", inClusters:"0x00,0x00", controllerType: "ZWV" //Zooz ZEN51 Relay LR
 	}
 
 	preferences {
@@ -112,11 +122,15 @@ metadata {
 			}
 		}
 
-		for(int i in 2..maxAssocGroups) {
-			input "assocDNI$i", "string",
-				title: fmtTitle("Device Associations - Group $i"),
-				description: fmtDesc("Supports up to ${maxAssocNodes} Hex Device IDs separated by commas. Check device documentation for more info. Save as blank or 0 to clear."),
-				required: false
+		if (!isLongRange()) {
+			for(int i in 2..maxAssocGroups) {
+				input "assocDNI$i", "string", required: false,
+					title: fmtTitle("Device Associations - Group $i"),
+					description: fmtDesc("Supports up to ${maxAssocNodes} Hex Device IDs separated by commas. Check device documentation for more info. Save as blank or 0 to clear.")
+			}
+		} else {
+			input "assocEnabled", "hidden", title: fmtTitle("Associations Not Available"),
+				description: fmtDesc("Associations are not available when device is paired in Long Range mode")
 		}
 	}
 }
@@ -146,13 +160,13 @@ void debugShowVars() {
 		title: "Auto Turn-Off Timer",
 		size: 2, defaultVal: 0,
 		description: "0 = Disabled",
-		range: 0..65535,
+		range: "0..65535",
 	],
 	onTimer: [ num: 3,
 		title: "Auto Turn-On Timer",
 		size: 2, defaultVal: 0,
 		description: "0 = Disabled",
-		range: 0..65535,
+		range: "0..65535",
 	],
 	timerUnits: [ num: 10,
 		title: "Time Units",
@@ -184,12 +198,19 @@ void debugShowVars() {
 	relayType: [ num: 9,
 		title: "Relay Type Behavior",
 		size: 1, defaultVal: 0,
-		options: [0:"NO: Relay Open when Off", 1:"NC: Relay Closed when Off"],
+		options: [0:"N/O: Relay Open when Off", 1:"N/C: Relay Closed when Off"],
+	],
+	multiClick: [ num: 12,
+		title: "Switch Multiclick Detection",
+		description: "This disables multi-taps and inclusion/exclusion from a switch",
+		size: 1, defaultVal: 1,
+		options: [1:"Enabled", 0:"Disabled"],
+		firmVer: 1.70
 	],
 	impulseDuration: [ num: 11,
 		title: "Impulse Duration for 3-way [seconds]",
 		size: 1, defaultVal: 10,
-		range: 2..200,
+		range: "2..200",
 	],
 	// Hidden Parameters to Set Defaults
 	assocReports: [ num: 8,
@@ -239,22 +260,21 @@ CommandClassReport - class:0x9F, version:1   (Security 2)
 ********************************************************************/
 void installed() {
 	logWarn "installed..."
-	initialize()
-}
-
-void initialize() {
-	logWarn "initialize..."
-	refresh()
+	state.deviceSync = true
 }
 
 void configure() {
 	logWarn "configure..."
-	checkLogLevel()   //Checks and sets scheduled turn off
+	setLogLevel(LOG_LEVELS[3], LOG_TIMES[30])   //Force Debug for 30 minutes
 
-	if (!pendingChanges || state.resyncAll == null) {
-		logDebug "Enabling Full Re-Sync"
+	if (!pendingChanges) {
+		logWarn "Enabling Full Settings Re-Sync"
 		clearVariables()
 		state.resyncAll = true
+	}
+	if (state.deviceSync || state.resyncAll == null) {
+		logWarn "First Configure - syncing settings from device"
+		state.deviceSync = true
 	}
 
 	updateSyncingStatus(6)
@@ -359,12 +379,12 @@ def setParameter(paramNum, value, size = null) {
 	if (param && !size) { size = param.size	}
 
 	if (paramNum == null || value == null || size == null) {
-		logWarn "Incomplete parameter list supplied..."
-		logWarn "Syntax: setParameter(paramNum, value, size)"
+		logWarn "Incomplete parameter list... Syntax: setParameter(paramNum, value, size)"
 		return
 	}
+
+	if (param) { state.setParam = true }
 	logDebug "setParameter ( number: $paramNum, value: $value, size: $size )" + (param ? " [${param.name} - ${param.title}]" : "")
-	// return configSetCmd([num: paramNum, size: size], value as Integer)
 	return configSetGetCmd([num: paramNum, size: size], value as Integer)
 }
 
@@ -388,7 +408,7 @@ void zwaveEvent(hubitat.zwave.commands.configurationv2.ConfigurationReport cmd) 
 	updateSyncingStatus()
 
 	Map param = getParam(cmd.parameterNumber)
-	Integer val = cmd.scaledConfigurationValue
+	Long val = cmd.scaledConfigurationValue
 
 	if (param) {
 		//Convert scaled signed integer to unsigned
@@ -401,6 +421,12 @@ void zwaveEvent(hubitat.zwave.commands.configurationv2.ConfigurationReport cmd) 
 	else {
 		logDebug "Parameter #${cmd.parameterNumber} = ${val.toString()}"
 	}
+
+	if (param && (state.deviceSync || state.setParam)) {
+		state.remove("setParam")
+		if (param.options) { device.updateSetting("configParam${cmd.parameterNumber}", [value:"${val}", type:"enum"]) }
+		else               { device.updateSetting("configParam${cmd.parameterNumber}", [value:(val as Long), type:"number"]) }
+	}
 }
 
 void zwaveEvent(hubitat.zwave.commands.associationv2.AssociationReport cmd) {
@@ -410,8 +436,10 @@ void zwaveEvent(hubitat.zwave.commands.associationv2.AssociationReport cmd) {
 	Integer grp = cmd.groupingIdentifier
 
 	if (grp == 1) {
-		logDebug "Lifeline Association: ${cmd.nodeId}"
-		state.group1Assoc = (cmd.nodeId == [zwaveHubNodeId]) ? true : false
+		if (!state.endPoints) {
+			logDebug "Lifeline Association: ${cmd.nodeId}"
+			state.group1Assoc = (cmd.nodeId == [zwaveHubNodeId]) ? true : false
+		}
 	}
 	else if (grp > 1 && grp <= maxAssocGroups) {
 		logDebug "Group $grp Association: ${cmd.nodeId}"
@@ -539,13 +567,18 @@ void executeConfigureCmds() {
 		cmds << versionGetCmd()
 	}
 
-	cmds += getConfigureAssocsCmds()
+	cmds += getConfigureAssocsCmds(true)
 
 	configParams.each { param ->
 		Integer paramVal = getParamValueAdj(param)
 		Integer storedVal = getParamStoredValue(param.num)
 
-		if ((paramVal != null) && (state.resyncAll || (storedVal != paramVal))) {
+		if (state.deviceSync) {
+			device.removeSetting("configParam${param.num}")
+			logDebug "Getting ${param.title} (#${param.num}) from device"
+			cmds += configGetCmd(param)
+		}
+		else if (paramVal != null && (state.resyncAll || storedVal != paramVal)) {
 			logDebug "Changing ${param.name} - ${param.title} (#${param.num}) from ${storedVal} to ${paramVal}"
 			cmds += configSetGetCmd(param, paramVal)
 		}
@@ -559,7 +592,7 @@ void executeConfigureCmds() {
 void executeRefreshCmds() {
 	List<String> cmds = []
 
-	if (state.resyncAll || !firmwareVersion || !state.deviceModel) {
+	if (state.resyncAll || state.deviceSync || !firmwareVersion || !state.deviceModel) {
 		cmds << mfgSpecificGetCmd()
 		cmds << versionGetCmd()
 	}
@@ -567,16 +600,19 @@ void executeRefreshCmds() {
 	//Refresh Switch
 	cmds << switchBinaryGetCmd()
 
-	sendCommands(cmds)
+	if (cmds) sendCommands(cmds)
 }
 
-List getConfigureAssocsCmds() {
+List getConfigureAssocsCmds(Boolean logging=false) {
 	List<String> cmds = []
 
 	if (!state.group1Assoc || state.resyncAll) {
 		if (state.group1Assoc == false) {
-			logDebug "Adding missing lifeline association..."
+			if (logging) logDebug "Clearing incorrect lifeline association..."
+			cmds << associationRemoveCmd(1,[])
+			cmds << secureCmd(zwave.multiChannelAssociationV3.multiChannelAssociationRemove(groupingIdentifier: 1, nodeId:[], multiChannelNodeIds:[]))
 		}
+		if (logging) logDebug "Setting ${state.endPoints ? 'multi-channel' : 'standard'} lifeline association..."
 		cmds << associationSetCmd(1, [zwaveHubNodeId])
 		cmds << associationGetCmd(1)
 	}
@@ -642,7 +678,9 @@ Changelog:
 2023-10-25 - Less saving to the configVals data, and some new functions
 2023-10-26 - Added some battery shortcut functions
 2023-11-08 - Added ability to adjust settings on firmware range
-2024-01-28 - Adjusted logging settings for new / upgrade installs, added mfgSpecificReport
+2024-01-28 - Adjusted logging settings for new / upgrade installs; added mfgSpecificReport
+2024-06-15 - Added isLongRange function; convert range to string to prevent expansion
+2024-07-16 - Support for multi-target version reports; adjust checkIn logic
 
 ********************************************************************/
 
@@ -712,7 +750,18 @@ void zwaveEvent(hubitat.zwave.commands.versionv2.VersionReport cmd) {
 	device.updateDataValue("protocolVersion", zwaveVersion)
 	device.updateDataValue("hardwareVersion", "${cmd.hardwareVersion}")
 
-	logDebug "Received Version Report - Firmware: ${fullVersion}"
+	if (cmd.targetVersions) {
+		Map tVersions = [:]
+		cmd.targetVersions.each {
+			tVersions[it.target] = String.format("%d.%02d",it.version,it.subVersion)
+			device.updateDataValue("firmware${it.target}Version", tVersions[it.target])
+		}
+		logDebug "Received Version Report - Main Firmware: ${fullVersion} | Targets: ${tVersions}"
+	}
+	else {
+		logDebug "Received Version Report - Firmware: ${fullVersion}"
+	}
+	
 	setDevModel(new BigDecimal(fullVersion))
 }
 
@@ -731,7 +780,7 @@ void zwaveEvent(hubitat.zwave.commands.manufacturerspecificv2.ManufacturerSpecif
 }
 
 void zwaveEvent(hubitat.zwave.Command cmd, ep=0) {
-	logDebug "Unhandled zwaveEvent: $cmd (ep ${ep})"
+	logDebug "Unhandled zwaveEvent: $cmd (ep ${ep}) [${getObjectClassName(cmd)}]"
 }
 
 
@@ -859,13 +908,13 @@ String secureCmd(String cmd) {
 	return zwaveSecureEncap(cmd)
 }
 String secureCmd(hubitat.zwave.Command cmd, ep=0) {
-	return zwaveSecureEncap(multiChannelEncap(cmd, ep))
+	return zwaveSecureEncap(multiChannelCmd(cmd, ep))
 }
 
 //MultiChannel Encapsulate if needed
-//This is called from secureCmd or supervisionEncap, do not call directly
-String multiChannelEncap(hubitat.zwave.Command cmd, ep) {
-	//logTrace "multiChannelEncap: ${cmd} (ep ${ep})"
+//This is called from secureCmd or superviseCmd, do not call directly
+String multiChannelCmd(hubitat.zwave.Command cmd, ep) {
+	//logTrace "multiChannelCmd: ${cmd} (ep ${ep})"
 	if (ep > 0) {
 		cmd = zwave.multiChannelV3.multiChannelCmdEncap(destinationEndPoint:ep).encapsulate(cmd)
 	}
@@ -884,7 +933,7 @@ Integer getParamStoredValue(Integer paramNum) {
 	return safeToInt(configsMap[paramNum], null)
 }
 
-void setParamStoredValue(Integer paramNum, Integer value) {
+void setParamStoredValue(Integer paramNum, Number value) {
 	//Using Data (Map) instead of State Variables
 	TreeMap configsMap = getParamStoredMap()
 	configsMap[paramNum] = value
@@ -910,7 +959,7 @@ Map getParamStoredMap() {
 	return configsMap
 }
 
-//Parameter List Functions
+/*** Parameter List Functions ***/
 //This will rebuild the list for the current model and firmware only as needed
 //paramsList Structure: MODEL:[FIRMWARE:PARAM_MAPS]
 //PARAM_MAPS [num, name, title, description, size, defaultVal, options, firmVer]
@@ -925,7 +974,8 @@ void updateParamsList() {
 	List<Map> tmpList = []
 	paramsMap.each { name, pMap ->
 		Map tmpMap = pMap.clone()
-		tmpMap.options = tmpMap.options?.clone()
+		if (tmpMap.options) tmpMap.options = tmpMap.options?.clone()
+		if (tmpMap.range) tmpMap.range = (tmpMap.range).toString()
 
 		//Save the name
 		tmpMap.name = name
@@ -977,8 +1027,10 @@ void verifyParamsList() {
 	String devModel = state.deviceModel
 	BigDecimal firmware = firmwareVersion
 	if (!paramsMap.settings?.fixed) fixParamsMap()
-	if (paramsList[devModel] == null) updateParamsList()
-	if (paramsList[devModel][firmware] == null) updateParamsList()
+	if (devModel) {
+		if (paramsList[devModel] == null) updateParamsList()
+		else if (paramsList[devModel][firmware] == null) updateParamsList()
+	}
 }
 
 //Gets full list of params
@@ -1033,7 +1085,7 @@ String fmtDesc(String str) {
 	return "<div style='font-size: 85%; font-style: italic; padding: 1px 0px 4px 2px;'>${str}</div>"
 }
 String fmtHelpInfo(String str) {
-	String info = "${DRIVER} v${VERSION}"
+	String info = ((PACKAGE ?: '') + " ${DRIVER} v${VERSION}").trim()
 	String prefLink = "<a href='${COMM_LINK}' target='_blank'>${str}<br><div style='font-size: 70%;'>${info}</div></a>"
 	String topStyle = "style='font-size: 18px; padding: 1px 12px; border: 2px solid Crimson; border-radius: 6px;'" //SlateGray
 	String topLink = "<a ${topStyle} href='${COMM_LINK}' target='_blank'>${str}<br><div style='font-size: 14px;'>${info}</div></a>"
@@ -1056,36 +1108,36 @@ void refreshSyncStatus() {
 	Integer changes = pendingChanges
 	sendEvent(name:"syncStatus", value:(changes ? "${changes} Pending Changes" : "Synced"))
 	device.updateDataValue("configVals", getParamStoredMap()?.inspect())
+	if (changes==0 && state.deviceSync) { state.remove("deviceSync") }
 }
 
 void updateLastCheckIn() {
-	def nowDate = new Date()
+	Date nowDate = new Date()
 	state.lastCheckInDate = convertToLocalTimeString(nowDate)
 
 	Long lastExecuted = state.lastCheckInTime ?: 0
 	Long allowedMil = 24 * 60 * 60 * 1000   //24 Hours
 	if (lastExecuted + allowedMil <= nowDate.time) {
 		state.lastCheckInTime = nowDate.time
-		if (lastExecuted) runIn(4, doCheckIn)
+		if (lastExecuted) runIn(2, doCheckIn)
 		scheduleCheckIn()
 	}
 }
 
 void scheduleCheckIn() {
-	def cal = Calendar.getInstance()
-	cal.add(Calendar.MINUTE, -1)
-	Integer hour = cal[Calendar.HOUR_OF_DAY]
-	Integer minute = cal[Calendar.MINUTE]
-	schedule( "0 ${minute} ${hour} * * ?", doCheckIn)
+	unschedule("doCheckIn")
+	runIn(86340, doCheckIn)
 }
 
 void doCheckIn() {
-	String devModel = (state.deviceModel ?: "NA") + (state.subModel ? ".${state.subModel}" : "")
-	String checkUri = "http://jtp10181.gateway.scarf.sh/${DRIVER}/chk-${devModel}-v${VERSION}"
+	scheduleCheckIn()
+	String pkg = PACKAGE ?: DRIVER
+	String devModel = (state.deviceModel ?: (PACKAGE ? DRIVER : "NA")) + (state.subModel ? ".${state.subModel}" : "")
+	String checkUri = "http://jtp10181.gateway.scarf.sh/${pkg}/chk-${devModel}-v${VERSION}"
 
 	try {
-		httpGet(uri:checkUri, timeout:4) { logDebug "Driver ${DRIVER} ${devModel} v${VERSION}" }
-		state.lastCheckInTime = (new Date()).time
+		httpGet(uri:checkUri, timeout:4) { logDebug "Driver ${pkg} ${devModel} v${VERSION}" }
+		state.lastCheckInTime = now()
 	} catch (Exception e) { }
 }
 
@@ -1127,7 +1179,7 @@ void clearVariables() {
 	def engTime = state.energyTime
 
 	//Clears State Variables
-	atomicState.clear()
+	state.clear()
 
 	//Clear Config Data
 	configsList["${device.id}"] = [:]
@@ -1140,7 +1192,7 @@ void clearVariables() {
 	//Restore
 	if (devModel) state.deviceModel = devModel
 	if (engTime) state.energyTime = engTime
-	atomicState.resyncAll = true
+	state.resyncAll = true
 }
 
 //Stash the model in a state variable
@@ -1175,6 +1227,11 @@ BigDecimal getFirmwareVersion() {
 	return ((version != null) && version.isNumber()) ? version.toBigDecimal() : 0.0
 }
 
+Boolean isLongRange() {
+	Integer intDNI = device ? hubitat.helper.HexUtils.hexStringToInt(device.deviceNetworkId) : null
+	return (intDNI > 255)
+}
+
 String convertToLocalTimeString(dt) {
 	def timeZoneId = location?.timeZone?.ID
 	if (timeZoneId) {
@@ -1194,7 +1251,6 @@ List convertIntListToHexList(intList, pad=2) {
 
 List convertHexListToIntList(String[] hexList) {
 	def intList = []
-
 	hexList?.each {
 		try {
 			it = it.trim()
@@ -1260,7 +1316,7 @@ BigDecimal safeToDec(val, defaultVal=0, roundTo=-1) {
 }
 
 Boolean isDuplicateCommand(Long lastExecuted, Long allowedMil) {
-	!lastExecuted ? false : (lastExecuted + allowedMil > new Date().time)
+	!lastExecuted ? false : (lastExecuted + allowedMil > now())
 }
 
 
@@ -1289,7 +1345,7 @@ preferences {
 
 //Call this function from within updated() and configure() with no parameters: checkLogLevel()
 void checkLogLevel(Map levelInfo = [level:null, time:null]) {
-	unschedule(logsOff)
+	unschedule("logsOff")
 	//Set Defaults
 	if (settings.logLevel == null) {
 		device.updateSetting("logLevel",[value:"3", type:"enum"])
