@@ -2,17 +2,17 @@
   "packageName": "Zooz ZAC38 Range Extender",
   "author": "Jeff Page (@jtp10181)",
   "minimumHEVersion": "2.3.5",
-  "dateReleased": "2024-06-15",
+  "dateReleased": "2025-02-15",
   "documentationLink": "https://github.com/jtp10181/Hubitat/tree/main/Drivers/zooz",
   "communityLink": "https://community.hubitat.com/t/zooz-zac38/122755",
-  "releaseNotes": "Version [1.0.2] - 2024-06-16\n  - Update library and common code\n  - Fix for range expansion and sharing with Hub Mesh",
-  "version": "1.0.2",
+  "releaseNotes": "Version [1.0.6] - 2025-02-15\n  - Added singleThreaded flag\n  - Update library and common code\n  - First configure will sync settings from device instead of forcing defaults\n  - Force debug logging when configure is run\n  - Changed Set Parameter to update displayed settings\n  - Added driverVersion state and automatic configure for updates / driver changes\n  - Updated support info link for 2.4.x platform",
+  "version": "1.0.6",
   "drivers": [
     {
       "id": "7cf28006-04df-4ac0-88a7-d581a3feeec6",
       "name": "Zooz ZAC38 Range Extender",
       "namespace": "jtp10181",
-      "location": "https://jtp10181.gateway.scarf.sh/zooz-zac38-v1.0.2.groovy",
+      "location": "https://jtp10181.gateway.scarf.sh/zooz-zac38-v1.0.6.groovy",
       "required": true
     }
   ]

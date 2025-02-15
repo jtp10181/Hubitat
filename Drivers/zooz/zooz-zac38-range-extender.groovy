@@ -1,13 +1,22 @@
 /*
  *  Zooz ZAC38 Range Extender
- *    - Model: ZAC38
+ *    - Model: ZAC38 All Firmware (to 1.30)
  *
  *  For Support, Information, and Updates:
- *  https://community.hubitat.com/
+ *  https://community.hubitat.com/t/zooz-zac38/122755
  *  https://github.com/jtp10181/Hubitat/tree/main/Drivers/zooz
  *
 
 Changelog:
+
+## [1.0.6] - 2025-02-15 (@jtp10181)
+  - Added singleThreaded flag
+  - Update library and common code
+  - First configure will sync settings from device instead of forcing defaults
+  - Force debug logging when configure is run
+  - Changed Set Parameter to update displayed settings
+  - Added driverVersion state and automatic configure for updates / driver changes
+  - Updated support info link for 2.4.x platform
 
 ## [1.0.2] - 2024-06-16 (@jtp10181)
   - Update library and common code
@@ -20,7 +29,7 @@ Changelog:
 ## [0.1.0] - 2023-04-25 (@jtp10181)
   - Initial Release
 
- *  Copyright 2023-2024 Jeff Page
+ *  Copyright 2023-2025 Jeff Page
  *
  *  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  *  in compliance with the License. You may obtain a copy of the License at:
@@ -35,7 +44,7 @@ Changelog:
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "1.0.2"
+@Field static final String VERSION = "1.0.6"
 @Field static final String DRIVER = "Zooz-ZAC38"
 @Field static final String COMM_LINK = "https://community.hubitat.com/t/zooz-zac38/122755"
 @Field static final Map deviceModelNames = ["0004:0510":"ZAC38"]
@@ -45,6 +54,7 @@ metadata {
 		name: "Zooz ZAC38 Range Extender",
 		namespace: "jtp10181",
 		author: "Jeff Page (@jtp10181)",
+		singleThreaded: true,
 		importUrl: "https://raw.githubusercontent.com/jtp10181/Hubitat/main/Drivers/zooz/zooz-zac38-range-extender.groovy"
 	) {
 		capability "Sensor"
@@ -60,7 +70,8 @@ metadata {
 			[name:"size",type:"NUMBER", description:"Parameter Size"]]
 
 		//DEBUGGING
-		//command "debugShowVars"
+		// command "debugShowVars"
+		command "installed"
 
 		attribute "syncStatus", "string"
 
@@ -68,14 +79,15 @@ metadata {
 	}
 
 	preferences {
+		input(helpInfoInput)
 		configParams.each { param ->
 			if (!param.hidden) {
-				Integer paramVal = getParamValue(param)
 				if (param.options) {
+					Integer paramVal = getParamValue(param)
 					input "configParam${param.num}", "enum",
 						title: fmtTitle("${param.title}"),
 						description: fmtDesc("• Parameter #${param.num}, Selected: ${paramVal}" + (param?.description ? "<br>• ${param?.description}" : '')),
-						defaultValue: paramVal,
+						defaultValue: param.defaultVal,
 						options: param.options,
 						required: false
 				}
@@ -83,7 +95,7 @@ metadata {
 					input "configParam${param.num}", "number",
 						title: fmtTitle("${param.title}"),
 						description: fmtDesc("• Parameter #${param.num}, Range: ${(param.range).toString()}, DEFAULT: ${param.defaultVal}" + (param?.description ? "<br>• ${param?.description}" : '')),
-						defaultValue: paramVal,
+						defaultValue: param.defaultVal,
 						range: param.range,
 						required: false
 				}
@@ -163,8 +175,9 @@ CommandClassReport - class:0x9F, version:1   (Security 2)
 //Set Command Class Versions
 @Field static final Map commandClassVersions = [
 	0x6C: 1,	// supervision
-	0x70: 1,	// configuration
+	0x70: 2,	// configuration
 	0x72: 2,	// manufacturerSpecific
+	0X80: 1,	// battery
 	0x85: 2,	// association
 	0x86: 2,	// version
 	0x8E: 3,	// multiChannelAssociation
@@ -177,30 +190,43 @@ CommandClassReport - class:0x9F, version:1   (Security 2)
 ********************************************************************/
 void installed() {
 	logWarn "installed..."
-	initialize()
-}
-
-void initialize() {
-	logWarn "initialize..."
-	refresh()
+	state.deviceSync = true
+	state.remove("resyncAll")
 }
 
 void configure() {
 	logWarn "configure..."
 
-	if (!pendingChanges || state.resyncAll == null) {
-		logDebug "Enabling Full Re-Sync"
+	if (state.deviceSync || state.resyncAll == null || !state.deviceModel) {
+		logWarn "First Configure detected - retrieve settings from device"
+		clearVariables()
+		state.deviceSync = true
+	}
+	else if (state.driverVersion != VERSION) {
+		logWarn "Driver Upgrade detected - basic configure only"
+	}
+	else if (!pendingChanges) {
+		logWarn "Manual Configure - full settings re-sync"
 		clearVariables()
 		state.resyncAll = true
 	}
+	else {
+		logWarn "Pending Changes - sync pending changes only"
+	}
 
-	updateSyncingStatus(6)
+	//Force Debug for 30 minutes
+	if (logLevelInfo.level <= 3) setLogLevel(LOG_LEVELS[3], LOG_TIMES[30])
+	state.driverVersion = VERSION
+
+	updateSyncingStatus(8)
 	runIn(1, executeRefreshCmds)
 	runIn(4, executeConfigureCmds)
 }
 
 void updated() {
 	logDebug "updated..."
+	checkLogLevel()   //Checks and sets scheduled turn off
+
 	runIn(1, executeConfigureCmds)
 }
 
@@ -223,7 +249,7 @@ void refreshParams() {
 	}
 
 	configParams.each { param ->
-		cmds << configGetCmd(param)
+		cmds += configGetCmd(param)
 	}
 
 	if (cmds) sendCommands(cmds)
@@ -235,10 +261,11 @@ def setParameter(paramNum, value, size = null) {
 	if (param && !size) { size = param.size	}
 
 	if (paramNum == null || value == null || size == null) {
-		logWarn "Incomplete parameter list supplied..."
-		logWarn "Syntax: setParameter(paramNum, value, size)"
+		logWarn "Incomplete parameter list... Syntax: setParameter(paramNum, value, size)"
 		return
 	}
+
+	if (param) { state.setParam = true }
 	logDebug "setParameter ( number: $paramNum, value: $value, size: $size )" + (param ? " [${param.name} - ${param.title}]" : "")
 	return configSetGetCmd([num: paramNum, size: size], value as Integer)
 }
@@ -249,17 +276,20 @@ def setParameter(paramNum, value, size = null) {
 ********************************************************************/
 void parse(String description) {
 	zwaveParse(description)
+	
+	//Update or New Install
+	if (state.driverVersion != VERSION) { configure() }
 }
 void zwaveEvent(hubitat.zwave.commands.supervisionv1.SupervisionGet cmd, ep=0) {
 	zwaveSupervision(cmd,ep)
 }
 
-void zwaveEvent(hubitat.zwave.commands.configurationv1.ConfigurationReport cmd) {
+void zwaveEvent(hubitat.zwave.commands.configurationv2.ConfigurationReport cmd) {
 	logTrace "${cmd}"
 	updateSyncingStatus()
 
 	Map param = getParam(cmd.parameterNumber)
-	Integer val = cmd.scaledConfigurationValue
+	Long val = cmd.scaledConfigurationValue
 
 	if (param) {
 		//Convert scaled signed integer to unsigned
@@ -271,6 +301,12 @@ void zwaveEvent(hubitat.zwave.commands.configurationv1.ConfigurationReport cmd) 
 	}
 	else {
 		logDebug "Parameter #${cmd.parameterNumber} = ${val.toString()}"
+	}
+
+	if (param && (state.deviceSync || state.setParam)) {
+		state.remove("setParam")
+		if (param.options) { device.updateSetting("configParam${cmd.parameterNumber}", [value:"${val}", type:"enum"]) }
+		else               { device.updateSetting("configParam${cmd.parameterNumber}", [value:(val as Long), type:"number"]) }
 	}
 }
 
@@ -334,7 +370,7 @@ void sendEventLog(Map evt, Integer ep=0) {
 }
 
 void sendPowerEvent(event, parameter) {
-	switch (event) {
+	switch (event as Integer) {
 		case 0x00: break  //Idle State - ignored
 		case 0x02:  //AC mains disconnected
 			sendEventLog(name:"powerSource", value:"battery")
@@ -354,9 +390,6 @@ void sendPowerEvent(event, parameter) {
 void executeConfigureCmds() {
 	logDebug "executeConfigureCmds..."
 
-	//Checks and sets scheduled turn off
-	checkLogLevel()
-
 	List<String> cmds = []
 
 	if (!firmwareVersion || !state.deviceModel) {
@@ -369,7 +402,12 @@ void executeConfigureCmds() {
 		Integer paramVal = getParamValueAdj(param)
 		Integer storedVal = getParamStoredValue(param.num)
 
-		if ((paramVal != null) && (state.resyncAll || (storedVal != paramVal))) {
+		if (state.deviceSync && !param.hidden && !param.noSync) {
+			device.removeSetting("configParam${param.num}")
+			logDebug "Getting ${param.title} (#${param.num}) from device"
+			cmds += configGetCmd(param)
+		}
+		else if (paramVal != null && (state.resyncAll || storedVal != paramVal)) {
 			logDebug "Changing ${param.name} - ${param.title} (#${param.num}) from ${storedVal} to ${paramVal}"
 			cmds += configSetGetCmd(param, paramVal)
 		}
@@ -383,7 +421,7 @@ void executeConfigureCmds() {
 void executeRefreshCmds() {
 	List<String> cmds = []
 
-	if (state.resyncAll || !firmwareVersion || !state.deviceModel) {
+	if (state.resyncAll || state.deviceSync || !firmwareVersion || !state.deviceModel) {
 		cmds << mfgSpecificGetCmd()
 		cmds << versionGetCmd()
 	}
@@ -437,8 +475,12 @@ Changelog:
 2023-10-25 - Less saving to the configVals data, and some new functions
 2023-10-26 - Added some battery shortcut functions
 2023-11-08 - Added ability to adjust settings on firmware range
-2024-01-28 - Adjusted logging settings for new / upgrade installs, added mfgSpecificReport
-2024-06-15 - Added isLongRange function, convert range to string to prevent expansion
+2024-01-28 - Adjusted logging settings for new / upgrade installs; added mfgSpecificReport
+2024-06-15 - Added isLongRange function; convert range to string to prevent expansion
+2024-07-16 - Support for multi-target version reports; adjust checkIn logic
+2025-02-14 - Clearing all scheduled jobs during clearVariables / configure
+           - Reworked saving/restoring of important states during clearVariables
+           - Updated formatting and help info for 2.4.x platform
 
 ********************************************************************/
 
@@ -508,7 +550,18 @@ void zwaveEvent(hubitat.zwave.commands.versionv2.VersionReport cmd) {
 	device.updateDataValue("protocolVersion", zwaveVersion)
 	device.updateDataValue("hardwareVersion", "${cmd.hardwareVersion}")
 
-	logDebug "Received Version Report - Firmware: ${fullVersion}"
+	if (cmd.targetVersions) {
+		Map tVersions = [:]
+		cmd.targetVersions.each {
+			tVersions[it.target] = String.format("%d.%02d",it.version,it.subVersion)
+			device.updateDataValue("firmware${it.target}Version", tVersions[it.target])
+		}
+		logDebug "Received Version Report - Main Firmware: ${fullVersion} | Targets: ${tVersions}"
+	}
+	else {
+		logDebug "Received Version Report - Firmware: ${fullVersion}"
+	}
+	
 	setDevModel(new BigDecimal(fullVersion))
 }
 
@@ -527,7 +580,7 @@ void zwaveEvent(hubitat.zwave.commands.manufacturerspecificv2.ManufacturerSpecif
 }
 
 void zwaveEvent(hubitat.zwave.Command cmd, ep=0) {
-	logDebug "Unhandled zwaveEvent: $cmd (ep ${ep})"
+	logDebug "Unhandled zwaveEvent: $cmd (ep ${ep}) [${getObjectClassName(cmd)}]"
 }
 
 
@@ -655,13 +708,13 @@ String secureCmd(String cmd) {
 	return zwaveSecureEncap(cmd)
 }
 String secureCmd(hubitat.zwave.Command cmd, ep=0) {
-	return zwaveSecureEncap(multiChannelEncap(cmd, ep))
+	return zwaveSecureEncap(multiChannelCmd(cmd, ep))
 }
 
 //MultiChannel Encapsulate if needed
-//This is called from secureCmd or supervisionEncap, do not call directly
-String multiChannelEncap(hubitat.zwave.Command cmd, ep) {
-	//logTrace "multiChannelEncap: ${cmd} (ep ${ep})"
+//This is called from secureCmd or superviseCmd, do not call directly
+String multiChannelCmd(hubitat.zwave.Command cmd, ep) {
+	//logTrace "multiChannelCmd: ${cmd} (ep ${ep})"
 	if (ep > 0) {
 		cmd = zwave.multiChannelV3.multiChannelCmdEncap(destinationEndPoint:ep).encapsulate(cmd)
 	}
@@ -680,7 +733,7 @@ Integer getParamStoredValue(Integer paramNum) {
 	return safeToInt(configsMap[paramNum], null)
 }
 
-void setParamStoredValue(Integer paramNum, Integer value) {
+void setParamStoredValue(Integer paramNum, Number value) {
 	//Using Data (Map) instead of State Variables
 	TreeMap configsMap = getParamStoredMap()
 	configsMap[paramNum] = value
@@ -706,7 +759,7 @@ Map getParamStoredMap() {
 	return configsMap
 }
 
-//Parameter List Functions
+/*** Parameter List Functions ***/
 //This will rebuild the list for the current model and firmware only as needed
 //paramsList Structure: MODEL:[FIRMWARE:PARAM_MAPS]
 //PARAM_MAPS [num, name, title, description, size, defaultVal, options, firmVer]
@@ -774,8 +827,10 @@ void verifyParamsList() {
 	String devModel = state.deviceModel
 	BigDecimal firmware = firmwareVersion
 	if (!paramsMap.settings?.fixed) fixParamsMap()
-	if (paramsList[devModel] == null) updateParamsList()
-	if (paramsList[devModel][firmware] == null) updateParamsList()
+	if (devModel) {
+		if (paramsList[devModel] == null) updateParamsList()
+		else if (paramsList[devModel][firmware] == null) updateParamsList()
+	}
 }
 
 //Gets full list of params
@@ -827,17 +882,39 @@ String fmtTitle(String str) {
 	return "<strong>${str}</strong>"
 }
 String fmtDesc(String str) {
-	return "<div style='font-size: 85%; font-style: italic; padding: 1px 0px 4px 2px;'>${str}</div>"
+	if (location.hub.firmwareVersionString >= "2.4.0.0") {
+		return "<div style='font-style: italic; padding: 0px 0px 4px 6px; line-height:1.4;'>${str}</div>"
+	} else {
+		return "<div style='font-size: 85%; font-style: italic; padding: 1px 0px 4px 2px;'>${str}</div>"
+	}
 }
-String fmtHelpInfo(String str) {
-	String info = "${DRIVER} v${VERSION}"
-	String prefLink = "<a href='${COMM_LINK}' target='_blank'>${str}<br><div style='font-size: 70%;'>${info}</div></a>"
-	String topStyle = "style='font-size: 18px; padding: 1px 12px; border: 2px solid Crimson; border-radius: 6px;'" //SlateGray
-	String topLink = "<a ${topStyle} href='${COMM_LINK}' target='_blank'>${str}<br><div style='font-size: 14px;'>${info}</div></a>"
 
-	return "<div style='font-size: 160%; font-style: bold; padding: 2px 0px; text-align: center;'>${prefLink}</div>" +
-		"<div style='text-align: center; position: absolute; top: 46px; right: 60px; padding: 0px;'><ul class='nav'><li>${topLink}</ul></li></div>"
+String getInfoLink() {
+	String str = "Community Support"
+	String info = ((PACKAGE ?: '') + " ${DRIVER} v${VERSION}").trim()
+	String hrefStyle = "style='font-size: 140%; padding: 2px 16px; border: 2px solid Crimson; border-radius: 6px;'" //SlateGray
+	String htmlTag = "<a ${hrefStyle} href='${COMM_LINK}' target='_blank'><div style='font-size: 70%;'>${info}</div>${str}</a>"
+	String finalLink = "<div style='text-align:center; position:relative; display:flex; justify-content:center; align-items:center;'><ul class='nav'><li>${htmlTag}</ul></li></div>"
+	return finalLink
 }
+
+String getFloatingLink() {
+	String info = ((PACKAGE ?: '') + " ${DRIVER} v${VERSION}").trim()
+	String topStyle = "style='font-size: 100%; padding: 2px 12px; border: 2px solid SlateGray; border-radius: 6px;'" //SlateGray
+	String topLink = "<a ${topStyle} href='${COMM_LINK}' target='_blank'>${info}</a>"
+	String finalLink = "<div style='text-align: center; position: absolute; top: 8px; right: 60px; padding: 0px; background-color: white;'><ul class='nav'><li>${topLink}</ul></li></div>"
+	return finalLink
+}
+
+//Use this at top of preferences, example: input(helpInfoInput)
+Map getHelpInfoInput () {
+	return [name: "helpInfo", type: "hidden", title: "Support Information:", description: "${infoLink}"]
+}
+
+//Adds fake command with support info link
+command "!SupportInfo:", [[name:"${infoLink}"]]
+void "!SupportInfo:"() { log.info "${infoLink}" }
+
 
 private getTimeOptionsRange(String name, Integer multiplier, List range) {
 	return range.collectEntries{ [(it*multiplier): "${it} ${name}${it == 1 ? '' : 's'}"] }
@@ -853,36 +930,36 @@ void refreshSyncStatus() {
 	Integer changes = pendingChanges
 	sendEvent(name:"syncStatus", value:(changes ? "${changes} Pending Changes" : "Synced"))
 	device.updateDataValue("configVals", getParamStoredMap()?.inspect())
+	if (changes==0 && state.deviceSync) { state.remove("deviceSync") }
 }
 
 void updateLastCheckIn() {
-	def nowDate = new Date()
+	Date nowDate = new Date()
 	state.lastCheckInDate = convertToLocalTimeString(nowDate)
 
 	Long lastExecuted = state.lastCheckInTime ?: 0
 	Long allowedMil = 24 * 60 * 60 * 1000   //24 Hours
 	if (lastExecuted + allowedMil <= nowDate.time) {
 		state.lastCheckInTime = nowDate.time
-		if (lastExecuted) runIn(4, doCheckIn)
+		if (lastExecuted) runIn(2, doCheckIn)
 		scheduleCheckIn()
 	}
 }
 
 void scheduleCheckIn() {
-	def cal = Calendar.getInstance()
-	cal.add(Calendar.MINUTE, -1)
-	Integer hour = cal[Calendar.HOUR_OF_DAY]
-	Integer minute = cal[Calendar.MINUTE]
-	schedule( "0 ${minute} ${hour} * * ?", doCheckIn)
+	unschedule("doCheckIn")
+	runIn(86340, doCheckIn)
 }
 
 void doCheckIn() {
-	String devModel = (state.deviceModel ?: "NA") + (state.subModel ? ".${state.subModel}" : "")
-	String checkUri = "http://jtp10181.gateway.scarf.sh/${DRIVER}/chk-${devModel}-v${VERSION}"
+	scheduleCheckIn()
+	String pkg = PACKAGE ?: DRIVER
+	String devModel = (state.deviceModel ?: (PACKAGE ? DRIVER : "NA")) + (state.subModel ? ".${state.subModel}" : "")
+	String checkUri = "http://jtp10181.gateway.scarf.sh/${pkg}/chk-${devModel}-v${VERSION}"
 
 	try {
-		httpGet(uri:checkUri, timeout:4) { logDebug "Driver ${DRIVER} ${devModel} v${VERSION}" }
-		state.lastCheckInTime = (new Date()).time
+		httpGet(uri:checkUri, timeout:4) { logDebug "Driver ${pkg} ${devModel} v${VERSION}" }
+		state.lastCheckInTime = now()
 	} catch (Exception e) { }
 }
 
@@ -920,8 +997,8 @@ void clearVariables() {
 	logWarn "Clearing state variables and data..."
 
 	//Backup
-	String devModel = state.deviceModel
-	def engTime = state.energyTime
+	List saveList = ["deviceModel","resyncAll","deviceSync","energyTime","group1Assoc"]
+	Map saveMap = state.findAll { saveList.contains(it.key) && it.value != null }
 
 	//Clears State Variables
 	state.clear()
@@ -934,10 +1011,11 @@ void clearVariables() {
 	device.removeDataValue("zwaveAssociationG2")
 	device.removeDataValue("zwaveAssociationG3")
 
-	//Restore
-	if (devModel) state.deviceModel = devModel
-	if (engTime) state.energyTime = engTime
-	state.resyncAll = true
+	//Clear Schedules
+	unschedule()
+
+	//Restore Saved States
+	state.putAll(saveMap)
 }
 
 //Stash the model in a state variable
@@ -1032,7 +1110,7 @@ BigDecimal safeToDec(val, defaultVal=0, roundTo=-1) {
 }
 
 Boolean isDuplicateCommand(Long lastExecuted, Long allowedMil) {
-	!lastExecuted ? false : (lastExecuted + allowedMil > new Date().time)
+	!lastExecuted ? false : (lastExecuted + allowedMil > now())
 }
 
 
@@ -1055,13 +1133,11 @@ preferences {
 		description: fmtDesc("Logs selected level and above"), defaultValue: 3, options: LOG_LEVELS
 	input name: "logLevelTime", type: "enum", title: fmtTitle("Logging Level Time"),
 		description: fmtDesc("Time to enable Debug/Trace logging"),defaultValue: 30, options: LOG_TIMES
-	//Help Link
-	input name: "helpInfo", type: "hidden", title: fmtHelpInfo("Community Link")
 }
 
 //Call this function from within updated() and configure() with no parameters: checkLogLevel()
 void checkLogLevel(Map levelInfo = [level:null, time:null]) {
-	unschedule(logsOff)
+	unschedule("logsOff")
 	//Set Defaults
 	if (settings.logLevel == null) {
 		device.updateSetting("logLevel",[value:"3", type:"enum"])
