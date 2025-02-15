@@ -17,6 +17,9 @@ Changelog:
 2024-01-28 - Adjusted logging settings for new / upgrade installs; added mfgSpecificReport
 2024-06-15 - Added isLongRange function; convert range to string to prevent expansion
 2024-07-16 - Support for multi-target version reports; adjust checkIn logic
+2025-02-14 - Clearing all scheduled jobs during clearVariables / configure
+           - Reworked saving/restoring of important states during clearVariables
+           - Updated formatting and help info for 2.4.x platform
 
 ********************************************************************/
 
@@ -418,17 +421,39 @@ String fmtTitle(String str) {
 	return "<strong>${str}</strong>"
 }
 String fmtDesc(String str) {
-	return "<div style='font-size: 85%; font-style: italic; padding: 1px 0px 4px 2px;'>${str}</div>"
+	if (location.hub.firmwareVersionString >= "2.4.0.0") {
+		return "<div style='font-style: italic; padding: 0px 0px 4px 6px; line-height:1.4;'>${str}</div>"
+	} else {
+		return "<div style='font-size: 85%; font-style: italic; padding: 1px 0px 4px 2px;'>${str}</div>"
+	}
 }
-String fmtHelpInfo(String str) {
-	String info = ((PACKAGE ?: '') + " ${DRIVER} v${VERSION}").trim()
-	String prefLink = "<a href='${COMM_LINK}' target='_blank'>${str}<br><div style='font-size: 70%;'>${info}</div></a>"
-	String topStyle = "style='font-size: 18px; padding: 1px 12px; border: 2px solid Crimson; border-radius: 6px;'" //SlateGray
-	String topLink = "<a ${topStyle} href='${COMM_LINK}' target='_blank'>${str}<br><div style='font-size: 14px;'>${info}</div></a>"
 
-	return "<div style='font-size: 160%; font-style: bold; padding: 2px 0px; text-align: center;'>${prefLink}</div>" +
-		"<div style='text-align: center; position: absolute; top: 46px; right: 60px; padding: 0px;'><ul class='nav'><li>${topLink}</ul></li></div>"
+String getInfoLink() {
+	String str = "Community Support"
+	String info = ((PACKAGE ?: '') + " ${DRIVER} v${VERSION}").trim()
+	String hrefStyle = "style='font-size: 140%; padding: 2px 16px; border: 2px solid Crimson; border-radius: 6px;'" //SlateGray
+	String htmlTag = "<a ${hrefStyle} href='${COMM_LINK}' target='_blank'><div style='font-size: 70%;'>${info}</div>${str}</a>"
+	String finalLink = "<div style='text-align:center; position:relative; display:flex; justify-content:center; align-items:center;'><ul class='nav'><li>${htmlTag}</ul></li></div>"
+	return finalLink
 }
+
+String getFloatingLink() {
+	String info = ((PACKAGE ?: '') + " ${DRIVER} v${VERSION}").trim()
+	String topStyle = "style='font-size: 100%; padding: 2px 12px; border: 2px solid SlateGray; border-radius: 6px;'" //SlateGray
+	String topLink = "<a ${topStyle} href='${COMM_LINK}' target='_blank'>${info}</a>"
+	String finalLink = "<div style='text-align: center; position: absolute; top: 8px; right: 60px; padding: 0px; background-color: white;'><ul class='nav'><li>${topLink}</ul></li></div>"
+	return finalLink
+}
+
+//Use this at top of preferences, example: input(helpInfoInput)
+Map getHelpInfoInput () {
+	return [name: "helpInfo", type: "hidden", title: "Support Information:", description: "${infoLink}"]
+}
+
+//Adds fake command with support info link
+command "!SupportInfo:", [[name:"${infoLink}"]]
+void "!SupportInfo:"() { log.info "${infoLink}" }
+
 
 private getTimeOptionsRange(String name, Integer multiplier, List range) {
 	return range.collectEntries{ [(it*multiplier): "${it} ${name}${it == 1 ? '' : 's'}"] }
@@ -511,8 +536,8 @@ void clearVariables() {
 	logWarn "Clearing state variables and data..."
 
 	//Backup
-	String devModel = state.deviceModel
-	def engTime = state.energyTime
+	List saveList = ["deviceModel","resyncAll","deviceSync","energyTime","group1Assoc"]
+	Map saveMap = state.findAll { saveList.contains(it.key) && it.value != null }
 
 	//Clears State Variables
 	state.clear()
@@ -525,10 +550,11 @@ void clearVariables() {
 	device.removeDataValue("zwaveAssociationG2")
 	device.removeDataValue("zwaveAssociationG3")
 
-	//Restore
-	if (devModel) state.deviceModel = devModel
-	if (engTime) state.energyTime = engTime
-	state.resyncAll = true
+	//Clear Schedules
+	unschedule()
+
+	//Restore Saved States
+	state.putAll(saveMap)
 }
 
 //Stash the model in a state variable
@@ -675,8 +701,6 @@ preferences {
 		description: fmtDesc("Logs selected level and above"), defaultValue: 3, options: LOG_LEVELS
 	input name: "logLevelTime", type: "enum", title: fmtTitle("Logging Level Time"),
 		description: fmtDesc("Time to enable Debug/Trace logging"),defaultValue: 30, options: LOG_TIMES
-	//Help Link
-	input name: "helpInfo", type: "hidden", title: fmtHelpInfo("Community Link")
 }
 
 //Call this function from within updated() and configure() with no parameters: checkLogLevel()

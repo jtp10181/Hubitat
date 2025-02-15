@@ -2,17 +2,17 @@
   "packageName": "Zooz ZAC36 Titan Valve Actuator",
   "author": "Jeff Page (@jtp10181)",
   "minimumHEVersion": "2.3.5",
-  "dateReleased": "2024-06-16",
+  "dateReleased": "2025-02-15",
   "documentationLink": "https://github.com/jtp10181/Hubitat/tree/main/Drivers/zooz",
   "communityLink": "https://community.hubitat.com/t/zooz-zac36/79426",
-  "releaseNotes": "Version [1.0.4] - 2024-06-16\n  - Update library and common code\n\nVersion [1.0.2] - 2024-03-01\n  - Update library code\n  - Add paramaters 113, 114 and 115 for battery configuration\n  - Add support for battery v2 disconnected/charging status\n  - Fixed refresh setting wrong state, removed valve notification from refresh (uses switch state)\n  - Changed battery and powersource reporting defaults to enabled\n  - Changed invert switch default to be disabled (per recomendation from Zooz)",
-  "version": "1.0.4",
+  "releaseNotes": "Version [1.0.6] - 2025-02-15\n  - Added singleThreaded flag\n  - Update library and common code\n  - First configure will sync settings from device instead of forcing defaults\n  - Force debug logging when configure is run\n  - Changed Set Parameter to update displayed settings\n  - Added associations support\n  - Added driverVersion state and automatic configure for updates / driver changes\n  - Updated support info link for 2.4.x platform",
+  "version": "1.0.6",
   "drivers": [
     {
       "id": "f514baca-a796-4f7e-90cc-7f29132a0e0d",
       "name": "Zooz ZAC36 Titan Valve Actuator",
       "namespace": "jtp10181",
-      "location": "https://jtp10181.gateway.scarf.sh/zooz-zac36-v1.0.4.groovy",
+      "location": "https://jtp10181.gateway.scarf.sh/zooz-zac36-v1.0.6.groovy",
       "required": true
     }
   ]
