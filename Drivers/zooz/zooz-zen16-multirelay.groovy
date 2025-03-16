@@ -332,7 +332,7 @@ void debugShowVars() {
 		description: "Sync selected relays together so only one can be activated at a time",
 		size: 1, defaultVal: 0,
 		options: [0:"Disabled",1:"Enabled for R1/R2"],
-		changesFR: [ (2.10..99):[options: [0:"Disabled",1:"Enabled for R1/R2",3:"Enabled for R1/R2/R3"]] ],
+		changesFR: [ (2.10..99):[options: [0:"Disabled",1:"Enabled for R1/R2",2:"Enabled for R1/R2/R3"]] ],
 		firmVer: 1.03
 	],
 	durationS1: [ num:28,
