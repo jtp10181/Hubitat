@@ -87,7 +87,7 @@ metadata {
 						required: false
 				}
 				else if (param.range) {
-					input "configParam${param.num}", "number",
+					input "configParam${param.num}", param.dataType ?: "number",
 						title: fmtTitle("${param.title}"),
 						description: fmtDesc("• Parameter #${param.num}, Range: ${(param.range).toString()}, DEFAULT: ${param.defaultVal}" + (param?.description ? "<br>• ${param?.description}" : '')),
 						defaultValue: param.defaultVal,
@@ -250,13 +250,15 @@ void debugShowVars() {
 	tempOffsetHw: [ num:201,
 		title: "Temperature Offset (Hardware)",
 		size: 1, defaultVal: 0,
-		range: "-10.0..10.0",
+		range: "-10..10",
+		dataType: "decimal",
 		firmVer: 2.0
 	],
 	humidOffsetHw: [ num:202,
 		title: "Humidity Offset (Hardware)",
 		size: 1, defaultVal: 0,
-		range: "-10.0..10.0",
+		range: "-10..10",
+		dataType: "decimal",
 		firmVer: 2.0
 	],
 	lightOffsetHw: [ num:203,
