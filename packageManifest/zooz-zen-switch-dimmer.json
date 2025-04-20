@@ -5,7 +5,7 @@
   "dateReleased": "2023-12-10",
   "documentationLink": "https://github.com/jtp10181/Hubitat/tree/main/Drivers/zooz",
   "communityLink": "https://community.hubitat.com/t/zooz-zen-switches-dimmers-advanced/58649",
-  "releaseNotes": "Version [2.0.2] - 2023-12-10\n  - Set fallback log level to Info when not set yet\n  - Fixed issue where not actually disabling brightness correction\n\nVersion [2.0.0] - 2023-12-09\n  - Rearranged functions and merged with library code\n  - Removed unnecessary association attrbiutes\n  - Depreciated the childDevices and refreshParams commands\n  - Added doubleTapped events for better Button Controller support\n  - Flash command now remembers last rate as default\n  - Put in proper multichannel lifeline association for ZEN30\n  - Fix for ZEN30 v4 firmware using different endpoint numbers\n  - Added new settings for ZEN7x 10.20/10.40 base and ZEN30 800LR v4\n  - Set Level Duration supports up to 7,620s (127 mins) for ZEN30 v4\n  - Brightness correction disabled when included in device firmware\n  - Added possible workaround for Homekit integration issues (dimmers only)\n  - Added paramters 16 and 17 for ZEN21 v4.05",
+  "releaseNotes": "*BETA* [2.0.3] - 2025-04-20 \n  - ONLY available if you have pre-release versions enabled in HPM\n  - Check community or source code for BETA changes\n\nVersion [2.0.2] - 2023-12-10\n  - Set fallback log level to Info when not set yet\n  - Fixed issue where not actually disabling brightness correction",
   "version": "2.0.2",
   "drivers": [
     {
@@ -13,24 +13,30 @@
       "name": "Zooz ZEN Switch Advanced",
       "namespace": "jtp10181",
       "location": "https://jtp10181.gateway.scarf.sh/zooz-zen-switch-v2.0.2.groovy",
+      "betaLocation": "https://raw.githubusercontent.com/jtp10181/Hubitat/refs/heads/beta-switches/Drivers/zooz/zooz-zen-switch.groovy",
       "required": false,
-      "version": "2.0.2"
+      "version": "2.0.2",
+      "betaVersion": "2.0.3"
     },
     {
       "id": "8aa273a7-8424-4aed-9d40-92aade1c5d73",
       "name": "Zooz ZEN Dimmer Advanced",
       "namespace": "jtp10181",
       "location": "https://jtp10181.gateway.scarf.sh/zooz-zen-dimmer-v2.0.2.groovy",
+      "betaLocation": "https://raw.githubusercontent.com/jtp10181/Hubitat/refs/heads/beta-switches/Drivers/zooz/zooz-zen-dimmer.groovy",
       "required": false,
-      "version": "2.0.2"
+      "version": "2.0.2",
+      "betaVersion": "2.0.3"
     },
     {
       "id": "fd30cdaf-f6e6-4d5f-bf27-82d0aed75649",
       "name": "Zooz ZEN30 Double Switch",
       "namespace": "jtp10181",
       "location": "https://jtp10181.gateway.scarf.sh/zooz-zen30-double-switch-v2.0.2.groovy",
+      "betaLocation": "https://raw.githubusercontent.com/jtp10181/Hubitat/refs/heads/beta-switches/Drivers/zooz/zooz-zen30-double-switch.groovy",
       "required": false,
-      "version": "2.0.2"
+      "version": "2.0.2",
+      "betaVersion": "2.0.3"
     },
     {
       "id": "b026a8cb-aae5-46a1-89a4-09441e73916e",
