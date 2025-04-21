@@ -12,8 +12,8 @@
       "id": "2d54004e-e51e-4abf-a4ac-6a73c9e587f4",
       "name": "Zooz ZEN Switch Advanced",
       "namespace": "jtp10181",
-      "location": "https://jtp10181.gateway.scarf.sh/zooz-zen-switch-v2.0.2.groovy",
-      "betaLocation": "https://raw.githubusercontent.com/jtp10181/Hubitat/refs/heads/beta-switches/Drivers/zooz/zooz-zen-switch.groovy",
+      "location": "https://jtp10181.gateway.scarf.sh/main/zooz-zen-switch.groovy",
+      "betaLocation": "https://jtp10181.gateway.scarf.sh/beta-switches/zooz-zen-switch.groovy",
       "required": false,
       "version": "2.0.2",
       "betaVersion": "2.0.3"
@@ -22,8 +22,8 @@
       "id": "8aa273a7-8424-4aed-9d40-92aade1c5d73",
       "name": "Zooz ZEN Dimmer Advanced",
       "namespace": "jtp10181",
-      "location": "https://jtp10181.gateway.scarf.sh/zooz-zen-dimmer-v2.0.2.groovy",
-      "betaLocation": "https://raw.githubusercontent.com/jtp10181/Hubitat/refs/heads/beta-switches/Drivers/zooz/zooz-zen-dimmer.groovy",
+      "location": "https://jtp10181.gateway.scarf.sh/main/zooz-zen-dimmer.groovy",
+      "betaLocation": "https://jtp10181.gateway.scarf.sh/beta-switches/zooz-zen-dimmer.groovy",
       "required": false,
       "version": "2.0.2",
       "betaVersion": "2.0.3"
@@ -32,8 +32,8 @@
       "id": "fd30cdaf-f6e6-4d5f-bf27-82d0aed75649",
       "name": "Zooz ZEN30 Double Switch",
       "namespace": "jtp10181",
-      "location": "https://jtp10181.gateway.scarf.sh/zooz-zen30-double-switch-v2.0.2.groovy",
-      "betaLocation": "https://raw.githubusercontent.com/jtp10181/Hubitat/refs/heads/beta-switches/Drivers/zooz/zooz-zen30-double-switch.groovy",
+      "location": "https://jtp10181.gateway.scarf.sh/main/zooz-zen30-double-switch.groovy",
+      "betaLocation": "https://jtp10181.gateway.scarf.sh/beta-switches/zooz-zen30-double-switch.groovy",
       "required": false,
       "version": "2.0.2",
       "betaVersion": "2.0.3"
