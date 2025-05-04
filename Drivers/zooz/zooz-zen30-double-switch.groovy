@@ -1,6 +1,6 @@
 /*
  *  Zooz ZEN30 Double Switch
- *    - Model: ZEN30 - All Firmware
+ *    - Model: ZEN30 - All Firmware (up to 4.20)
  *
  *  For Support, Information, and Updates:
  *  https://community.hubitat.com/t/zooz-zen-switches/58649
@@ -9,6 +9,16 @@
 
 Changelog:
 
+## [2.0.3] BETA - 2025-05-04 (@jtp10181)
+  - Added singleThreaded flag
+  - Updated Library and common code
+  - Updated support info link for 2.4.x platform
+  - Added option to set level to 0 when turned off
+  - Added parameter 34 for ZEN30
+  - Added descriptions to all settings from Zooz docs
+  - Fixed Set Level command to work with mobile app v2
+  - Fixed Set Parameter command to work with new UI
+
 ## [2.0.2] - 2023-12-10 (@jtp10181)
   - Set fallback log level to Info when not set yet
   - Fixed issue where not actually disabling brightness correction
@@ -16,7 +26,7 @@ Changelog:
 ## [2.0.0] - 2023-12-09 (@jtp10181)
   - Rearranged functions and merged with library code
   - Removed unnecessary association attrbiutes
-  - Depreciated the childDevices and refreshParams commands
+  - Deprecated the childDevices and refreshParams commands
   - Added doubleTapped events for better Button Controller support
   - Flash command now remembers last rate as default
   - Put in proper multichannel lifeline association for ZEN30
@@ -155,26 +165,23 @@ Below link is for original source (Kevin LaFramboise @krlaframboise)
 https://github.com/krlaframboise/SmartThings/blob/master/devicetypes/krlaframboise/zooz-double-switch.src/zooz-double-switch.groovy
 
  *
- *  Copyright 2020-2023 Jeff Page
+ *  Copyright 2020-2025 Jeff Page
  *  Copyright 2020 Kevin LaFramboise
  *
- *  Licensed under the Apache License, Version 2.0 (the "License");
- *  you may not use this file except in compliance with the License.
- *  You may obtain a copy of the License at
+ *  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
+ *  in compliance with the License. You may obtain a copy of the License at:
  *
  *      http://www.apache.org/licenses/LICENSE-2.0
  *
- *  Unless required by applicable law or agreed to in writing, software
- *  distributed under the License is distributed on an "AS IS" BASIS,
- *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *  See the License for the specific language governing permissions and
- *  limitations under the License.
+ *  Unless required by applicable law or agreed to in writing, software distributed under the License is
+ *  distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and limitations under the License.
  *
 */
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "2.0.2"
+@Field static final String VERSION = "2.0.3"
 @Field static final String DRIVER = "Zooz-ZEN30"
 @Field static final String COMM_LINK = "https://community.hubitat.com/t/zooz-zen-switches-dimmers-advanced/58649"
 @Field static final Map deviceModelNames = ["A000:A008":"ZEN30"]
@@ -184,6 +191,7 @@ metadata {
 		name: "Zooz ZEN30 Double Switch",
 		namespace: "jtp10181",
 		author: "Jeff Page (@jtp10181)",
+		singleThreaded: true,
 		importUrl: "https://raw.githubusercontent.com/jtp10181/hubitat/master/Drivers/zooz/zooz-zen30-double-switch.groovy"
 	) {
 		capability "Actuator"
@@ -208,11 +216,9 @@ metadata {
 			[name:"Select LED*", type: "ENUM", constraints: ["Dimmer","Relay"] ],
 			[name:"Select Color*", type: "ENUM", constraints: ledColorOptions] ]
 		command "setLEDMode", [
-			[name:"Select LED*", type: "ENUM", constraints: ["Dimmer","Relay"] ],
-			[name:"Select Mode*", description:"This Sets Preference (#2)*", type: "ENUM", constraints: ledModeCmdOptions] ]
-		command "setParameter",[[name:"parameterNumber*",type:"NUMBER", description:"Parameter Number"],
-			[name:"value*",type:"NUMBER", description:"Parameter Value"],
-			[name:"size",type:"NUMBER", description:"Parameter Size"]]
+			[name:"Select Mode*", description:"This Sets Parameter (#2)", type: "ENUM", constraints: ledModeCmdOptions] ]
+		command "setParameter",[[name:"Parameter Number *", type:"NUMBER"],
+			[name:"Parameter Value *", type:"NUMBER"], [name:"Parameter Size", type:"NUMBER"]]
 
 		//DEBUGGING
 		//command "debugShowVars"
@@ -223,14 +229,15 @@ metadata {
 	}
 
 	preferences {
+		input(helpInfoInput)
 		configParams.each { param ->
 			if (!param.hidden) {
-				Integer paramVal = getParamValue(param)
 				if (param.options) {
+					Integer paramVal = getParamValue(param)
 					input "configParam${param.num}", "enum",
 						title: fmtTitle("${param.title}"),
 						description: fmtDesc("• Parameter #${param.num}, Selected: ${paramVal}" + (param?.description ? "<br>• ${param?.description}" : '')),
-						defaultValue: paramVal,
+						defaultValue: param.defaultVal,
 						options: param.options,
 						required: false
 				}
@@ -238,18 +245,22 @@ metadata {
 					input "configParam${param.num}", "number",
 						title: fmtTitle("${param.title}"),
 						description: fmtDesc("• Parameter #${param.num}, Range: ${(param.range).toString()}, DEFAULT: ${param.defaultVal}" + (param?.description ? "<br>• ${param?.description}" : '')),
-						defaultValue: paramVal,
+						defaultValue: param.defaultVal,
 						range: param.range,
 						required: false
 				}
 			}
 		}
 
-		for(int i in 2..maxAssocGroups) {
-			input "assocDNI$i", "string",
-				title: fmtTitle("Device Associations - Group $i"),
-				description: fmtDesc("Supports up to ${maxAssocNodes} Hex Device IDs separated by commas. Check device documentation for more info. Save as blank or 0 to clear."),
-				required: false
+		if (!isLongRange()) {
+			for(int i in 2..maxAssocGroups) {
+				input "assocDNI$i", "string", required: false,
+					title: fmtTitle("Device Associations - Group $i"),
+					description: fmtDesc("Supports up to ${maxAssocNodes} Hex Device IDs separated by commas. Check device documentation for more info. Save as blank or 0 to clear.")
+			}
+		} else {
+			input "assocEnabled", "hidden", title: fmtTitle("Associations Not Available"),
+				description: fmtDesc("Associations are not available when device is paired in Long Range mode")
 		}
 
 		input "supervisionGetEncap", "bool",
@@ -260,7 +271,7 @@ metadata {
 		if (hardwareLevelCorrection()) {
 			input "levelCorrection", "hidden", 
 				title: fmtTitle("Brightness Correction"),
-				description: fmtDesc("This feature is implimented within the hardware and cannot be changed"),
+				description: fmtDesc("This feature is implimented within the hardware and cannot be changed."),
 				defaultValue: false
 		}
 		else {
@@ -269,6 +280,11 @@ metadata {
 				description: fmtDesc("Brightness level set on dimmer is converted to fall within the min/max range but shown with the full range of 1-100%"),
 				defaultValue: false
 		}
+
+		input "levelOff", "bool",
+			title: fmtTitle("Set Level when Turned Off"),
+			description: fmtDesc("When disabled the level will stay at the prior value when turned off [DEFAULT], Enable to have the level set to 0 when turned off."),
+			defaultValue: false
 	}
 }
 
@@ -292,80 +308,95 @@ void debugShowVars() {
 [
 	ledModeDimmer: [ num: 1,
 		title: "Dimmer LED Indicator Mode",
+		description: "Choose if you want the LED indicator to turn on when the dimmer (light) is on or off, or if you want it to remain on or off at all times.",
 		size: 1, defaultVal: 0,
 		options: [0:"LED On When Switch Off", 1:"LED On When Switch On", 2:"LED Always Off", 3:"LED Always On"],
 	],
 	ledColorDimmer: [ num: 3,
 		title: "Dimmer LED Indicator Color",
+		description: "Choose the color of the Dimmer LED indicator.",
 		size: 1, defaultVal: 0,
 		options: [:] //ledColorOptions
 	],
 	ledBrightnessDimmer: [ num: 5,
 		title: "Dimmer LED Indicator Brightness",
+		description: "Choose the Dimmer LED indicator's brightness level.",
 		size: 1, defaultVal: 1,
 		options: [0:"Bright (100%)", 1:"Medium (60%)", 2:"Low (30%)"],
 	],
 	ledModeRelay: [ num: 2,
 		title: "Relay LED Indicator Mode",
+		description: "Choose if you want the LED indicator to turn on when the relay switch is on or off, or if you want it to remain on or off at all times.",
 		size: 1, defaultVal: 0,
 		options: [0:"LED On When Switch Off", 1:"LED On When Switch On", 2:"LED Always Off", 3:"LED Always On"]
 	],
 	ledColorRelay: [ num: 4,
 		title: "Relay LED Indicator Color",
+		description: "Choose the color of the Relay LED indicator.",
 		size: 1, defaultVal: 0,
 		options: [:] //ledColorOptions
 	],
 	ledBrightnessRelay: [ num: 6,
 		title: "Relay LED Indicator Brightness",
+		description: "Choose the Relay LED indicator's brightness level.",
 		size: 1, defaultVal: 1,
 		options: [0:"Bright (100%)", 1:"Medium (60%)", 2:"Low (30%)"],
 	],
 	ledSceneDisplay: [ num: 7,
 		title: "LED Indicator Displays Scene Selections",
+		description: "Choose if you want the LED indicators next to the dimmer to light up when a scene is selected. You'll see 1 to 5 LEDs light up for 1-5 tap triggers and 6 LEDs light up for the press-and-hold trigger of any paddle / button used.",
 		size: 1, defaultVal: 1,
 		options: [0:"LED Enabled", 1:"LED Disabled"]
 	],
 	autoOffIntervalDimmer: [ num: 8,
 		title: "Dimmer Auto Turn-Off Timer",
+		description: "Auto-off timer will automatically turn the dimmer off after x minutes once it has been turned on.",
 		size: 4, defaultVal: 0,
 		options: [:] //autoOnOffIntervalOptions
 	],
 	autoOnIntervalDimmer: [ num: 9,
 		title: "Dimmer Auto Turn-On Timer",
+		description: "Auto-on timer will automatically turn the dimmer on after x minutes once it has been turned off.",
 		size: 4, defaultVal: 0,
 		options: [:] //autoOnOffIntervalOptions
 	],
 	autoOffIntervalRelay: [ num: 10,
 		title: "Relay Auto Turn-Off Timer",
+		description: "Auto-off timer will automatically turn the relay off after x minutes once it has been turned on.",
 		size: 4, defaultVal: 0,
 		options: [:] //autoOnOffIntervalOptions
 	],
 	autoOnIntervalRelay: [ num: 11,
 		title: "Relay Auto Turn-On Timer",
+		description: "Auto-on timer will automatically turn the relay on after x minutes once it has been turned off.",
 		size: 4, defaultVal: 0,
 		options: [:] //autoOnOffIntervalOptions
 	],
 	powerFailure: [ num: 12,
-		title: "Behavior After Power Failure",
+		title: "Status After Power Failure",
+		description: "Set the on off status for the switch after power failure.",
 		size: 1, defaultVal: 3,
 		options: [0:"Dimmer Off / Relay Off", 1:"Dimmer Off / Relay On", 2:"Dimmer On / Relay Off",
 			3:"Dimmer Restored / Relay Restored", 4:"Dimmer Restored / Relay On", 5:"Dimmer Restored / Relay Off",
 			6:"Dimmer On / Relay Restored", 7:"Dimmer Off / Relay Restored", 8:"Dimmer On / Relay On"],
 	],
 	rampRate: [ num: 13,
-		title: "Dimmer Ramp Rate to Full On/Off",
+		title: "Physical Dimmer Ramp Rate On/Off",
+		description: "Adjust the ramp rate for your dimmer when the paddle is pressed. Values correspond to the number of seconds it takes for the dimmer to reach full brightness when operated manually.",
 		size: 1, defaultVal: 1,
 		options: [0:"Instant On/Off"], //rampRateOptions
-		changesFR: [(3.20..99):[title:"Dimmer Ramp Rate - Physical ON", defaultVal:0]]
+		changesFR: [(3.20..99):[title:"Physical Dimmer Ramp Rate ON", defaultVal:0]]
 	],
 	rampRateOff: [ num: 31,
-		title: "Dimmer Ramp Rate - Physical OFF",
+		title: "Physical Dimmer Ramp Rate OFF",
+		description: "Adjust the ramp rate OFF for your dimmer when the bottom paddle is pressed. Values correspond to the number of seconds it takes for the dimmer to completely turn off when operated manually.",
 		size: 1, defaultVal: 2,
 		options: [0:"Instant Off"], //rampRateOptions
 		firmVer: 3.20
 	],
 	holdRampRate: [ num: 21,
-		title: "Dimming Speed when Paddle is Held",
+		title: "Dimming Speed",
+		description: "Set the number of seconds it takes to get from 0% to 100% brightness when pressing and holding the paddle (physical dimming).",
 		size: 1, defaultVal: 4,
 		options: [:], //rampRateOptions
 	],
@@ -376,100 +407,122 @@ void debugShowVars() {
 	// ],
 	minimumBrightness: [ num: 14,
 		title: "Dimmer Minimum Brightness",
+		description: "Set the minimum brightness level (in %) for your dimmer. You won’t be able to dim the light below the set value.",
 		size: 1, defaultVal: 1,
 		options: [:], //brightnessOptions
 	],
 	maximumBrightness: [ num: 15,
 		title: "Dimmer Maximum Brightness",
+		description: "Set the maximum brightness level (in %) for your dimmer. You won’t be able to add brightness to the light beyond the set value.",
 		size: 1, defaultVal: 99,
 		options: [:], //brightnessOptions
 	],
 	doubleTapBrightness: [ num: 17,
-		title: "Double Tap Up Brightness",
+		title: "Double Tap Up",
+		description: "Choose what you'd like the dimmer to do when you double-tap the upper paddle.",
 		size: 1, defaultVal: 0,
 		options: [0:"Full Brightness (100%)", 1:"Maximum Brightness Setting"],
 		changesFR: [(3.20..99):[options: [0:"Full Brightness (100%)", 1:"Custom Brightness Setting", 2:"Maximum Brightness Setting", 3:"Disabled"]]],
 	],
 	dimmerTapFunction: [ num: 18,
 		title: "Dimmer Tap Up Functions",
+		description: "Enable or disable the double tap function and assign brightness level to single tap. 2x = Double Tap, 1x = Single Tap",
 		size: 1, defaultVal: 0,
-		options: [0:"Single: Last/Custom | Double: Full/Max", 1:"Single: Last/Custom | Double: Disabled", 2:"Single: Full/Max | Double: Disabled"],
+		options: [0:"1x: Last/Custom | 2x: Full/Max", 1:"1x: Last/Custom | 2x: Disabled", 2:"1x: Full/Max | 2x: Disabled"],
 		changesFR: [(3.20..99):[
-			title: "Single Tap Turn On Brightness",
+			title: "Single Tap Up",
+			description: "Choose what you'd like the dimmer to do when you tap the upper paddle once.",
 			options: [0:"Last Brightness", 1:"Custom Brightness Setting", 2:"Maximum Brightness Setting", 3:"Full Brightness (100%)"]
 		]],
 	],
 	customBrightness: [ num: 23,
-		title: "Custom Brightness Setting",
+		title: "Custom Brightness On",
+		description: "Set the custom brightness level (or leave the last brightness level) for single tap and double tap (see params 17 and 18).",
 		size: 1, defaultVal: 0,
 		options: [0:"Last Brightness Level"], //brightnessOptions
 	],
 	nightLight: [ num: 26,
-		title: "Night Light Mode Brightness",
+		title: "Night Light Brightness",
+		description: "Set the brightness level the dimmer will turn on to, when off and the lower paddle is held DOWN for 3 seconds.",
 		size: 1, defaultVal: 20,
 		options: [0:"Disabled"], //brightnessOptions
 		firmVer: 1.05
 	],
 	sceneControlDimmer: [ num: 28,
 		title: "Dimmer Scene Control Events",
-		description: "Enable to get push and multi-tap events for the dimmer",
+		description: "Enable scene control functionality for quick push and multi-tap triggers on the dimmer.",
 		size: 1, defaultVal: 1,
 		options: [0:"Disabled", 1:"Enabled"],
 		firmVerM: [1:11,2:11,3:10]
 	],
 	sceneControlRelay: [ num: 29,
 		title: "Relay Scene Control Events",
-		description: "Enable to get push and multi-tap events for the relay button",
+		description: "Enable scene control functionality for quick push and multi-tap triggers on the relay button.",
 		size: 1, defaultVal: 1,
 		options: [0:"Disabled", 1:"Enabled"],
 		firmVerM: [1:11,2:11,3:10]
 	],
 	loadControlDimmer: [ num: 19,
-		title: "Dimmer Smart Bulb - Load Control",
+		title: "Dimmer Load Control (Smart Bulb Mode)",
+		description: "Enable or disable physical and Z-Wave on/off control. Disable both physical paddle and Z-Wave control for smart bulbs (use central scene triggers). Scene control and other functionality will still be available from paddles.",
 		size: 1, defaultVal: 1,
-		options: [1:"Enable Paddle and Z-Wave", 0:"Disable Paddle Control", 2:"Disable Paddle and Z-Wave Control"],
+		options: [1:"Enable Paddle and Z-Wave", 0:"Disable Paddle Control", 2:"Disable Paddle and Z-Wave Control"]
 	],
 	smartBulbBehaviorDimmer: [ num: 24,
-		title: "Dimmer Smart Bulb - When Paddle Disabled",
+		title: "Disabled Load Behavior (Dimmer)",
+		description: "Set reporting behavior for disabled physical control of the load connected to the dimmer (smart bulb mode).",
 		size: 1, defaultVal: 0,
 		options: [0:"Reports Status & Changes LED", 1:"Doesn't Report Status or Change LED"],
 		firmVer: 1.05
 	],
 	loadControlRelay: [ num: 20,
-		title: "Relay Smart Bulb - Load Control",
+		title: "Relay Load Control (Smart Bulb Mode)",
+		description: "Enable or disable physical and Z-Wave on/off control. Disable both physical button and Z-Wave control for smart bulbs (use central scene triggers). Scene control and other functionality will still be available from relay button.",
 		size: 1, defaultVal: 1,
-		options: [1:"Enable Paddle and Z-Wave", 0:"Disable Paddle Control", 2:"Disable Paddle and Z-Wave Control"],
+		options: [1:"Enable Paddle and Z-Wave", 0:"Disable Paddle Control", 2:"Disable Paddle and Z-Wave Control"]
 	],
 	smartBulbBehaviorRelay: [ num: 25,
-		title: "Relay Smart Bulb - When Paddle Disabled",
+		title: "Disabled Load Behavior (Relay)",
+		description: "Set reporting behavior for disabled physical control of the load connected to the relay (smart bulb mode).",
 		size: 1, defaultVal: 0,
 		options: [0:"Reports Status & Changes LED", 1:"Doesn't Report Status or Change LED"],
 		firmVer: 1.05
 	],
 	paddleControl: [ num: 27,
 		title: "Paddle Orientation",
+		description: "Choose if you want the upper paddle to turn the light on or turn the light off when tapped.",
 		size: 1, defaultVal: 0,
 		options: [0:"Normal", 1:"Reverse", 2:"Toggle Mode"],
 		firmVer: 1.05
 	],
 	paddleProgramming: [ num: 30,
-		title: "Programming from the Paddle",
+		title: "Paddle Programming",
+		description: "Enable or disable programming functionality on the switch paddles. If this setting is disabled, then inclusion, exclusion, smart bulb mode no longer work when switch paddles are activated (factory reset and scene control will still work). This allows 3x tap to work better.",
 		size: 1, defaultVal: 0,
 		options: [0:"Enabled", 1:"Disabled"],
 		firmVerM: [1:11,2:11,3:10]
 	],
 	zwaveRampRateOn: [ num: 32,
-		title: "Dimmer Ramp Rate - Z-Wave ON",
+		title: "Dimmer Z-Wave Ramp Rate ON",
+		description: "Adjust the ramp rate ON for your dimmer when controlled with Z-Wave for a smooth fade-in effect (in seconds).",
 		size: 1, defaultVal: 255,
 		options: [255:"Match Physical",0:"Instant On"], //rampRateOptions
 		firmVer: 3.20
 	],
 	zwaveRampRateOff: [ num: 33,
-		title: "Dimmer Ramp Rate - Z-Wave OFF",
+		title: "Dimmer Z-Wave Ramp Rate OFF",
+		description: "Adjust the ramp rate OFF for your dimmer when controlled with Z-Wave for a smooth fade-out effect (in seconds).",
 		size: 1, defaultVal: 255,
 		options: [255:"Match Physical",0:"Instant Off"], //rampRateOptions
 		firmVer: 3.20
-	]
+	],
+	ledFlash: [ num: 34,
+		title: "LED Indicator Flash On Changes",
+		description: "Choose if the LED should flash whenever a parameter is adjusted on the device to confirm the change.",
+		size: 1, defaultVal: 0,
+		options: [0:"Flash Enabled", 1:"Flash Disabled"],
+		firmVer: 3.20, firmVerM: [4:20]
+	],
 ]
 
 //Set Command Class Versions
@@ -480,6 +533,7 @@ void debugShowVars() {
 	0x60: 3,	// MultiChannel (multichannelv3)
 	0x6C: 1,	// Supervision (supervisionv1)
 	0x70: 1,	// Configuration (configurationv1)
+	0x72: 2,	// ManufacturerSpecific
 	0x85: 2,	// Association (associationv2)
 	0x86: 2,	// Version (versionv2)
 	0x8E: 3,	// Multi Channel Association (multichannelassociationv3)
@@ -512,6 +566,7 @@ void configure() {
 	runIn(1, executeProbeCmds)
 	runIn(2, executeRefreshCmds)
 	runIn(5, executeConfigureCmds)
+	runIn(6, setSubModel)
 }
 
 void updated() {
@@ -536,7 +591,7 @@ void refresh() {
 def on() {
 	logDebug "on..."
 	flashStop()
-	if (turningOn[device.id] > (new Date()).time) {
+	if (turningOn[device.id] > now()) {
 		logWarn "on() blocked, already adjusting"
 		return
 	}
@@ -549,13 +604,13 @@ def off() {
 	return getOnOffCmds(0x00, endPoints.dimmer)
 }
 
-String setLevel(Number level, Number duration=null) {
+def setLevel(level, duration=null) {
 	logDebug "setLevel($level, $duration)..."
-	turningOn[device.id] = (new Date()).time + 1000
+	turningOn[device.id] = now() + 1000
 	return getSetLevelCmds(level, duration, endPoints.dimmer)
 }
 
-List<String> startLevelChange(direction, duration=null) {
+def startLevelChange(direction, duration=null) {
 	Boolean upDown = (direction == "down") ? true : false
 	Integer durationVal = validateRange(duration, getParamValue("holdRampRate") as Integer, 0, 127)
 	logDebug "startLevelChange($direction) for ${durationVal}s"
@@ -574,7 +629,7 @@ List<String> startLevelChange(direction, duration=null) {
 	return delayBetween(cmds, 1000)
 }
 
-String stopLevelChange() {
+def stopLevelChange() {
 	logDebug "stopLevelChange()"
 	return switchMultilevelStopLvChCmd(endPoints.dimmer)
 }
@@ -672,7 +727,8 @@ void refreshParams() {
 	if (cmds) sendCommands(cmds)
 }
 
-String setParameter(paramNum, value, size = null) {
+def setParameter(paramNum, value, size = null) {
+	paramNum = safeToInt(paramNum)
 	Map param = getParam(paramNum)
 	if (param && !size) { size = param.size	}
 
@@ -681,8 +737,8 @@ String setParameter(paramNum, value, size = null) {
 		logWarn "Syntax: setParameter(paramNum, value, size)"
 		return
 	}
-	logDebug "setParameter ( number: $paramNum, value: $value, size: $size )" + (param ? " [${param.name}]" : "")
-	return secureCmd(configSetCmd([num: paramNum, size: size], value as Integer))
+	logDebug "setParameter ( number: $paramNum, value: $value, size: $size )" + (param ? " [${param.name} - ${param.title}]" : "")
+	return configSetGetCmd([num: paramNum, size: size], value as Integer)
 }
 
 
@@ -768,16 +824,15 @@ void zwaveEvent(hubitat.zwave.commands.associationv2.AssociationReport cmd) {
 		//state.group1Assoc = (cmd.nodeId == [zwaveHubNodeId]) ? true : false
 	}
 	else if (grp > 1 && grp <= maxAssocGroups) {
-		logDebug "Group $grp Association: ${cmd.nodeId}"
+		String dnis = convertIntListToHexList(cmd.nodeId)?.join(", ")
+		logDebug "Confirmed Group $grp Association: " + (cmd.nodeId.size()>0 ? "${dnis} // ${cmd.nodeId}" : "None")
 
 		if (cmd.nodeId.size() > 0) {
-			state["assocNodes$grp"] = cmd.nodeId
+			if (!state.assocNodes) state.assocNodes = [:]
+			state.assocNodes["$grp"] = cmd.nodeId
 		} else {
-			state.remove("assocNodes$grp".toString())
+			state.assocNodes?.remove("$grp" as String)
 		}
-
-		String dnis = convertIntListToHexList(cmd.nodeId)?.join(", ")
-		//sendEventLog(name:"assocDNI$grp", value:(dnis ?: "none"))
 		device.updateSetting("assocDNI$grp", [value:"${dnis}", type:"string"])
 	}
 	else {
@@ -939,9 +994,9 @@ void sendSwitchEvents(rawVal, String type, Integer ep=0) {
 	sendEventLog(name:"switch", value:value, type:type, desc:desc, ep)
 	turningOn[device.id] = 0
 
-	if (rawVal && ep == endPoints.dimmer) {
+	if ((rawVal || levelOff) && ep == endPoints.dimmer) {
 		Integer level = (rawVal == 99 ? 100 : rawVal)
-		level = convertLevel(level, false)
+		if (level) level = convertLevel(level, false)
 
 		desc = "level is set to ${level}%"
 		if (type) desc += " (${type})"
@@ -971,7 +1026,7 @@ void executeConfigureCmds() {
 		cmds << versionGetCmd()
 	}
 
-	cmds += getConfigureAssocsCmds()
+	cmds += getConfigureAssocsCmds(true)
 
 	configParams.each { param ->
 		Integer paramVal = getParamValueAdj(param)
@@ -985,7 +1040,7 @@ void executeConfigureCmds() {
 
 	state.resyncAll = false
 
-	if (cmds) sendCommands(cmds,300)
+	if (cmds) sendCommands(cmds, 300)
 }
 
 void executeProbeCmds() {
@@ -1007,6 +1062,7 @@ void executeRefreshCmds() {
 	List<String> cmds = []
 
 	if (state.resyncAll || !firmwareVersion || !state.deviceModel) {
+		cmds << mfgSpecificGetCmd()
 		cmds << versionGetCmd()
 	}
 
@@ -1017,15 +1073,16 @@ void executeRefreshCmds() {
 	sendCommands(cmds)
 }
 
-List getConfigureAssocsCmds() {
+List getConfigureAssocsCmds(Boolean logging=false) {
 	List<String> cmds = []
 
 	if (!state.group1Assoc || state.resyncAll) {
 		if (state.group1Assoc == false) {
-			logDebug "Need to reset the lifeline association..."
+			if (logging) logDebug "Clearing the lifeline association..."
 			cmds << associationRemoveCmd(1,[])
 			cmds << secureCmd(zwave.multiChannelAssociationV3.multiChannelAssociationRemove(groupingIdentifier: 1, nodeId:[], multiChannelNodeIds:[]))
 		}
+		if (logging) logDebug "Setting lifeline association..."
 		cmds << secureCmd(zwave.multiChannelAssociationV3.multiChannelAssociationSet(groupingIdentifier: 1, multiChannelNodeIds: [[nodeId: zwaveHubNodeId, bitAddress:0, endPointId: 0]]))
 		cmds << mcAssociationGetCmd(1)
 	}
@@ -1035,15 +1092,15 @@ List getConfigureAssocsCmds() {
 		List settingNodeIds = getAssocDNIsSettingNodeIds(i)
 
 		//Need to remove first then add in case we are at limit
-		List oldNodeIds = state."assocNodes$i"?.findAll { !(it in settingNodeIds) }
+		List oldNodeIds = state.assocNodes?."$i"?.findAll { !(it in settingNodeIds) }
 		if (oldNodeIds) {
-			logDebug "Removing Nodes: Group $i - $oldNodeIds"
+			if (logging) logDebug "Removing Group $i Association: ${convertIntListToHexList(oldNodeIds)} // $oldNodeIds"
 			cmdsEach << associationRemoveCmd(i, oldNodeIds)
 		}
 
-		List newNodeIds = settingNodeIds.findAll { !(it in state."assocNodes$i") }
+		List newNodeIds = settingNodeIds.findAll { !(it in state.assocNodes?."$i") }
 		if (newNodeIds) {
-			logDebug "Adding Nodes: Group $i - $newNodeIds"
+			if (logging) logDebug "Adding Group $i Association: ${convertIntListToHexList(newNodeIds)} // $newNodeIds"
 			cmdsEach << associationSetCmd(i, newNodeIds)
 		}
 
@@ -1060,9 +1117,11 @@ String getOnOffCmds(val, Integer endPoint=0) {
 	return getSetLevelCmds(val ? 0xFF : 0x00, null, endPoint)
 }
 
-String getSetLevelCmds(Number level, Number duration=null, Integer endPoint=0) {
+String getSetLevelCmds(level, duration=null, Integer endPoint=0) {
 	Short modelSeries = Math.floor(deviceModelShort/10)
 	Short levelVal = safeToInt(level, 99)
+	duration = (duration as Integer)
+
 	// level 0xFF tells device to use last level, 0x00 is off
 	if (levelVal != 0xFF && levelVal != 0x00) {
 		//Convert level in range of min/max
@@ -1090,16 +1149,15 @@ String getSetLevelCmds(Number level, Number duration=null, Integer endPoint=0) {
 	return switchMultilevelSetCmd(levelVal, durationVal, endPoint)
 }
 
-private setSubModel() {
+void setSubModel() {
 	String devModel = state.deviceModel
-	BigDecimal firmVer = firmwareVersion
-	if (!state.subModel && devModel == "ZEN30" && firmVer > 0) {
-		if      (firmVer < 2.0) { state.subModel = "v1" }
-		else if (firmVer < 3.0) { state.subModel = "v2" }
-		else if (firmVer < 4.0) { state.subModel = "v3" }
-		else if (firmVer < 5.0) { state.subModel = "800LR" }
-		else { state.remove("subModel") }
+	Integer firmVerM = firmwareVersion as Integer
+	// logDebug "setSubModel: ${devModel} | ${firmVerM}"
+	if (devModel == "ZEN30" && firmVerM > 0) {
+		if (firmVerM == 4) { state.subModel = "800LR" }
+		else { state.subModel = "v${firmVerM}" }
 	}
+	else { state.remove("subModel") }
 }
 
 /*******************************************************************
@@ -1164,13 +1222,12 @@ Map getEndPoints() {
 /*** Other Functions ***/
 Boolean hardwareLevelCorrection() {
 	BigDecimal firmVer = firmwareVersion
-	Boolean retVal = false
 
 	if (firmVer >= 4.0) {
-		retVal = true
 		if (levelCorrection) { device.removeSetting("levelCorrection") }
+		return true
 	}
-	return retVal
+	return false
 }
 
 
@@ -1187,9 +1244,15 @@ Changelog:
 2023-05-14 - Updates for power metering
 2023-05-18 - Adding requirement for getParamValueAdj in driver
 2023-05-24 - Fix for possible RuntimeException error due to bad cron string
-2023-10-25 - Less savings to the configVals data, and some new functions
+2023-10-25 - Less saving to the configVals data, and some new functions
 2023-10-26 - Added some battery shortcut functions
 2023-11-08 - Added ability to adjust settings on firmware range
+2024-01-28 - Adjusted logging settings for new / upgrade installs; added mfgSpecificReport
+2024-06-15 - Added isLongRange function; convert range to string to prevent expansion
+2024-07-16 - Support for multi-target version reports; adjust checkIn logic
+2025-02-14 - Clearing all scheduled jobs during clearVariables / configure
+           - Reworked saving/restoring of important states during clearVariables
+           - Updated formatting and help info for 2.4.x platform
 
 ********************************************************************/
 
@@ -1259,12 +1322,37 @@ void zwaveEvent(hubitat.zwave.commands.versionv2.VersionReport cmd) {
 	device.updateDataValue("protocolVersion", zwaveVersion)
 	device.updateDataValue("hardwareVersion", "${cmd.hardwareVersion}")
 
-	logDebug "Received Version Report - Firmware: ${fullVersion}"
+	if (cmd.targetVersions) {
+		Map tVersions = [:]
+		cmd.targetVersions.each {
+			tVersions[it.target] = String.format("%d.%02d",it.version,it.subVersion)
+			device.updateDataValue("firmware${it.target}Version", tVersions[it.target])
+		}
+		logDebug "Received Version Report - Main Firmware: ${fullVersion} | Targets: ${tVersions}"
+	}
+	else {
+		logDebug "Received Version Report - Firmware: ${fullVersion}"
+	}
+	
 	setDevModel(new BigDecimal(fullVersion))
 }
 
+void zwaveEvent(hubitat.zwave.commands.manufacturerspecificv2.ManufacturerSpecificReport cmd) {
+	logTrace "${cmd}"
+
+	device.updateDataValue("manufacturer",cmd.manufacturerId.toString())
+	device.updateDataValue("deviceType",cmd.productTypeId.toString())
+	device.updateDataValue("deviceId",cmd.productId.toString())
+
+	logDebug "fingerprint  mfr:\"${hubitat.helper.HexUtils.integerToHexString(cmd.manufacturerId, 2)}\", "+
+		"prod:\"${hubitat.helper.HexUtils.integerToHexString(cmd.productTypeId, 2)}\", "+
+		"deviceId:\"${hubitat.helper.HexUtils.integerToHexString(cmd.productId, 2)}\", "+
+		"inClusters:\"${device.getDataValue("inClusters")}\""+
+		(device.getDataValue("secureInClusters") ? ", secureInClusters:\"${device.getDataValue("secureInClusters")}\"" : "")
+}
+
 void zwaveEvent(hubitat.zwave.Command cmd, ep=0) {
-	logDebug "Unhandled zwaveEvent: $cmd (ep ${ep})"
+	logDebug "Unhandled zwaveEvent: $cmd (ep ${ep}) [${getObjectClassName(cmd)}]"
 }
 
 
@@ -1292,11 +1380,11 @@ void sendCommands(String cmd) {
 
 //Consolidated zwave command functions so other code is easier to read
 String associationSetCmd(Integer group, List<Integer> nodes) {
-	return supervisionEncap(zwave.associationV2.associationSet(groupingIdentifier: group, nodeId: nodes))
+	return superviseCmd(zwave.associationV2.associationSet(groupingIdentifier: group, nodeId: nodes))
 }
 
 String associationRemoveCmd(Integer group, List<Integer> nodes) {
-	return supervisionEncap(zwave.associationV2.associationRemove(groupingIdentifier: group, nodeId: nodes))
+	return superviseCmd(zwave.associationV2.associationRemove(groupingIdentifier: group, nodeId: nodes))
 }
 
 String associationGetCmd(Integer group) {
@@ -1311,8 +1399,12 @@ String versionGetCmd() {
 	return secureCmd(zwave.versionV2.versionGet())
 }
 
+String mfgSpecificGetCmd() {
+	return secureCmd(zwave.manufacturerSpecificV2.manufacturerSpecificGet())
+}
+
 String switchBinarySetCmd(Integer value, Integer ep=0) {
-	return supervisionEncap(zwave.switchBinaryV1.switchBinarySet(switchValue: value), ep)
+	return superviseCmd(zwave.switchBinaryV1.switchBinarySet(switchValue: value), ep)
 }
 
 String switchBinaryGetCmd(Integer ep=0) {
@@ -1320,7 +1412,7 @@ String switchBinaryGetCmd(Integer ep=0) {
 }
 
 String switchMultilevelSetCmd(Integer value, Integer duration, Integer ep=0) {
-	return supervisionEncap(zwave.switchMultilevelV2.switchMultilevelSet(dimmingDuration: duration, value: value), ep)
+	return superviseCmd(zwave.switchMultilevelV2.switchMultilevelSet(dimmingDuration: duration, value: value), ep)
 }
 
 String switchMultilevelGetCmd(Integer ep=0) {
@@ -1329,11 +1421,11 @@ String switchMultilevelGetCmd(Integer ep=0) {
 
 String switchMultilevelStartLvChCmd(Boolean upDown, Integer duration, Integer ep=0) {
 	//upDown: false=up, true=down
-	return supervisionEncap(zwave.switchMultilevelV2.switchMultilevelStartLevelChange(upDown: upDown, ignoreStartLevel:1, dimmingDuration: duration), ep)
+	return superviseCmd(zwave.switchMultilevelV2.switchMultilevelStartLevelChange(upDown: upDown, ignoreStartLevel:1, dimmingDuration: duration), ep)
 }
 
 String switchMultilevelStopLvChCmd(Integer ep=0) {
-	return supervisionEncap(zwave.switchMultilevelV2.switchMultilevelStopLevelChange(), ep)
+	return superviseCmd(zwave.switchMultilevelV2.switchMultilevelStopLevelChange(), ep)
 }
 
 String meterGetCmd(meter, Integer ep=0) {
@@ -1374,7 +1466,7 @@ String configSetCmd(Map param, Integer value) {
 	Long sizeFactor = Math.pow(256,param.size).round()
 	if (value >= sizeFactor/2) { value -= sizeFactor }
 
-	return supervisionEncap(zwave.configurationV1.configurationSet(parameterNumber: param.num, size: param.size, scaledConfigurationValue: value))
+	return superviseCmd(zwave.configurationV1.configurationSet(parameterNumber: param.num, size: param.size, scaledConfigurationValue: value))
 }
 
 String configGetCmd(Map param) {
@@ -1397,13 +1489,13 @@ String secureCmd(String cmd) {
 	return zwaveSecureEncap(cmd)
 }
 String secureCmd(hubitat.zwave.Command cmd, ep=0) {
-	return zwaveSecureEncap(multiChannelEncap(cmd, ep))
+	return zwaveSecureEncap(multiChannelCmd(cmd, ep))
 }
 
 //MultiChannel Encapsulate if needed
-//This is called from secureCmd or supervisionEncap, do not call directly
-String multiChannelEncap(hubitat.zwave.Command cmd, ep) {
-	//logTrace "multiChannelEncap: ${cmd} (ep ${ep})"
+//This is called from secureCmd or superviseCmd, do not call directly
+String multiChannelCmd(hubitat.zwave.Command cmd, ep) {
+	//logTrace "multiChannelCmd: ${cmd} (ep ${ep})"
 	if (ep > 0) {
 		cmd = zwave.multiChannelV3.multiChannelCmdEncap(destinationEndPoint:ep).encapsulate(cmd)
 	}
@@ -1414,8 +1506,8 @@ String multiChannelEncap(hubitat.zwave.Command cmd, ep) {
 @Field static Map<String, Map<Short, String>> supervisedPackets = new java.util.concurrent.ConcurrentHashMap()
 @Field static Map<String, Short> sessionIDs = new java.util.concurrent.ConcurrentHashMap()
 
-String supervisionEncap(hubitat.zwave.Command cmd, ep=0) {
-	//logTrace "supervisionEncap: ${cmd} (ep ${ep})"
+String superviseCmd(hubitat.zwave.Command cmd, ep=0) {
+	//logTrace "superviseCmd: ${cmd} (ep ${ep})"
 
 	if (settings.supervisionGetEncap) {
 		//Encap with SupervisionGet
@@ -1423,7 +1515,7 @@ String supervisionEncap(hubitat.zwave.Command cmd, ep=0) {
 		def cmdEncap = zwave.supervisionV1.supervisionGet(sessionID: sessId).encapsulate(cmd)
 
 		//Encap with MultiChannel now so it is cached that way below
-		cmdEncap = multiChannelEncap(cmdEncap, ep)
+		cmdEncap = multiChannelCmd(cmdEncap, ep)
 
 		logDebug "New Supervised Packet for Session: ${sessId}"
 		if (supervisedPackets["${device.id}"] == null) { supervisedPackets["${device.id}"] = [:] }
@@ -1488,7 +1580,7 @@ Integer getParamStoredValue(Integer paramNum) {
 	return safeToInt(configsMap[paramNum], null)
 }
 
-void setParamStoredValue(Integer paramNum, Integer value) {
+void setParamStoredValue(Integer paramNum, Number value) {
 	//Using Data (Map) instead of State Variables
 	TreeMap configsMap = getParamStoredMap()
 	configsMap[paramNum] = value
@@ -1514,7 +1606,7 @@ Map getParamStoredMap() {
 	return configsMap
 }
 
-//Parameter List Functions
+/*** Parameter List Functions ***/
 //This will rebuild the list for the current model and firmware only as needed
 //paramsList Structure: MODEL:[FIRMWARE:PARAM_MAPS]
 //PARAM_MAPS [num, name, title, description, size, defaultVal, options, firmVer]
@@ -1529,7 +1621,8 @@ void updateParamsList() {
 	List<Map> tmpList = []
 	paramsMap.each { name, pMap ->
 		Map tmpMap = pMap.clone()
-		tmpMap.options = tmpMap.options?.clone()
+		if (tmpMap.options) tmpMap.options = tmpMap.options?.clone()
+		if (tmpMap.range) tmpMap.range = (tmpMap.range).toString()
 
 		//Save the name
 		tmpMap.name = name
@@ -1581,8 +1674,10 @@ void verifyParamsList() {
 	String devModel = state.deviceModel
 	BigDecimal firmware = firmwareVersion
 	if (!paramsMap.settings?.fixed) fixParamsMap()
-	if (paramsList[devModel] == null) updateParamsList()
-	if (paramsList[devModel][firmware] == null) updateParamsList()
+	if (devModel) {
+		if (paramsList[devModel] == null) updateParamsList()
+		else if (paramsList[devModel][firmware] == null) updateParamsList()
+	}
 }
 
 //Gets full list of params
@@ -1606,7 +1701,7 @@ Map getParam(String search) {
 	verifyParamsList()
 	return configParams.find{ it.name == search }
 }
-Map getParam(Integer search) {
+Map getParam(Number search) {
 	verifyParamsList()
 	return configParams.find{ it.num == search }
 }
@@ -1634,17 +1729,39 @@ String fmtTitle(String str) {
 	return "<strong>${str}</strong>"
 }
 String fmtDesc(String str) {
-	return "<div style='font-size: 85%; font-style: italic; padding: 1px 0px 4px 2px;'>${str}</div>"
+	if (location.hub.firmwareVersionString >= "2.4.0.0") {
+		return "<div style='font-style: italic; padding: 0px 0px 4px 6px; line-height:1.4;'>${str}</div>"
+	} else {
+		return "<div style='font-size: 85%; font-style: italic; padding: 1px 0px 4px 2px;'>${str}</div>"
+	}
 }
-String fmtHelpInfo(String str) {
-	String info = "${DRIVER} v${VERSION}"
-	String prefLink = "<a href='${COMM_LINK}' target='_blank'>${str}<br><div style='font-size: 70%;'>${info}</div></a>"
-	String topStyle = "style='font-size: 18px; padding: 1px 12px; border: 2px solid Crimson; border-radius: 6px;'" //SlateGray
-	String topLink = "<a ${topStyle} href='${COMM_LINK}' target='_blank'>${str}<br><div style='font-size: 14px;'>${info}</div></a>"
 
-	return "<div style='font-size: 160%; font-style: bold; padding: 2px 0px; text-align: center;'>${prefLink}</div>" +
-		"<div style='text-align: center; position: absolute; top: 46px; right: 60px; padding: 0px;'><ul class='nav'><li>${topLink}</ul></li></div>"
+String getInfoLink() {
+	String str = "Community Support"
+	String info = ((PACKAGE ?: '') + " ${DRIVER} v${VERSION}").trim()
+	String hrefStyle = "style='font-size: 140%; padding: 2px 16px; border: 2px solid Crimson; border-radius: 6px;'" //SlateGray
+	String htmlTag = "<a ${hrefStyle} href='${COMM_LINK}' target='_blank'><div style='font-size: 70%;'>${info}</div>${str}</a>"
+	String finalLink = "<div style='text-align:center; position:relative; display:flex; justify-content:center; align-items:center;'><ul class='nav'><li>${htmlTag}</ul></li></div>"
+	return finalLink
 }
+
+String getFloatingLink() {
+	String info = ((PACKAGE ?: '') + " ${DRIVER} v${VERSION}").trim()
+	String topStyle = "style='font-size: 100%; padding: 2px 12px; border: 2px solid SlateGray; border-radius: 6px;'" //SlateGray
+	String topLink = "<a ${topStyle} href='${COMM_LINK}' target='_blank'>${info}</a>"
+	String finalLink = "<div style='text-align: center; position: absolute; top: 8px; right: 60px; padding: 0px; background-color: white;'><ul class='nav'><li>${topLink}</ul></li></div>"
+	return finalLink
+}
+
+//Use this at top of preferences, example: input(helpInfoInput)
+Map getHelpInfoInput () {
+	return [name: "helpInfo", type: "hidden", title: "Support Information:", description: "${infoLink}"]
+}
+
+//Adds fake command with support info link
+command "!SupportInfo:", [[name:"${infoLink}"]]
+void "!SupportInfo:"() { log.info "${infoLink}" }
+
 
 private getTimeOptionsRange(String name, Integer multiplier, List range) {
 	return range.collectEntries{ [(it*multiplier): "${it} ${name}${it == 1 ? '' : 's'}"] }
@@ -1680,36 +1797,36 @@ void refreshSyncStatus() {
 	Integer changes = pendingChanges
 	sendEvent(name:"syncStatus", value:(changes ? "${changes} Pending Changes" : "Synced"))
 	device.updateDataValue("configVals", getParamStoredMap()?.inspect())
+	if (changes==0 && state.deviceSync) { state.remove("deviceSync") }
 }
 
 void updateLastCheckIn() {
-	def nowDate = new Date()
+	Date nowDate = new Date()
 	state.lastCheckInDate = convertToLocalTimeString(nowDate)
 
 	Long lastExecuted = state.lastCheckInTime ?: 0
 	Long allowedMil = 24 * 60 * 60 * 1000   //24 Hours
 	if (lastExecuted + allowedMil <= nowDate.time) {
 		state.lastCheckInTime = nowDate.time
-		if (lastExecuted) runIn(4, doCheckIn)
+		if (lastExecuted) runIn(2, doCheckIn)
 		scheduleCheckIn()
 	}
 }
 
 void scheduleCheckIn() {
-	def cal = Calendar.getInstance()
-	cal.add(Calendar.MINUTE, -1)
-	Integer hour = cal[Calendar.HOUR_OF_DAY]
-	Integer minute = cal[Calendar.MINUTE]
-	schedule( "0 ${minute} ${hour} * * ?", doCheckIn)
+	unschedule("doCheckIn")
+	runIn(86340, doCheckIn)
 }
 
 void doCheckIn() {
-	String devModel = (state.deviceModel ?: "NA") + (state.subModel ? ".${state.subModel}" : "")
-	String checkUri = "http://jtp10181.gateway.scarf.sh/${DRIVER}/chk-${devModel}-v${VERSION}"
+	scheduleCheckIn()
+	String pkg = PACKAGE ?: DRIVER
+	String devModel = (state.deviceModel ?: (PACKAGE ? DRIVER : "NA")) + (state.subModel ? ".${state.subModel}" : "")
+	String checkUri = "http://jtp10181.gateway.scarf.sh/${pkg}/chk-${devModel}-v${VERSION}"
 
 	try {
-		httpGet(uri:checkUri, timeout:4) { logDebug "Driver ${DRIVER} ${devModel} v${VERSION}" }
-		state.lastCheckInTime = (new Date()).time
+		httpGet(uri:checkUri, timeout:4) { logDebug "Driver ${pkg} ${devModel} v${VERSION}" }
+		state.lastCheckInTime = now()
 	} catch (Exception e) { }
 }
 
@@ -1747,8 +1864,8 @@ void clearVariables() {
 	logWarn "Clearing state variables and data..."
 
 	//Backup
-	String devModel = state.deviceModel
-	def engTime = state.energyTime
+	List saveList = ["deviceModel","resyncAll","deviceSync","energyTime","group1Assoc"]
+	Map saveMap = state.findAll { saveList.contains(it.key) && it.value != null }
 
 	//Clears State Variables
 	state.clear()
@@ -1761,10 +1878,11 @@ void clearVariables() {
 	device.removeDataValue("zwaveAssociationG2")
 	device.removeDataValue("zwaveAssociationG3")
 
-	//Restore
-	if (devModel) state.deviceModel = devModel
-	if (engTime) state.energyTime = engTime
-	//setDevModel()
+	//Clear Schedules
+	unschedule()
+
+	//Restore Saved States
+	state.putAll(saveMap)
 }
 
 //Stash the model in a state variable
@@ -1799,6 +1917,11 @@ BigDecimal getFirmwareVersion() {
 	return ((version != null) && version.isNumber()) ? version.toBigDecimal() : 0.0
 }
 
+Boolean isLongRange() {
+	Integer intDNI = device ? hubitat.helper.HexUtils.hexStringToInt(device.deviceNetworkId) : null
+	return (intDNI > 255)
+}
+
 String convertToLocalTimeString(dt) {
 	def timeZoneId = location?.timeZone?.ID
 	if (timeZoneId) {
@@ -1818,7 +1941,6 @@ List convertIntListToHexList(intList, pad=2) {
 
 List convertHexListToIntList(String[] hexList) {
 	def intList = []
-
 	hexList?.each {
 		try {
 			it = it.trim()
@@ -1884,7 +2006,7 @@ BigDecimal safeToDec(val, defaultVal=0, roundTo=-1) {
 }
 
 Boolean isDuplicateCommand(Long lastExecuted, Long allowedMil) {
-	!lastExecuted ? false : (lastExecuted + allowedMil > new Date().time)
+	!lastExecuted ? false : (lastExecuted + allowedMil > now())
 }
 
 
@@ -1907,16 +2029,20 @@ preferences {
 		description: fmtDesc("Logs selected level and above"), defaultValue: 3, options: LOG_LEVELS
 	input name: "logLevelTime", type: "enum", title: fmtTitle("Logging Level Time"),
 		description: fmtDesc("Time to enable Debug/Trace logging"),defaultValue: 30, options: LOG_TIMES
-	//Help Link
-	input name: "helpInfo", type: "hidden", title: fmtHelpInfo("Community Link")
 }
 
 //Call this function from within updated() and configure() with no parameters: checkLogLevel()
 void checkLogLevel(Map levelInfo = [level:null, time:null]) {
-	unschedule(logsOff)
+	unschedule("logsOff")
 	//Set Defaults
-	if (settings.logLevel == null) device.updateSetting("logLevel",[value:"3", type:"enum"])
-	if (settings.logLevelTime == null) device.updateSetting("logLevelTime",[value:"30", type:"enum"])
+	if (settings.logLevel == null) {
+		device.updateSetting("logLevel",[value:"3", type:"enum"])
+		levelInfo.level = 3
+	}
+	if (settings.logLevelTime == null) {
+		device.updateSetting("logLevelTime",[value:"30", type:"enum"])
+		levelInfo.time = 30
+	}
 	//Schedule turn off and log as needed
 	if (levelInfo.level == null) levelInfo = getLogLevelInfo()
 	String logMsg = "Logging Level is: ${LOG_LEVELS[levelInfo.level]} (${levelInfo.level})"
@@ -1925,25 +2051,28 @@ void checkLogLevel(Map levelInfo = [level:null, time:null]) {
 		runIn(60*levelInfo.time, logsOff)
 	}
 	logInfo(logMsg)
+
+	//Store last level below Debug
+	if (levelInfo.level <= 2) state.lastLogLevel = levelInfo.level
 }
 
 //Function for optional command
 void setLogLevel(String levelName, String timeName=null) {
 	Integer level = LOG_LEVELS.find{ levelName.equalsIgnoreCase(it.value) }.key
 	Integer time = LOG_TIMES.find{ timeName.equalsIgnoreCase(it.value) }.key
+	if (levelInfo.level <= 2) state.lastLogLevel = levelInfo.level
 	device.updateSetting("logLevel",[value:"${level}", type:"enum"])
 	checkLogLevel(level: level, time: time)
 }
 
 Map getLogLevelInfo() {
-	Integer level = settings.logLevel as Integer ?: 2
-	Integer time = settings.logLevelTime as Integer ?: 0
+	Integer level = settings.logLevel != null ? settings.logLevel as Integer : 1
+	Integer time = settings.logLevelTime != null ? settings.logLevelTime as Integer : 30
 	return [level: level, time: time]
 }
 
 //Legacy Support
 void debugLogsOff() {
-	logWarn "Debug logging toggle disabled..."
 	device.removeSetting("logEnable")
 	device.updateSetting("debugEnable",[value:false, type:"bool"])
 }
@@ -1952,7 +2081,9 @@ void debugLogsOff() {
 void logsOff() {
 	logWarn "Debug and Trace logging disabled..."
 	if (logLevelInfo.level >= 3) {
-		device.updateSetting("logLevel",[value:"2", type:"enum"])
+		Integer lastLvl = state.lastLogLevel != null ? state.lastLogLevel as Integer : 2
+		device.updateSetting("logLevel",[value:lastLvl.toString(), type:"enum"])
+		logWarn "Logging Level is: ${LOG_LEVELS[lastLvl]} (${lastLvl})"
 	}
 }
 

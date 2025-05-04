@@ -11,7 +11,7 @@
 
 Changelog:
 
-## [2.0.3] - 2025-04-20 (@jtp10181)
+## [2.0.3] BETA - 2025-05-04 (@jtp10181)
   - Added singleThreaded flag
   - Updated Library and common code
   - Updated support info link for 2.4.x platform
@@ -221,17 +221,14 @@ https://github.com/krlaframboise/SmartThings/tree/master/devicetypes/zooz/
  *  Copyright 2020-2025 Jeff Page
  *  Copyright 2020 Zooz
  *
- *  Licensed under the Apache License, Version 2.0 (the "License");
- *  you may not use this file except in compliance with the License.
- *  You may obtain a copy of the License at
+ *  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
+ *  in compliance with the License. You may obtain a copy of the License at:
  *
  *      http://www.apache.org/licenses/LICENSE-2.0
  *
- *  Unless required by applicable law or agreed to in writing, software
- *  distributed under the License is distributed on an "AS IS" BASIS,
- *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *  See the License for the specific language governing permissions and
- *  limitations under the License.
+ *  Unless required by applicable law or agreed to in writing, software distributed under the License is
+ *  distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and limitations under the License.
  *
 */
 
@@ -459,6 +456,7 @@ void debugShowVars() {
 	],
 	zwaveRampRate: [ num: 17,
 		title: "Z-Wave Ramp Rate (Dimming Speed)",
+		description: "Choose if you want to set the Z-Wave ramp rate independently of the physical ramp rate or if you want them to match.",
 		size: 1, defaultVal: 1,
 		options: [ 1:"Z-Wave Can Set Ramp Rate", 0:"Match Physical Ramp Rate"],
 		changes: ['7X':[num:null]]
@@ -495,8 +493,9 @@ void debugShowVars() {
 	],
 	doubleTapFunction: [ num: 14,
 		title: "Double Tap Up Function",
+		description: "Enable or disable the double tap function and assign brightness level to single tap. 2x = Double Tap, 1x = Single Tap",
 		size: 1, defaultVal: 0,
-		options: [0:"Full/Maximum Brightness", 1:"Disabled, Single Tap Last Brightness (or Custom)", 2:"Disabled, Single Tap Full/Maximum Brightness"],
+		options: [0:"2x Full/Max Brightness Enabled", 1:"2x Disabled, 1x Last Brightness (or Custom)", 2:"2x Disabled, 1x Full/Max Brightness"],
 		changes: ['7X':[num:null]]
 	],
 	singleTapUp: [ num: 25,
@@ -514,7 +513,7 @@ void debugShowVars() {
 	],
 	basicCustomBrightness: [ num: 34,
 		title: "Basic Set Custom Brightness On",
-    	description: "Set custom brightness for Basic Set ON commands when triggered by another device by direct association.",
+		description: "Set custom brightness for Basic Set ON commands when triggered by another device by direct association.",
 		size: 1, defaultVal: 0,
 		options: [0:"Last Brightness Level"], //brightnessOptions
 		changes: ['2X':[num:null],
@@ -532,7 +531,7 @@ void debugShowVars() {
 	//sceneControl - Dimmers=13, ZEN26/73/76=10, Other Switches=9
 	sceneControl: [ num: 13,
 		title: "Scene Control Events",
-		description: "Enable or disable scene control functionality for quick push and multi-tap triggers.",
+		description: "Enable scene control functionality for quick push and multi-tap triggers.",
 		size: 1, defaultVal: 0,
 		options: [0:"Disabled", 1:"Enabled"],
 	],
@@ -572,7 +571,7 @@ void debugShowVars() {
 	],
 	paddleProgramming: [ num: null,
 		title: "Paddle Programming",
-	    description: "Enable or disable programming functionality on the switch paddles. If this setting is disabled, then inclusion, exclusion, smart bulb mode no longer work when switch paddles are activated (factory reset and scene control will still work). This allows 3x tap to work better.",
+		description: "Enable or disable programming functionality on the switch paddles. If this setting is disabled, then inclusion, exclusion, smart bulb mode no longer work when switch paddles are activated (factory reset and scene control will still work). This allows 3x tap to work better.",
 		size: 1, defaultVal: 0,
 		options: [0:"Enabled", 1:"Disabled"],
 		changes: [
@@ -612,7 +611,7 @@ void debugShowVars() {
 	],
 	ledFlash: [ num: 32,
 		title: "LED Indicator Flash On Changes",
-    	description: "Choose if the LED should flash whenever a parameter is adjusted on the device to confirm the change.",
+		description: "Choose if the LED should flash whenever a parameter is adjusted on the device to confirm the change.",
 		size: 1, defaultVal: 0,
 		options: [0:"Flash Enabled", 1:"Flash Disabled"],
 		changes: ['2X':[num:null],
@@ -652,6 +651,7 @@ void debugShowVars() {
 	0x5B: 3,	// CentralScene (centralscenev3)
 	0x6C: 1,	// Supervision (supervisionv1)
 	0x70: 1,	// Configuration (configurationv1)
+	0x72: 2,	// ManufacturerSpecific
 	0x85: 2,	// Association (associationv2)
 	0x86: 2,	// Version (versionv2)
 	0x8E: 3,	// Multi Channel Association (multichannelassociationv3)
@@ -716,13 +716,13 @@ def off() {
 	return getOnOffCmds(0x00)
 }
 
-String setLevel(level, duration=null) {
+def setLevel(level, duration=null) {
 	logDebug "setLevel($level, $duration)..."
 	turningOn[device.id] = now() + 1000
 	return getSetLevelCmds(level, duration)
 }
 
-List<String> startLevelChange(direction, duration=null) {
+def startLevelChange(direction, duration=null) {
 	Boolean upDown = (direction == "down") ? true : false
 	Integer durationVal = validateRange(duration, getParamValue("holdRampRate") as Integer, 0, 127)
 	logDebug "startLevelChange($direction) for ${durationVal}s"
@@ -741,7 +741,7 @@ List<String> startLevelChange(direction, duration=null) {
 	return delayBetween(cmds, 1000)
 }
 
-String stopLevelChange() {
+def stopLevelChange() {
 	logDebug "stopLevelChange()"
 	return switchMultilevelStopLvChCmd()
 }
@@ -2081,6 +2081,7 @@ void checkLogLevel(Map levelInfo = [level:null, time:null]) {
 void setLogLevel(String levelName, String timeName=null) {
 	Integer level = LOG_LEVELS.find{ levelName.equalsIgnoreCase(it.value) }.key
 	Integer time = LOG_TIMES.find{ timeName.equalsIgnoreCase(it.value) }.key
+	if (levelInfo.level <= 2) state.lastLogLevel = levelInfo.level
 	device.updateSetting("logLevel",[value:"${level}", type:"enum"])
 	checkLogLevel(level: level, time: time)
 }
