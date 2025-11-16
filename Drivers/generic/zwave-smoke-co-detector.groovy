@@ -34,7 +34,7 @@ import groovy.transform.Field
 @Field static final String VERSION = "1.0.0"
 @Field static final String DRIVER = "Smoke-CO"
 @Field static final String COMM_LINK = "https://community.hubitat.com/t/z-wave-universal-smoke-co-detector/127180"
-@Field static final Map deviceModelNames = ["0138:0001:0003":"ZCombo-G"]
+@Field static final Map deviceModelNames = ["0138:0001:0003":"ZCombo-G", "041B:0001:0410":"SMCO410"]
 
 metadata {
 	definition (
@@ -63,6 +63,7 @@ metadata {
 		attribute "warnings", "number"
 
 		fingerprint mfr:"0138", prod:"0001", deviceId:"0003", inClusters:"0x5E,0x85,0x8E,0x59,0x55,0x86,0x72,0x5A,0x73,0x80,0x9F,0x71,0x84,0x70,0x6C" //First Alert ZCombo-G
+		fingerprint mfr:"041B", prod:"0001", deviceId:"0410", inClusters:"0x5E,0x9F,0x55,0x85,0x59,0x8E,0x80,0x70,0x5A,0x7A,0x87,0x72,0x71,0x73,0x6C,0x86,0x84" //First Alert SMCO410
 	}
 
 	preferences {
