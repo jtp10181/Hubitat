@@ -10,6 +10,12 @@
 
 Changelog:
 
+## [1.3.0] - 2026-02-10 (@electricessence)
+  - Added energy tracking with base correction to handle spurious device resets
+  - Energy value is now monotonic: base + device reported value
+  - Tracking works uniformly for parent and all child endpoints via device data values
+  - Reset Stats clears energy tracking for parent and all children
+
 ## [1.2.6] - 2024-06-15 (@jtp10181)
   - Fix for range expansion and sharing with Hub Mesh
 
@@ -508,6 +514,14 @@ void resetStats(fullReset = true) {
 		state.remove("energyDuration")
 		device.deleteCurrentState("energyDuration")
 		device.deleteCurrentState("warnings")
+
+		// Clear energy tracking for parent and all children
+		resetEnergyTracking(device)
+		endPointList.each { ep ->
+			def childDev = getChildByEP(ep)
+			if (childDev) { resetEnergyTracking(childDev) }
+		}
+
 		if (state.powerMetering) {
 			sendEventLog(name:"warnings", value:0, desc:"Reset Warnings and Energy Stats")
 			sendCommands(meterResetCmd(0))
@@ -771,21 +785,59 @@ void sendMeterEvents(meter, value, Integer ep=0) {
 }
 
 void sendEnergyEvents(meter, value, Integer ep=0) {
-	sendEventLog(name:meter.name, value:value, unit:meter.unit, ep)
-
-	//Calculate and send the energyDuration
-	if (!state.energyTime) { state.energyTime = new Date().time }
-
-	BigDecimal duration = ((new Date().time) - state.energyTime)/60000
-	BigDecimal enDurDays = safeToDec(duration/(24*60), 0, 2)
-	BigDecimal enDurHours = safeToDec(duration/60, 0, 2)
-
-	if (enDurDays > 1.0) {
-		state.energyDuration = enDurDays + " Days"
+	// Resolve target device: parent or child
+	def targetDev
+	if (ep) {
+		targetDev = getChildByEP(ep)
+		if (!targetDev) {
+			logErr "No child device for endpoint ${ep}, cannot track energy"
+			return
+		}
 	} else {
-		state.energyDuration = enDurHours + " Hours"
+		targetDev = device
 	}
-	sendEventLog(name:"energyDuration", value:enDurDays, unit:"days", ep)
+
+	BigDecimal correctedEnergy = trackEnergy(targetDev, value)
+	sendEventLog(name:meter.name, value:correctedEnergy, unit:meter.unit, ep)
+
+	// Parent-only extra attributes
+	if (!ep) {
+		//Calculate and send the energyDuration
+		if (!state.energyTime) { state.energyTime = new Date().time }
+
+		BigDecimal duration = ((new Date().time) - state.energyTime)/60000
+		BigDecimal enDurDays = safeToDec(duration/(24*60), 0, 2)
+		BigDecimal enDurHours = safeToDec(duration/60, 0, 2)
+
+		if (enDurDays > 1.0) {
+			state.energyDuration = enDurDays + " Days"
+		} else {
+			state.energyDuration = enDurHours + " Hours"
+		}
+		sendEventLog(name:"energyDuration", value:enDurDays, unit:"days", ep)
+	}
+}
+
+// Track energy on any device, returns corrected value
+BigDecimal trackEnergy(dev, BigDecimal value) {
+	BigDecimal energyBase = safeToDec(dev.getDataValue("energyBase"), 0)
+	BigDecimal lastReported = safeToDec(dev.getDataValue("energyLastReported"), 0)
+
+	if (lastReported > 0 && value < lastReported) {
+		BigDecimal lost = lastReported - value
+		logWarn "Energy drop (${dev}): ${lastReported} -> ${value} kWh (lost ${lost}), adding to energyBase"
+		energyBase += lost
+		dev.updateDataValue("energyBase", energyBase.toString())
+	}
+	dev.updateDataValue("energyLastReported", value.toString())
+
+	return safeToDec(energyBase + value, 0, 3)
+}
+
+// Clear energy tracking data on any device
+void resetEnergyTracking(dev) {
+	dev.removeDataValue("energyBase")
+	dev.removeDataValue("energyLastReported")
 }
 
 void sendAccessoryEvents(powerVal) {
