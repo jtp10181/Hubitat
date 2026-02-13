@@ -56,7 +56,7 @@ Changelog:
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "1.2.6"
+@Field static final String VERSION = "1.3.0"
 @Field static final String DRIVER = "Zooz-Plugs-MCP"
 @Field static final String COMM_LINK = "https://community.hubitat.com/t/zooz-smart-plugs/98333"
 @Field static final Map deviceModelNames =
