@@ -228,7 +228,7 @@ void debugSetModel(String devModel, String firmwareVersion) {
 		size: 4, defaultVal: 0,
 		description: "Time in minutes, 0 = Disabled",
 		range: "0..65535",
-		changes: [15:[num:34, size:1, range:"0..99"]]
+		changes: [15:[num:34, size:1, range:"0..99", firmVer:1.06]]
 	],
 	offTimer2: [ num: null,
 		title: "Auto Turn-Off Timer (Outlet 2)",
@@ -242,7 +242,7 @@ void debugSetModel(String devModel, String firmwareVersion) {
 		size: 4, defaultVal: 0,
 		description: "Time in minutes, 0 = Disabled",
 		range: "0..65535",
-		changes: [04:[num:3], 15:[num:33, size:1, range:"0..99"]]
+		changes: [04:[num:3], 15:[num:33, size:1, range:"0..99", firmVer:1.06]]
 	],
 	onTimer2: [ num: null,
 		title: "Auto Turn-On Timer (Outlet 2)",
