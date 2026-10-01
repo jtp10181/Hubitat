@@ -9,6 +9,9 @@
 
 Changelog:
 
+## [1.2.1] - 2026-10-01 (@uberswimmer)
+  - Include Version Get in every refresh so HealthCheck has a known-response liveness probe
+
 ## [1.2.0] - 2024-09-14 (@jtp10181)
   - Added singleThreaded flag
   - Update library and common code
@@ -39,7 +42,7 @@ Changelog:
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "1.2.0"
+@Field static final String VERSION = "1.2.1"
 @Field static final String DRIVER = "Zooz-ZEN55"
 @Field static final String COMM_LINK = "https://community.hubitat.com/t/zooz-zen55/118449"
 @Field static final Map deviceModelNames = ["0004:0110":"ZEN55"]
@@ -500,10 +503,13 @@ void executeConfigureCmds() {
 void executeRefreshCmds() {
 	List<String> cmds = []
 
-	if (state.resyncAll || !firmwareVersion || !state.deviceModel) {
+	if (state.resyncAll || !state.deviceModel) {
 		cmds << mfgSpecificGetCmd()
-		cmds << versionGetCmd()
 	}
+
+	// Always include a command known to return a report so HealthCheck can
+	// establish liveness even if state-specific Get commands do not respond.
+	cmds << versionGetCmd()
 
 	cmds << switchBinaryGetCmd()
 	cmds << notificationGetCmd(0x01, 0x02)

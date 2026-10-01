@@ -2,10 +2,10 @@
   "packageName": "Zooz Modules Advanced Drivers",
   "author": "Jeff Page (@jtp10181)",
   "minimumHEVersion": "2.3.4",
-  "dateReleased": "2024-09-14",
+  "dateReleased": "2026-10-01",
   "documentationLink": "https://github.com/jtp10181/Hubitat/tree/main/Drivers/zooz",
   "communityLink": "https://community.hubitat.com/t/zooz-zen54/114592",
-  "releaseNotes": "Version [1.2.0] - 2024-09-14\n  - Added singleThreaded flag (if not already present)\n  - Update library and common code\n  - Fix for range expansion and sharing with Hub Mesh\n  - [ZEN53] Added new paramters 19/20 for FW 1.40\n  - [ZEN54] Added option to set level to 0 when turned off\n  - [ZEN54] Fix setLevel to work with mobile app sending values as strings\n  - [ZEN55] Added device Healthcheck / healthStatus",
+  "releaseNotes": "Version [1.2.1] - 2026-10-01\n  - [ZEN55] Include Version Get in every refresh so HealthCheck has a known-response liveness probe\n\nVersion [1.2.0] - 2024-09-14\n  - Added singleThreaded flag (if not already present)\n  - Update library and common code\n  - Fix for range expansion and sharing with Hub Mesh\n  - [ZEN53] Added new paramters 19/20 for FW 1.40\n  - [ZEN54] Added option to set level to 0 when turned off\n  - [ZEN54] Fix setLevel to work with mobile app sending values as strings\n  - [ZEN55] Added device Healthcheck / healthStatus",
   "drivers": [
     {
       "id": "20e32090-b2a1-40f5-ab50-4c918e7a5cd6",
@@ -27,9 +27,9 @@
       "id": "75b9aef5-4a7b-460f-a879-d5e35153d7c6",
       "name": "Zooz ZEN55 DC Signal Sensor",
       "namespace": "jtp10181",
-      "location": "https://jtp10181.gateway.scarf.sh/zooz-zen55-v1.2.0.groovy",
+      "location": "https://jtp10181.gateway.scarf.sh/zooz-zen55-v1.2.1.groovy",
       "required": false,
-      "version": "1.2.0"
+      "version": "1.2.1"
     }
   ]
 }
