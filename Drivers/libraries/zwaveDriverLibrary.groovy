@@ -20,6 +20,7 @@ Changelog:
 2025-02-14 - Clearing all scheduled jobs during clearVariables / configure
            - Reworked saving/restoring of important states during clearVariables
            - Updated formatting and help info for 2.4.x platform
+2026-11-25 - Parse configVals without evaluate(), which the hub sandbox now rejects
 
 ********************************************************************/
 
@@ -280,13 +281,26 @@ void setParamStoredValue(Integer paramNum, Number value) {
 	//device.updateDataValue("configVals", configsMap.inspect())
 }
 
+//Parse the "[2:10, 3:20]" string written by configsMap.inspect() without evaluate(),
+//which the hub sandbox now rejects ("Unrestricted script compilation is not allowed")
+Map parseConfigVals(String str) {
+	TreeMap configsMap = [:]
+	str.replaceAll(/[\[\]\s]/, "").split(",").each { String kv ->
+		List<String> parts = kv.split(":") as List
+		if (parts.size() == 2 && parts[0].isInteger() && parts[1].isNumber()) {
+			configsMap[parts[0] as Integer] = (parts[1].isInteger() ? parts[1] as Integer : parts[1] as BigDecimal)
+		}
+	}
+	return configsMap
+}
+
 Map getParamStoredMap() {
 	TreeMap configsMap = configsList[device.id]
 	if (configsMap == null) {
 		configsMap = [:]
 		if (device.getDataValue("configVals")) {
 			try {
-				configsMap = evaluate(device.getDataValue("configVals"))
+				configsMap = parseConfigVals(device.getDataValue("configVals"))
 			}
 			catch(Exception e) {
 				logWarn("Clearing Invalid configVals: ${e}")
